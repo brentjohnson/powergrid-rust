@@ -50,12 +50,6 @@ jobs:
             binary: powergrid-client
             artifact: powergrid-client-macos-aarch64
 
-          - name: macos-client-intel
-            os: macos-13
-            package: powergrid-client
-            binary: powergrid-client
-            artifact: powergrid-client-macos-x86_64
-
     steps:
       - uses: actions/checkout@v4
 
@@ -143,4 +137,3 @@ jobs:
             powergrid-client-linux-aarch64
             powergrid-client-windows-x86_64.exe
             powergrid-client-macos-aarch64
-            powergrid-client-macos-x86_64
