@@ -1,0 +1,499 @@
+name = "Germany"
+regions = ["northwest", "northeast", "west", "east", "southwest", "southeast"]
+
+[[cities]]
+id = "flensburg"
+name = "Flensburg"
+region = "northwest"
+
+[[cities]]
+id = "kiel"
+name = "Kiel"
+region = "northwest"
+
+[[cities]]
+id = "hamburg"
+name = "Hamburg"
+region = "northwest"
+
+[[cities]]
+id = "bremen"
+name = "Bremen"
+region = "northwest"
+
+[[cities]]
+id = "hannover"
+name = "Hannover"
+region = "northwest"
+
+[[cities]]
+id = "dortmund"
+name = "Dortmund"
+region = "west"
+
+[[cities]]
+id = "duisburg"
+name = "Duisburg"
+region = "west"
+
+[[cities]]
+id = "essen"
+name = "Essen"
+region = "west"
+
+[[cities]]
+id = "duesseldorf"
+name = "Düsseldorf"
+region = "west"
+
+[[cities]]
+id = "koeln"
+name = "Köln"
+region = "west"
+
+[[cities]]
+id = "aachen"
+name = "Aachen"
+region = "west"
+
+[[cities]]
+id = "muenster"
+name = "Münster"
+region = "west"
+
+[[cities]]
+id = "osnabrueck"
+name = "Osnabrück"
+region = "northwest"
+
+[[cities]]
+id = "bielefeld"
+name = "Bielefeld"
+region = "northwest"
+
+[[cities]]
+id = "kassel"
+name = "Kassel"
+region = "east"
+
+[[cities]]
+id = "frankfurt"
+name = "Frankfurt"
+region = "west"
+
+[[cities]]
+id = "wiesbaden"
+name = "Wiesbaden"
+region = "west"
+
+[[cities]]
+id = "trier"
+name = "Trier"
+region = "west"
+
+[[cities]]
+id = "saarbruecken"
+name = "Saarbrücken"
+region = "southwest"
+
+[[cities]]
+id = "mannheim"
+name = "Mannheim"
+region = "southwest"
+
+[[cities]]
+id = "stuttgart"
+name = "Stuttgart"
+region = "southwest"
+
+[[cities]]
+id = "freiburg"
+name = "Freiburg"
+region = "southwest"
+
+[[cities]]
+id = "konstanz"
+name = "Konstanz"
+region = "southeast"
+
+[[cities]]
+id = "augsburg"
+name = "Augsburg"
+region = "southeast"
+
+[[cities]]
+id = "muenchen"
+name = "München"
+region = "southeast"
+
+[[cities]]
+id = "regensburg"
+name = "Regensburg"
+region = "southeast"
+
+[[cities]]
+id = "nuernberg"
+name = "Nürnberg"
+region = "southeast"
+
+[[cities]]
+id = "wuerzburg"
+name = "Würzburg"
+region = "southeast"
+
+[[cities]]
+id = "erfurt"
+name = "Erfurt"
+region = "east"
+
+[[cities]]
+id = "halle"
+name = "Halle"
+region = "east"
+
+[[cities]]
+id = "leipzig"
+name = "Leipzig"
+region = "east"
+
+[[cities]]
+id = "dresden"
+name = "Dresden"
+region = "east"
+
+[[cities]]
+id = "magdeburg"
+name = "Magdeburg"
+region = "northeast"
+
+[[cities]]
+id = "berlin"
+name = "Berlin"
+region = "northeast"
+
+[[cities]]
+id = "schwerin"
+name = "Schwerin"
+region = "northeast"
+
+[[cities]]
+id = "rostock"
+name = "Rostock"
+region = "northeast"
+
+# Connections (costs from official Powergrid board)
+
+[[connections]]
+from = "flensburg"
+to = "kiel"
+cost = 4
+
+[[connections]]
+from = "flensburg"
+to = "hamburg"
+cost = 8
+
+[[connections]]
+from = "kiel"
+to = "hamburg"
+cost = 8
+
+[[connections]]
+from = "hamburg"
+to = "schwerin"
+cost = 8
+
+[[connections]]
+from = "hamburg"
+to = "bremen"
+cost = 11
+
+[[connections]]
+from = "hamburg"
+to = "hannover"
+cost = 17
+
+[[connections]]
+from = "schwerin"
+to = "rostock"
+cost = 6
+
+[[connections]]
+from = "schwerin"
+to = "magdeburg"
+cost = 16
+
+[[connections]]
+from = "schwerin"
+to = "berlin"
+cost = 18
+
+[[connections]]
+from = "rostock"
+to = "berlin"
+cost = 18
+
+[[connections]]
+from = "bremen"
+to = "hannover"
+cost = 10
+
+[[connections]]
+from = "bremen"
+to = "osnabrueck"
+cost = 11
+
+[[connections]]
+from = "hannover"
+to = "magdeburg"
+cost = 15
+
+[[connections]]
+from = "hannover"
+to = "bielefeld"
+cost = 19
+
+[[connections]]
+from = "hannover"
+to = "dortmund"
+cost = 18
+
+[[connections]]
+from = "hannover"
+to = "kassel"
+cost = 15
+
+[[connections]]
+from = "osnabrueck"
+to = "bielefeld"
+cost = 7
+
+[[connections]]
+from = "osnabrueck"
+to = "muenster"
+cost = 7
+
+[[connections]]
+from = "bielefeld"
+to = "dortmund"
+cost = 9
+
+[[connections]]
+from = "muenster"
+to = "dortmund"
+cost = 2
+
+[[connections]]
+from = "dortmund"
+to = "duisburg"
+cost = 4
+
+[[connections]]
+from = "dortmund"
+to = "essen"
+cost = 2
+
+[[connections]]
+from = "dortmund"
+to = "duesseldorf"
+cost = 6
+
+[[connections]]
+from = "duisburg"
+to = "essen"
+cost = 0
+
+[[connections]]
+from = "duisburg"
+to = "duesseldorf"
+cost = 2
+
+[[connections]]
+from = "essen"
+to = "duesseldorf"
+cost = 2
+
+[[connections]]
+from = "duesseldorf"
+to = "koeln"
+cost = 4
+
+[[connections]]
+from = "duesseldorf"
+to = "aachen"
+cost = 9
+
+[[connections]]
+from = "koeln"
+to = "aachen"
+cost = 7
+
+[[connections]]
+from = "koeln"
+to = "trier"
+cost = 20
+
+[[connections]]
+from = "koeln"
+to = "frankfurt"
+cost = 21
+
+[[connections]]
+from = "aachen"
+to = "trier"
+cost = 19
+
+[[connections]]
+from = "trier"
+to = "saarbruecken"
+cost = 11
+
+[[connections]]
+from = "trier"
+to = "wiesbaden"
+cost = 18
+
+[[connections]]
+from = "saarbruecken"
+to = "mannheim"
+cost = 11
+
+[[connections]]
+from = "saarbruecken"
+to = "stuttgart"
+cost = 17
+
+[[connections]]
+from = "frankfurt"
+to = "wiesbaden"
+cost = 0
+
+[[connections]]
+from = "frankfurt"
+to = "kassel"
+cost = 13
+
+[[connections]]
+from = "frankfurt"
+to = "wuerzburg"
+cost = 13
+
+[[connections]]
+from = "frankfurt"
+to = "mannheim"
+cost = 14
+
+[[connections]]
+from = "wiesbaden"
+to = "mannheim"
+cost = 11
+
+[[connections]]
+from = "mannheim"
+to = "stuttgart"
+cost = 6
+
+[[connections]]
+from = "mannheim"
+to = "nuernberg"
+cost = 22
+
+[[connections]]
+from = "stuttgart"
+to = "freiburg"
+cost = 16
+
+[[connections]]
+from = "stuttgart"
+to = "augsburg"
+cost = 16
+
+[[connections]]
+from = "freiburg"
+to = "konstanz"
+cost = 14
+
+[[connections]]
+from = "konstanz"
+to = "augsburg"
+cost = 17
+
+[[connections]]
+from = "augsburg"
+to = "muenchen"
+cost = 6
+
+[[connections]]
+from = "augsburg"
+to = "nuernberg"
+cost = 18
+
+[[connections]]
+from = "muenchen"
+to = "regensburg"
+cost = 10
+
+[[connections]]
+from = "muenchen"
+to = "nuernberg"
+cost = 21
+
+[[connections]]
+from = "regensburg"
+to = "nuernberg"
+cost = 12
+
+[[connections]]
+from = "nuernberg"
+to = "wuerzburg"
+cost = 8
+
+[[connections]]
+from = "wuerzburg"
+to = "erfurt"
+cost = 19
+
+[[connections]]
+from = "kassel"
+to = "erfurt"
+cost = 15
+
+[[connections]]
+from = "kassel"
+to = "magdeburg"
+cost = 21
+
+[[connections]]
+from = "erfurt"
+to = "halle"
+cost = 6
+
+[[connections]]
+from = "erfurt"
+to = "leipzig"
+cost = 8
+
+[[connections]]
+from = "halle"
+to = "magdeburg"
+cost = 11
+
+[[connections]]
+from = "halle"
+to = "leipzig"
+cost = 0
+
+[[connections]]
+from = "leipzig"
+to = "dresden"
+cost = 13
+
+[[connections]]
+from = "magdeburg"
+to = "berlin"
+cost = 10
+
+[[connections]]
+from = "berlin"
+to = "dresden"
+cost = 16

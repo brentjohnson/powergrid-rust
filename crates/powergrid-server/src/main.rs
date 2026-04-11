@@ -1,0 +1,69 @@
+mod ws;
+
+use std::sync::Arc;
+use axum::{
+    Router,
+    extract::{State, WebSocketUpgrade},
+    response::IntoResponse,
+    routing::get,
+};
+use tokio::sync::Mutex;
+use tracing::info;
+use powergrid_core::{GameState, map::Map};
+
+pub type SharedState = Arc<Mutex<ServerState>>;
+
+pub struct ServerState {
+    pub game: GameState,
+    /// Senders for all connected clients: (player_id, tx).
+    pub clients: Vec<(uuid::Uuid, tokio::sync::mpsc::UnboundedSender<String>)>,
+}
+
+impl ServerState {
+    pub fn new(map: Map) -> Self {
+        Self {
+            game: GameState::new(map, 6),
+            clients: Vec::new(),
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt::init();
+
+    let map_path = std::env::var("MAP_FILE")
+        .unwrap_or_else(|_| "maps/germany.toml".to_string());
+    let port = std::env::var("PORT")
+        .unwrap_or_else(|_| "3000".to_string());
+
+    let map_str = std::fs::read_to_string(&map_path)
+        .unwrap_or_else(|e| panic!("Failed to read map file {map_path}: {e}"));
+    let map = Map::load(&map_str)
+        .unwrap_or_else(|e| panic!("Failed to parse map: {e}"));
+
+    info!("Loaded map: {}", map.name);
+
+    let state: SharedState = Arc::new(Mutex::new(ServerState::new(map)));
+
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/ws", get(ws_handler))
+        .with_state(state);
+
+    let addr = format!("0.0.0.0:{port}");
+    info!("Listening on {addr}");
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+
+async fn health() -> &'static str {
+    "ok"
+}
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<SharedState>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| ws::handle_socket(socket, state))
+}

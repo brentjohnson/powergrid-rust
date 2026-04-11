@@ -1,0 +1,11 @@
+services:
+  server:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./maps:/app/maps:ro
+    environment:
+      - PORT=3000
+      - MAP_FILE=maps/germany.toml
+      - RUST_LOG=info
