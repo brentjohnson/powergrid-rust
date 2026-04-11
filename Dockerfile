@@ -1,6 +1,4 @@
-FROM rust:alpine AS builder
-
-RUN apk add --no-cache musl-dev
+FROM rust:slim-trixie AS builder
 
 WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
@@ -12,7 +10,7 @@ COPY crates/powergrid-client/Cargo.toml crates/powergrid-client/Cargo.toml
 
 RUN cargo build --release -p powergrid-server
 
-FROM alpine:3.20
+FROM debian:trixie-slim
 
 WORKDIR /app
 COPY --from=builder /app/target/release/powergrid-server ./
