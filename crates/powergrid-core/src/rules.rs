@@ -123,10 +123,15 @@ fn handle_select_plant(
     // Start bid at the plant's number (minimum bid).
     // The selector has implicitly bid the minimum by selecting; exclude them so
     // other players respond first. They re-enter the rotation if outbid.
-    let remaining_bidders = state.player_order.iter()
+    let remaining_bidders: Vec<PlayerId> = state.player_order.iter()
         .filter(|&&id| !bought.contains(&id) && !passed.contains(&id) && id != actor)
         .cloned()
         .collect();
+
+    // If no other players remain to bid, the selector wins at minimum bid immediately.
+    if remaining_bidders.is_empty() {
+        return award_plant(state, actor, plant_number, plant_number as u32, bought, passed);
+    }
 
     state.phase = Phase::Auction {
         current_bidder_idx,
@@ -757,6 +762,29 @@ mod tests {
         // Can't build a city before game starts.
         let err = apply_action(&mut state, p1, Action::BuildCity { city_id: "a".into() });
         assert!(matches!(err, Err(ActionError::WrongPhase)));
+    }
+
+    #[test]
+    fn test_last_player_auto_wins_plant_at_minimum() {
+        let (mut state, p1, p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        // p1 goes first — passes their auction turn.
+        apply_action(&mut state, p1, Action::PassAuction).unwrap();
+
+        // Now only p2 remains. Selecting a plant should immediately award it at minimum bid.
+        apply_action(&mut state, p2, Action::SelectPlant { plant_number: 3 }).unwrap();
+
+        // Should have advanced past auction into BuyResources.
+        assert!(
+            matches!(state.phase, Phase::BuyResources { .. }),
+            "expected BuyResources after last player auto-wins plant, got {:?}", state.phase
+        );
+
+        // p2 should own plant 3 and have been charged its minimum bid (3).
+        let p2_player = state.player(p2).unwrap();
+        assert!(p2_player.plants.iter().any(|p| p.number == 3));
+        assert_eq!(p2_player.money, 50 - 3);
     }
 
     #[test]
