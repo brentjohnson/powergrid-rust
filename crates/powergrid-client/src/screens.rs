@@ -133,7 +133,7 @@ pub fn lobby_view(state: &GameState, is_host: bool) -> Element<'_, Message> {
 // Game screen
 // ---------------------------------------------------------------------------
 
-pub fn game_view(state: &GameState, my_id: uuid::Uuid) -> Element<'_, Message> {
+pub fn game_view<'a>(state: &'a GameState, my_id: uuid::Uuid, bid_amount: &'a str) -> Element<'a, Message> {
     let phase_label = phase_description(&state.phase);
 
     let me = state.player(my_id);
@@ -181,7 +181,7 @@ pub fn game_view(state: &GameState, my_id: uuid::Uuid) -> Element<'_, Message> {
                 "Resources — Coal: {}  Oil: {}  Garbage: {}  Uranium: {}",
                 res.coal, res.oil, res.garbage, res.uranium
             )),
-            action_panel(state, my_id),
+            action_panel(state, my_id, bid_amount),
         ]
         .spacing(8)
         .into()
@@ -275,17 +275,22 @@ fn plant_card_handle(number: u8) -> iced::widget::image::Handle {
     iced::widget::image::Handle::from_bytes(bytes)
 }
 
-fn action_panel(state: &GameState, my_id: uuid::Uuid) -> Element<'_, Message> {
+fn action_panel<'a>(state: &'a GameState, my_id: uuid::Uuid, bid_amount: &'a str) -> Element<'a, Message> {
     match &state.phase {
         Phase::Auction { current_bidder_idx, active_bid, .. } => {
             let my_turn = state.player_order.get(*current_bidder_idx) == Some(&my_id);
             if let Some(bid) = active_bid {
                 let is_my_bid_turn = bid.remaining_bidders.first() == Some(&my_id);
                 if is_my_bid_turn {
+                    let bid_valid = bid_amount.trim().parse::<u32>().is_ok();
                     column![
                         text(format!("Active bid on plant #{}: ${}", bid.plant_number, bid.amount)),
-                        text("Enter amount in text field and press Bid, or Pass"),
+                        text("Enter amount and press Bid, or Pass"),
                         row![
+                            text_input("Enter bid amount", bid_amount)
+                                .on_input(Message::BidAmountChanged)
+                                .width(150),
+                            button("Bid").on_press_maybe(bid_valid.then_some(Message::PlaceBid)),
                             button("Pass Bid").on_press(Message::PassAuction),
                         ].spacing(8),
                     ].spacing(8).into()

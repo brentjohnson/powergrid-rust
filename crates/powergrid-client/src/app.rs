@@ -25,6 +25,8 @@ pub enum Message {
 
     // Auction
     SelectPlant(u8),
+    BidAmountChanged(String),
+    PlaceBid,
     PassAuction,
 
     // Buy resources
@@ -54,6 +56,8 @@ pub struct App {
     connect_url: Option<String>,
     /// Name + color saved at Connect time, sent to server after Welcome arrives.
     pending_join: Option<(String, PlayerColor)>,
+    /// Current text in the bid amount input field.
+    bid_amount: String,
 }
 
 impl App {
@@ -66,6 +70,7 @@ impl App {
                 ws_sender: None,
                 connect_url: None,
                 pending_join: None,
+                bid_amount: String::new(),
             },
             iced::Task::none(),
         )
@@ -139,6 +144,15 @@ impl App {
             Message::SelectPlant(num) => {
                 self.send(Action::SelectPlant { plant_number: num });
             }
+            Message::BidAmountChanged(val) => {
+                self.bid_amount = val;
+            }
+            Message::PlaceBid => {
+                if let Ok(amount) = self.bid_amount.trim().parse::<u32>() {
+                    self.send(Action::PlaceBid { amount });
+                    self.bid_amount = String::new();
+                }
+            }
             Message::PassAuction => {
                 self.send(Action::PassAuction);
             }
@@ -179,7 +193,7 @@ impl App {
                     if matches!(state.phase, powergrid_core::types::Phase::Lobby) {
                         screens::lobby_view(state, is_host)
                     } else {
-                        screens::game_view(state, my_id)
+                        screens::game_view(state, my_id, &self.bid_amount)
                     }
                 } else {
                     iced::widget::text("Connecting...").into()
