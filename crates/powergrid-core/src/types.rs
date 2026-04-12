@@ -133,18 +133,12 @@ impl ResourceMarket {
         }
         let table = price_table(resource);
         let mut total = 0u32;
-        // Resources are bought from the most expensive available slot downward.
-        // Slot index 0 = scarcest (most expensive).
-        let slots = table.len() as u8;
-        // Occupied slots count from the right (cheapest side).
-        // We buy from the leftmost occupied slots (most expensive available).
-        let first_occupied = slots - current; // index of cheapest available slot
-        for i in 0..amount {
-            let slot = first_occupied + i;
-            if slot as usize >= table.len() {
-                return None;
-            }
-            total += table[slot as usize] as u32;
+        // Slot index 0 = scarcest (most expensive). Resources occupy slots 0..(current-1).
+        // Buy from cheapest available (index current-1) upward toward the expensive end.
+        let last_occupied = (current - 1) as usize;
+        for i in 0..amount as usize {
+            let slot = last_occupied - i;
+            total += table[slot] as u32;
         }
         Some(total)
     }
@@ -154,7 +148,7 @@ impl ResourceMarket {
 fn price_table(resource: Resource) -> &'static [u8] {
     match resource {
         Resource::Coal => &[
-            8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            8, 8, 8, 7, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1,
         ],
         Resource::Oil => &[
             8, 8, 8, 7, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1,
