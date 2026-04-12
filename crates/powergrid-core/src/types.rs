@@ -156,9 +156,13 @@ fn price_table(resource: Resource) -> &'static [u8] {
         Resource::Coal => &[
             8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         ],
-        Resource::Oil => &[8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1, 1, 1],
-        Resource::Garbage => &[8, 7, 6, 5, 4, 3, 2, 1, 1, 1], // padded to match actual board
-        Resource::Uranium => &[16, 14, 12, 10, 8, 6, 4, 2, 1, 1],
+        Resource::Oil => &[
+            8, 8, 8, 7, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1,
+        ],
+        Resource::Garbage => &[
+            8, 8, 8, 7, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1,
+        ],
+        Resource::Uranium => &[16, 14, 12, 10, 8, 7, 6, 5, 4, 3, 2, 1],
     }
 }
 

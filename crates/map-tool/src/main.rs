@@ -261,15 +261,13 @@ impl App {
 
         // Use a column for the map area so the image+canvas stack gets laid out
         // the same way the original tool did (column > stack).
-        let map_col = column![
-            stack![
-                iced::widget::image(self.image_handle.clone())
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .content_fit(ContentFit::Contain),
-                canvas(overlay).width(Length::Fill).height(Length::Fill),
-            ],
-        ]
+        let map_col = column![stack![
+            iced::widget::image(self.image_handle.clone())
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .content_fit(ContentFit::Contain),
+            canvas(overlay).width(Length::Fill).height(Length::Fill),
+        ],]
         .width(Length::Fill)
         .height(Length::Fill);
 
@@ -304,7 +302,7 @@ impl App {
 
 /// Standard slot counts per resource (matches price_table lengths in powergrid-core).
 const STANDARD_SLOTS: &[(&str, usize)] =
-    &[("coal", 24), ("oil", 18), ("garbage", 10), ("uranium", 10)];
+    &[("coal", 24), ("oil", 24), ("garbage", 24), ("uranium", 12)];
 
 fn build_slot_list(map_data: &MapData) -> Vec<Slot> {
     // If the TOML already declares resource_slots, use the set of (resource, index) pairs

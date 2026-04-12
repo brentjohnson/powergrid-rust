@@ -1,5 +1,5 @@
 
-* Change resource market placements to listed coordinates
+* Fix number of resources
 * Add the coordinates of various things in the map definition files (like resources, cities, tracks, etc)
 * Modify the map tool to generate the map config by allowing selection of things
 
