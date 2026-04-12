@@ -608,9 +608,7 @@ fn handle_power_cities(
                 .clone();
             if plant.kind.needs_resources() {
                 let r = plant.kind.resources()[0];
-                if !player.resources.remove(r, plant.cost)
-                    && plant.kind == PlantKind::CoalOrOil
-                {
+                if !player.resources.remove(r, plant.cost) && plant.kind == PlantKind::CoalOrOil {
                     player.resources.remove(Resource::Oil, plant.cost);
                 }
             }
@@ -1158,7 +1156,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_plant_shared_capacity() {
-        use crate::types::{PlantKind, PlayerColor, PlayerResources, PowerPlant};
+        use crate::types::{PlantKind, PlayerColor, PowerPlant};
 
         // A CoalOrOil plant with cost=2 holds 4 total resources (coal + oil combined).
         let mut player = crate::types::Player::new("Test".into(), PlayerColor::Red);

@@ -4,7 +4,7 @@ use iced::{
     Element, Length,
 };
 use powergrid_core::{
-    types::{Phase, PlayerColor, Resource},
+    types::{Phase, PlayerColor, PlayerId, Resource},
     GameState,
 };
 
@@ -149,17 +149,29 @@ pub fn game_view<'a>(
 
     let me = state.player(my_id);
 
-    // Player status panel.
+    let active_player_id = active_player(state);
+
+    // Player status panel — ordered by turn order.
+    let ordered_players: Vec<_> = state
+        .player_order
+        .iter()
+        .filter_map(|id| state.player(*id))
+        .collect();
     let player_panel =
-        state
-            .players
+        ordered_players
             .iter()
             .fold(column![text("Players").size(16)].spacing(4), |col, p| {
-                let marker = if p.id == my_id { " ◀" } else { "" };
+                let mut markers = String::new();
+                if Some(p.id) == active_player_id {
+                    markers.push_str(" *");
+                }
+                if p.id == my_id {
+                    markers.push_str(" (you)");
+                }
                 col.push(text(format!(
                     "{}{}: {} cities, ${}, plants: {}",
                     p.name,
-                    marker,
+                    markers,
                     p.cities.len(),
                     p.money,
                     p.plants
@@ -419,6 +431,26 @@ fn action_panel<'a>(
             text(format!("Game Over! {} wins!", name)).size(24).into()
         }
         _ => text("").into(),
+    }
+}
+
+fn active_player(state: &GameState) -> Option<PlayerId> {
+    match &state.phase {
+        Phase::Auction {
+            current_bidder_idx,
+            active_bid,
+            ..
+        } => {
+            if let Some(bid) = active_bid {
+                bid.remaining_bidders.first().copied()
+            } else {
+                state.player_order.get(*current_bidder_idx).copied()
+            }
+        }
+        Phase::BuyResources { remaining } => remaining.first().copied(),
+        Phase::BuildCities { remaining } => remaining.first().copied(),
+        Phase::Bureaucracy { remaining } => remaining.first().copied(),
+        _ => None,
     }
 }
 

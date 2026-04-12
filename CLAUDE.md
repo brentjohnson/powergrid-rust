@@ -33,6 +33,10 @@ cargo run -p powergrid-client
 docker compose up --build
 ```
 
+## Workflow
+
+Before running a build, do "cargo fmt" "cargo check" and run clippy.  Then fix any issues before building.
+
 ## Architecture
 
 Three-crate Cargo workspace:

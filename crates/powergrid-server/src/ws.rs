@@ -61,7 +61,8 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                 );
                 // Broadcast full state to all clients.
                 let msg =
-                    serde_json::to_string(&ServerMessage::StateUpdate(Box::new(s.game.clone()))).unwrap();
+                    serde_json::to_string(&ServerMessage::StateUpdate(Box::new(s.game.clone())))
+                        .unwrap();
                 s.clients
                     .retain(|(_, tx): &(Uuid, _)| tx.send(msg.clone()).is_ok());
             }
