@@ -15,7 +15,9 @@ pub fn apply_action(
         Action::SelectPlant { plant_number } => handle_select_plant(state, actor, plant_number),
         Action::PlaceBid { amount } => handle_place_bid(state, actor, amount),
         Action::PassAuction => handle_pass_auction(state, actor),
-        Action::BuyResources { resource, amount } => handle_buy_resources(state, actor, resource, amount),
+        Action::BuyResources { resource, amount } => {
+            handle_buy_resources(state, actor, resource, amount)
+        }
         Action::DoneBuying => handle_done_buying(state, actor),
         Action::BuildCity { city_id } => handle_build_city(state, actor, city_id),
         Action::DoneBuilding => handle_done_building(state, actor),
@@ -95,9 +97,17 @@ fn handle_select_plant(
     plant_number: u8,
 ) -> Result<(), ActionError> {
     let (current_bidder_idx, active_bid, bought, passed) = match &state.phase {
-        Phase::Auction { current_bidder_idx, active_bid, bought, passed } => {
-            (*current_bidder_idx, active_bid.clone(), bought.clone(), passed.clone())
-        }
+        Phase::Auction {
+            current_bidder_idx,
+            active_bid,
+            bought,
+            passed,
+        } => (
+            *current_bidder_idx,
+            active_bid.clone(),
+            bought.clone(),
+            passed.clone(),
+        ),
         _ => return Err(ActionError::WrongPhase),
     };
 
@@ -123,14 +133,23 @@ fn handle_select_plant(
     // Start bid at the plant's number (minimum bid).
     // The selector has implicitly bid the minimum by selecting; exclude them so
     // other players respond first. They re-enter the rotation if outbid.
-    let remaining_bidders: Vec<PlayerId> = state.player_order.iter()
+    let remaining_bidders: Vec<PlayerId> = state
+        .player_order
+        .iter()
         .filter(|&&id| !bought.contains(&id) && !passed.contains(&id) && id != actor)
         .cloned()
         .collect();
 
     // If no other players remain to bid, the selector wins at minimum bid immediately.
     if remaining_bidders.is_empty() {
-        return award_plant(state, actor, plant_number, plant_number as u32, bought, passed);
+        return award_plant(
+            state,
+            actor,
+            plant_number,
+            plant_number as u32,
+            bought,
+            passed,
+        );
     }
 
     state.phase = Phase::Auction {
@@ -153,16 +172,28 @@ fn handle_place_bid(
     amount: u32,
 ) -> Result<(), ActionError> {
     let (current_bidder_idx, active_bid, bought, passed) = match &state.phase {
-        Phase::Auction { current_bidder_idx, active_bid, bought, passed } => {
-            (*current_bidder_idx, active_bid.clone(), bought.clone(), passed.clone())
-        }
+        Phase::Auction {
+            current_bidder_idx,
+            active_bid,
+            bought,
+            passed,
+        } => (
+            *current_bidder_idx,
+            active_bid.clone(),
+            bought.clone(),
+            passed.clone(),
+        ),
         _ => return Err(ActionError::WrongPhase),
     };
 
     let mut bid = active_bid.ok_or(ActionError::WrongPhase)?;
 
     // It must be this player's turn to bid.
-    let next_bidder = bid.remaining_bidders.first().copied().ok_or(ActionError::WrongPhase)?;
+    let next_bidder = bid
+        .remaining_bidders
+        .first()
+        .copied()
+        .ok_or(ActionError::WrongPhase)?;
     if actor != next_bidder {
         return Err(ActionError::NotYourTurn);
     }
@@ -198,15 +229,27 @@ fn handle_place_bid(
 
 fn handle_pass_auction(state: &mut GameState, actor: PlayerId) -> Result<(), ActionError> {
     let (current_bidder_idx, active_bid, bought, mut passed) = match &state.phase {
-        Phase::Auction { current_bidder_idx, active_bid, bought, passed } => {
-            (*current_bidder_idx, active_bid.clone(), bought.clone(), passed.clone())
-        }
+        Phase::Auction {
+            current_bidder_idx,
+            active_bid,
+            bought,
+            passed,
+        } => (
+            *current_bidder_idx,
+            active_bid.clone(),
+            bought.clone(),
+            passed.clone(),
+        ),
         _ => return Err(ActionError::WrongPhase),
     };
 
     if let Some(mut bid) = active_bid {
         // Passing on an active bid — remove this player from the rotation.
-        let next_bidder = bid.remaining_bidders.first().copied().ok_or(ActionError::WrongPhase)?;
+        let next_bidder = bid
+            .remaining_bidders
+            .first()
+            .copied()
+            .ok_or(ActionError::WrongPhase)?;
         if actor != next_bidder {
             return Err(ActionError::NotYourTurn);
         }
@@ -215,7 +258,14 @@ fn handle_pass_auction(state: &mut GameState, actor: PlayerId) -> Result<(), Act
 
         if bid.remaining_bidders.is_empty() || bid.remaining_bidders == vec![bid.highest_bidder] {
             // Auction resolved — winner buys the plant.
-            award_plant(state, bid.highest_bidder, bid.plant_number, bid.amount, bought, passed)?;
+            award_plant(
+                state,
+                bid.highest_bidder,
+                bid.plant_number,
+                bid.amount,
+                bought,
+                passed,
+            )?;
         } else {
             state.phase = Phase::Auction {
                 current_bidder_idx,
@@ -245,7 +295,9 @@ fn award_plant(
     mut bought: Vec<PlayerId>,
     passed: Vec<PlayerId>,
 ) -> Result<(), ActionError> {
-    let plant = state.market.take_from_actual(plant_number)
+    let plant = state
+        .market
+        .take_from_actual(plant_number)
         .ok_or(ActionError::PlantNotInMarket(plant_number))?;
 
     let player = state.player_mut(winner).ok_or(ActionError::UnknownPlayer)?;
@@ -269,7 +321,11 @@ fn award_plant(
     bought.push(winner);
 
     // Find current_bidder_idx for the winner.
-    let current_bidder_idx = state.player_order.iter().position(|&id| id == winner).unwrap_or(0);
+    let current_bidder_idx = state
+        .player_order
+        .iter()
+        .position(|&id| id == winner)
+        .unwrap_or(0);
     advance_auction(state, current_bidder_idx, bought, passed);
     Ok(())
 }
@@ -337,7 +393,9 @@ fn handle_buy_resources(
         return Err(ActionError::NotYourTurn);
     }
 
-    let cost = state.resources.price(resource, amount)
+    let cost = state
+        .resources
+        .price(resource, amount)
         .ok_or(ActionError::ResourceUnavailable)?;
 
     let player = state.player(actor).ok_or(ActionError::UnknownPlayer)?;
@@ -402,7 +460,10 @@ fn handle_build_city(
         return Err(ActionError::NotYourTurn);
     }
 
-    let city = state.map.cities.get(&city_id)
+    let city = state
+        .map
+        .cities
+        .get(&city_id)
         .ok_or_else(|| ActionError::CityNotFound(city_id.clone()))?;
 
     if city.owners.len() >= 3 {
@@ -414,7 +475,10 @@ fn handle_build_city(
 
     let player = state.player(actor).ok_or(ActionError::UnknownPlayer)?;
     let owned_cities = player.cities.clone();
-    let route_cost = state.map.connection_cost_to(&owned_cities, &city_id).unwrap_or(0);
+    let route_cost = state
+        .map
+        .connection_cost_to(&owned_cities, &city_id)
+        .unwrap_or(0);
     let city_slot_cost = connection_cost(state.map.cities[&city_id].owners.len());
     let total_cost = route_cost + city_slot_cost;
 
@@ -426,7 +490,13 @@ fn handle_build_city(
     player.money -= total_cost;
     player.cities.push(city_id.clone());
 
-    state.map.cities.get_mut(&city_id).unwrap().owners.push(actor);
+    state
+        .map
+        .cities
+        .get_mut(&city_id)
+        .unwrap()
+        .owners
+        .push(actor);
     state.log(format!(
         "{} built in {}",
         state.player(actor).map(|p| p.name.as_str()).unwrap_or("?"),
@@ -434,7 +504,12 @@ fn handle_build_city(
     ));
 
     // Check end-game trigger.
-    let max_cities = state.players.iter().map(|p| p.cities.len()).max().unwrap_or(0);
+    let max_cities = state
+        .players
+        .iter()
+        .map(|p| p.cities.len())
+        .max()
+        .unwrap_or(0);
     if max_cities >= state.end_game_cities as usize {
         // End-game triggered; finish the round normally then score.
         state.log("End-game triggered! Finish the round.".to_string());
@@ -527,7 +602,12 @@ fn handle_power_cities(
     {
         let player = state.player_mut(actor).ok_or(ActionError::UnknownPlayer)?;
         for &num in &plant_numbers {
-            let plant = player.plants.iter().find(|p| p.number == num).unwrap().clone();
+            let plant = player
+                .plants
+                .iter()
+                .find(|p| p.number == num)
+                .unwrap()
+                .clone();
             if plant.kind.needs_resources() {
                 let r = plant.kind.resources()[0];
                 if !player.resources.remove(r, plant.cost) {
@@ -571,7 +651,10 @@ fn end_of_round(state: &mut GameState) {
     let winner = determine_winner(state);
     if let Some(winner_id) = winner {
         state.phase = Phase::GameOver { winner: winner_id };
-        let name = state.player(winner_id).map(|p| p.name.clone()).unwrap_or_default();
+        let name = state
+            .player(winner_id)
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
         state.log(format!("{} wins!", name));
         return;
     }
@@ -589,7 +672,9 @@ fn end_of_round(state: &mut GameState) {
 
 fn determine_winner(state: &GameState) -> Option<PlayerId> {
     // Check if any player hit the end-game city threshold.
-    let triggered = state.players.iter()
+    let triggered = state
+        .players
+        .iter()
         .any(|p| p.cities.len() >= state.end_game_cities as usize);
     if !triggered {
         return None;
@@ -597,7 +682,9 @@ fn determine_winner(state: &GameState) -> Option<PlayerId> {
 
     // Winner: player who can power the most cities.
     // Tie: most money.
-    state.players.iter()
+    state
+        .players
+        .iter()
         .max_by_key(|p| (p.cities_powerable(), p.money))
         .map(|p| p.id)
 }
@@ -644,47 +731,252 @@ fn replenish_resources(state: &mut GameState) {
 pub fn build_plant_deck() -> PlantMarket {
     let mut all_plants: Vec<PowerPlant> = vec![
         // number, kind, resource cost, cities powered
-        PowerPlant { number: 3,  kind: PlantKind::Oil,       cost: 2, cities: 1 },
-        PowerPlant { number: 4,  kind: PlantKind::Coal,      cost: 2, cities: 1 },
-        PowerPlant { number: 5,  kind: PlantKind::Garbage,   cost: 2, cities: 1 },
-        PowerPlant { number: 6,  kind: PlantKind::Coal,      cost: 1, cities: 1 },
-        PowerPlant { number: 7,  kind: PlantKind::Oil,       cost: 3, cities: 2 },
-        PowerPlant { number: 8,  kind: PlantKind::Coal,      cost: 3, cities: 2 },
-        PowerPlant { number: 9,  kind: PlantKind::Oil,       cost: 1, cities: 1 },
-        PowerPlant { number: 10, kind: PlantKind::Coal,      cost: 2, cities: 2 },
-        PowerPlant { number: 11, kind: PlantKind::Uranium,   cost: 1, cities: 2 },
-        PowerPlant { number: 12, kind: PlantKind::CoalOrOil, cost: 2, cities: 2 },
-        PowerPlant { number: 13, kind: PlantKind::Wind,      cost: 0, cities: 1 },
-        PowerPlant { number: 14, kind: PlantKind::Garbage,   cost: 2, cities: 2 },
-        PowerPlant { number: 15, kind: PlantKind::Coal,      cost: 2, cities: 3 },
-        PowerPlant { number: 16, kind: PlantKind::Oil,       cost: 2, cities: 3 },
-        PowerPlant { number: 17, kind: PlantKind::Uranium,   cost: 1, cities: 2 },
-        PowerPlant { number: 18, kind: PlantKind::Coal,      cost: 3, cities: 3 },  // actually garbage
-        PowerPlant { number: 19, kind: PlantKind::Garbage,   cost: 2, cities: 3 },
-        PowerPlant { number: 20, kind: PlantKind::Coal,      cost: 2, cities: 5 },  // wind
-        PowerPlant { number: 21, kind: PlantKind::CoalOrOil, cost: 2, cities: 4 },
-        PowerPlant { number: 22, kind: PlantKind::Wind,      cost: 0, cities: 2 },
-        PowerPlant { number: 23, kind: PlantKind::Uranium,   cost: 1, cities: 3 },
-        PowerPlant { number: 24, kind: PlantKind::Garbage,   cost: 2, cities: 4 },
-        PowerPlant { number: 25, kind: PlantKind::Coal,      cost: 2, cities: 5 },
-        PowerPlant { number: 26, kind: PlantKind::Oil,       cost: 2, cities: 5 },
-        PowerPlant { number: 27, kind: PlantKind::CoalOrOil, cost: 3, cities: 5 },
-        PowerPlant { number: 28, kind: PlantKind::Uranium,   cost: 1, cities: 4 },
-        PowerPlant { number: 29, kind: PlantKind::Wind,      cost: 0, cities: 4 },
-        PowerPlant { number: 30, kind: PlantKind::Garbage,   cost: 3, cities: 6 },
-        PowerPlant { number: 31, kind: PlantKind::Oil,       cost: 3, cities: 6 },
-        PowerPlant { number: 32, kind: PlantKind::Coal,      cost: 3, cities: 6 },
-        PowerPlant { number: 33, kind: PlantKind::Wind,      cost: 0, cities: 4 },
-        PowerPlant { number: 34, kind: PlantKind::Uranium,   cost: 1, cities: 5 },
-        PowerPlant { number: 35, kind: PlantKind::Oil,       cost: 1, cities: 5 },
-        PowerPlant { number: 36, kind: PlantKind::CoalOrOil, cost: 3, cities: 7 },
-        PowerPlant { number: 38, kind: PlantKind::Wind,      cost: 0, cities: 6 },
-        PowerPlant { number: 39, kind: PlantKind::Uranium,   cost: 1, cities: 6 },
-        PowerPlant { number: 40, kind: PlantKind::Oil,       cost: 2, cities: 6 },
-        PowerPlant { number: 42, kind: PlantKind::Coal,      cost: 2, cities: 6 },
-        PowerPlant { number: 44, kind: PlantKind::Wind,      cost: 0, cities: 7 },
-        PowerPlant { number: 46, kind: PlantKind::Garbage,   cost: 3, cities: 7 },
-        PowerPlant { number: 50, kind: PlantKind::Fusion,    cost: 0, cities: 6 },
+        PowerPlant {
+            number: 3,
+            kind: PlantKind::Oil,
+            cost: 2,
+            cities: 1,
+        },
+        PowerPlant {
+            number: 4,
+            kind: PlantKind::Coal,
+            cost: 2,
+            cities: 1,
+        },
+        PowerPlant {
+            number: 5,
+            kind: PlantKind::CoalOrOil,
+            cost: 2,
+            cities: 1,
+        },
+        PowerPlant {
+            number: 6,
+            kind: PlantKind::Garbage,
+            cost: 1,
+            cities: 1,
+        },
+        PowerPlant {
+            number: 7,
+            kind: PlantKind::Oil,
+            cost: 3,
+            cities: 2,
+        },
+        PowerPlant {
+            number: 8,
+            kind: PlantKind::Coal,
+            cost: 3,
+            cities: 2,
+        },
+        PowerPlant {
+            number: 9,
+            kind: PlantKind::Oil,
+            cost: 1,
+            cities: 1,
+        },
+        PowerPlant {
+            number: 10,
+            kind: PlantKind::Coal,
+            cost: 2,
+            cities: 2,
+        },
+        PowerPlant {
+            number: 11,
+            kind: PlantKind::Uranium,
+            cost: 1,
+            cities: 2,
+        },
+        PowerPlant {
+            number: 12,
+            kind: PlantKind::CoalOrOil,
+            cost: 2,
+            cities: 2,
+        },
+        PowerPlant {
+            number: 13,
+            kind: PlantKind::Wind,
+            cost: 0,
+            cities: 1,
+        },
+        PowerPlant {
+            number: 14,
+            kind: PlantKind::Garbage,
+            cost: 2,
+            cities: 2,
+        },
+        PowerPlant {
+            number: 15,
+            kind: PlantKind::Coal,
+            cost: 2,
+            cities: 3,
+        },
+        PowerPlant {
+            number: 16,
+            kind: PlantKind::Oil,
+            cost: 2,
+            cities: 3,
+        },
+        PowerPlant {
+            number: 17,
+            kind: PlantKind::Uranium,
+            cost: 1,
+            cities: 2,
+        },
+        PowerPlant {
+            number: 18,
+            kind: PlantKind::Wind,
+            cost: 0,
+            cities: 2,
+        },
+        PowerPlant {
+            number: 19,
+            kind: PlantKind::Garbage,
+            cost: 2,
+            cities: 3,
+        },
+        PowerPlant {
+            number: 20,
+            kind: PlantKind::Coal,
+            cost: 3,
+            cities: 5,
+        },
+        PowerPlant {
+            number: 21,
+            kind: PlantKind::CoalOrOil,
+            cost: 2,
+            cities: 4,
+        },
+        PowerPlant {
+            number: 22,
+            kind: PlantKind::Wind,
+            cost: 0,
+            cities: 2,
+        },
+        PowerPlant {
+            number: 23,
+            kind: PlantKind::Uranium,
+            cost: 1,
+            cities: 3,
+        },
+        PowerPlant {
+            number: 24,
+            kind: PlantKind::Garbage,
+            cost: 2,
+            cities: 4,
+        },
+        PowerPlant {
+            number: 25,
+            kind: PlantKind::Coal,
+            cost: 2,
+            cities: 5,
+        },
+        PowerPlant {
+            number: 26,
+            kind: PlantKind::Oil,
+            cost: 2,
+            cities: 5,
+        },
+        PowerPlant {
+            number: 27,
+            kind: PlantKind::Wind,
+            cost: 0,
+            cities: 3,
+        },
+        PowerPlant {
+            number: 28,
+            kind: PlantKind::Uranium,
+            cost: 1,
+            cities: 4,
+        },
+        PowerPlant {
+            number: 29,
+            kind: PlantKind::CoalOrOil,
+            cost: 1,
+            cities: 4,
+        },
+        PowerPlant {
+            number: 30,
+            kind: PlantKind::Garbage,
+            cost: 3,
+            cities: 6,
+        },
+        PowerPlant {
+            number: 31,
+            kind: PlantKind::Coal,
+            cost: 3,
+            cities: 6,
+        },
+        PowerPlant {
+            number: 32,
+            kind: PlantKind::Oil,
+            cost: 3,
+            cities: 6,
+        },
+        PowerPlant {
+            number: 33,
+            kind: PlantKind::Wind,
+            cost: 0,
+            cities: 4,
+        },
+        PowerPlant {
+            number: 34,
+            kind: PlantKind::Uranium,
+            cost: 1,
+            cities: 5,
+        },
+        PowerPlant {
+            number: 35,
+            kind: PlantKind::Oil,
+            cost: 1,
+            cities: 5,
+        },
+        PowerPlant {
+            number: 36,
+            kind: PlantKind::Coal,
+            cost: 3,
+            cities: 7,
+        },
+        PowerPlant {
+            number: 38,
+            kind: PlantKind::Garbage,
+            cost: 3,
+            cities: 7,
+        },
+        PowerPlant {
+            number: 39,
+            kind: PlantKind::Uranium,
+            cost: 1,
+            cities: 6,
+        },
+        PowerPlant {
+            number: 40,
+            kind: PlantKind::Oil,
+            cost: 2,
+            cities: 6,
+        },
+        PowerPlant {
+            number: 42,
+            kind: PlantKind::Coal,
+            cost: 2,
+            cities: 6,
+        },
+        PowerPlant {
+            number: 44,
+            kind: PlantKind::Wind,
+            cost: 0,
+            cities: 5,
+        },
+        PowerPlant {
+            number: 46,
+            kind: PlantKind::CoalOrOil,
+            cost: 3,
+            cities: 7,
+        },
+        PowerPlant {
+            number: 50,
+            kind: PlantKind::Fusion,
+            cost: 0,
+            cities: 6,
+        },
     ];
 
     all_plants.sort_by_key(|p| p.number);
@@ -692,32 +984,65 @@ pub fn build_plant_deck() -> PlantMarket {
     // Plants 3–10 form the initial market visible at game start.
     // The "13" card is set aside (Step 3 card — deferred for MVP).
     // For MVP: put the 8 lowest into actual+future, rest into deck.
-    let initial: Vec<PowerPlant> = all_plants.iter().filter(|p| p.number <= 10).cloned().collect();
-    let deck: Vec<PowerPlant> = all_plants.iter().filter(|p| p.number > 10).rev().cloned().collect();
+    let initial: Vec<PowerPlant> = all_plants
+        .iter()
+        .filter(|p| p.number <= 10)
+        .cloned()
+        .collect();
+    let deck: Vec<PowerPlant> = all_plants
+        .iter()
+        .filter(|p| p.number > 10)
+        .rev()
+        .cloned()
+        .collect();
 
     let actual = initial.iter().take(4).cloned().collect();
     let future = initial.iter().skip(4).cloned().collect();
 
-    PlantMarket { actual, future, deck }
+    PlantMarket {
+        actual,
+        future,
+        deck,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::{Map, MapData, CityData, ConnectionData};
+    use crate::map::{CityData, ConnectionData, Map, MapData};
 
     fn test_map() -> Map {
         Map::from_data(MapData {
             name: "Test".into(),
             regions: vec!["r1".into()],
             cities: vec![
-                CityData { id: "a".into(), name: "A".into(), region: "r1".into() },
-                CityData { id: "b".into(), name: "B".into(), region: "r1".into() },
-                CityData { id: "c".into(), name: "C".into(), region: "r1".into() },
+                CityData {
+                    id: "a".into(),
+                    name: "A".into(),
+                    region: "r1".into(),
+                },
+                CityData {
+                    id: "b".into(),
+                    name: "B".into(),
+                    region: "r1".into(),
+                },
+                CityData {
+                    id: "c".into(),
+                    name: "C".into(),
+                    region: "r1".into(),
+                },
             ],
             connections: vec![
-                ConnectionData { from: "a".into(), to: "b".into(), cost: 5 },
-                ConnectionData { from: "b".into(), to: "c".into(), cost: 3 },
+                ConnectionData {
+                    from: "a".into(),
+                    to: "b".into(),
+                    cost: 5,
+                },
+                ConnectionData {
+                    from: "b".into(),
+                    to: "c".into(),
+                    cost: 3,
+                },
             ],
         })
     }
@@ -726,8 +1051,24 @@ mod tests {
         let mut state = GameState::new(test_map(), 2);
         let p1 = uuid::Uuid::new_v4();
         let p2 = uuid::Uuid::new_v4();
-        apply_action(&mut state, p1, Action::JoinGame { name: "Alice".into(), color: PlayerColor::Red }).unwrap();
-        apply_action(&mut state, p2, Action::JoinGame { name: "Bob".into(), color: PlayerColor::Blue }).unwrap();
+        apply_action(
+            &mut state,
+            p1,
+            Action::JoinGame {
+                name: "Alice".into(),
+                color: PlayerColor::Red,
+            },
+        )
+        .unwrap();
+        apply_action(
+            &mut state,
+            p2,
+            Action::JoinGame {
+                name: "Bob".into(),
+                color: PlayerColor::Blue,
+            },
+        )
+        .unwrap();
         (state, p1, p2)
     }
 
@@ -744,8 +1085,23 @@ mod tests {
         let mut state = GameState::new(test_map(), 2);
         let p1 = uuid::Uuid::new_v4();
         let p2 = uuid::Uuid::new_v4();
-        apply_action(&mut state, p1, Action::JoinGame { name: "Alice".into(), color: PlayerColor::Red }).unwrap();
-        let err = apply_action(&mut state, p2, Action::JoinGame { name: "Alice".into(), color: PlayerColor::Blue });
+        apply_action(
+            &mut state,
+            p1,
+            Action::JoinGame {
+                name: "Alice".into(),
+                color: PlayerColor::Red,
+            },
+        )
+        .unwrap();
+        let err = apply_action(
+            &mut state,
+            p2,
+            Action::JoinGame {
+                name: "Alice".into(),
+                color: PlayerColor::Blue,
+            },
+        );
         assert!(matches!(err, Err(ActionError::NameTaken)));
     }
 
@@ -760,7 +1116,13 @@ mod tests {
     fn test_wrong_phase_action() {
         let (mut state, p1, _p2) = two_player_game();
         // Can't build a city before game starts.
-        let err = apply_action(&mut state, p1, Action::BuildCity { city_id: "a".into() });
+        let err = apply_action(
+            &mut state,
+            p1,
+            Action::BuildCity {
+                city_id: "a".into(),
+            },
+        );
         assert!(matches!(err, Err(ActionError::WrongPhase)));
     }
 
@@ -778,7 +1140,8 @@ mod tests {
         // Should have advanced past auction into BuyResources.
         assert!(
             matches!(state.phase, Phase::BuyResources { .. }),
-            "expected BuyResources after last player auto-wins plant, got {:?}", state.phase
+            "expected BuyResources after last player auto-wins plant, got {:?}",
+            state.phase
         );
 
         // p2 should own plant 3 and have been charged its minimum bid (3).
