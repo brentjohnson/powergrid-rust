@@ -48,7 +48,7 @@ async fn ws_worker(url: String, event_tx: tokio::sync::mpsc::UnboundedSender<WsE
             tokio::select! {
                 Some(action) = action_rx.next() => {
                     let json = serde_json::to_string(&action).unwrap();
-                    if write.send(Message::Text(json.into())).await.is_err() {
+                    if write.send(Message::Text(json)).await.is_err() {
                         break;
                     }
                 }

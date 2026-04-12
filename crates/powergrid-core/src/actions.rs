@@ -79,7 +79,7 @@ pub enum ServerMessage {
     /// Sent immediately on connection so the client knows its own player ID.
     Welcome { your_id: crate::types::PlayerId },
     /// Full game state broadcast after every valid action.
-    StateUpdate(crate::state::GameState),
+    StateUpdate(Box<crate::state::GameState>),
     /// Sent only to the client whose action was rejected.
     ActionError { message: String },
     /// Informational event (e.g. "Hamburg was built by Red").

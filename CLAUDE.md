@@ -12,10 +12,13 @@ cargo build
 cargo test -p powergrid-core
 
 # Check types/lints
-cargo clippy --all-targets -- -D warnings
+cargo cargo clippy --all-targets --all-features -- -D warnings
 
 # Format code
 cargo fmt
+
+# Check code
+cargo check
 
 # Run a single test
 cargo test -p powergrid-core test_join_and_start

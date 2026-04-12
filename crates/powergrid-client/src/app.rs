@@ -124,7 +124,7 @@ impl App {
                             }
                         }
                         ServerMessage::StateUpdate(state) => {
-                            self.game_state = Some(state);
+                            self.game_state = Some(*state);
                             self.error_message = None;
                         }
                         ServerMessage::ActionError { message } => {

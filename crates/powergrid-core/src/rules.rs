@@ -610,10 +610,10 @@ fn handle_power_cities(
                 .clone();
             if plant.kind.needs_resources() {
                 let r = plant.kind.resources()[0];
-                if !player.resources.remove(r, plant.cost) {
-                    if plant.kind == PlantKind::CoalOrOil {
-                        player.resources.remove(Resource::Oil, plant.cost);
-                    }
+                if !player.resources.remove(r, plant.cost)
+                    && plant.kind == PlantKind::CoalOrOil
+                {
+                    player.resources.remove(Resource::Oil, plant.cost);
                 }
             }
         }
