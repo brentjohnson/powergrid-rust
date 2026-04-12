@@ -213,9 +213,11 @@ fn handle_place_bid(
     bid.remaining_bidders.remove(0);
     // Move this player to the end — they bid again only if others raise.
     bid.remaining_bidders.push(actor);
-    // Give the previous highest bidder a chance to counter-bid.
+    // Give the previous highest bidder a chance to counter-bid,
+    // but only after all other players who haven't bid yet get their turn.
     if old_highest != actor && !bid.remaining_bidders.contains(&old_highest) {
-        bid.remaining_bidders.insert(0, old_highest);
+        let insert_pos = bid.remaining_bidders.len() - 1;
+        bid.remaining_bidders.insert(insert_pos, old_highest);
     }
 
     state.phase = Phase::Auction {
@@ -1048,6 +1050,41 @@ mod tests {
         })
     }
 
+    fn three_player_game() -> (GameState, PlayerId, PlayerId, PlayerId) {
+        let mut state = GameState::new(test_map(), 3);
+        let p1 = uuid::Uuid::new_v4();
+        let p2 = uuid::Uuid::new_v4();
+        let p3 = uuid::Uuid::new_v4();
+        apply_action(
+            &mut state,
+            p1,
+            Action::JoinGame {
+                name: "Alice".into(),
+                color: PlayerColor::Red,
+            },
+        )
+        .unwrap();
+        apply_action(
+            &mut state,
+            p2,
+            Action::JoinGame {
+                name: "Bob".into(),
+                color: PlayerColor::Blue,
+            },
+        )
+        .unwrap();
+        apply_action(
+            &mut state,
+            p3,
+            Action::JoinGame {
+                name: "Carol".into(),
+                color: PlayerColor::Yellow,
+            },
+        )
+        .unwrap();
+        (state, p1, p2, p3)
+    }
+
     fn two_player_game() -> (GameState, PlayerId, PlayerId) {
         let mut state = GameState::new(test_map(), 2);
         let p1 = uuid::Uuid::new_v4();
@@ -1071,6 +1108,45 @@ mod tests {
         )
         .unwrap();
         (state, p1, p2)
+    }
+
+    #[test]
+    fn test_bid_order_after_overbid() {
+        // Scenario: p1 selects a plant, p2 overbids.
+        // The next bidder should be p3, not p1.
+        let (mut state, p1, p2, p3) = three_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        // Confirm player_order is [p1, p2, p3] so p1 selects first.
+        assert_eq!(state.player_order[0], p1);
+
+        // p1 selects the lowest-numbered plant in the actual market.
+        let plant_number = {
+            let Phase::Auction { .. } = &state.phase else {
+                panic!("expected Auction phase");
+            };
+            state.market.actual[0].number
+        };
+        let min_bid = plant_number as u32;
+
+        apply_action(&mut state, p1, Action::SelectPlant { plant_number }).unwrap();
+
+        // p2 overbids.
+        apply_action(
+            &mut state,
+            p2,
+            Action::PlaceBid {
+                amount: min_bid + 1,
+            },
+        )
+        .unwrap();
+
+        // Next bidder in remaining_bidders must be p3, not p1.
+        let Phase::Auction { active_bid, .. } = &state.phase else {
+            panic!("expected Auction phase after p2 bid");
+        };
+        let bid = active_bid.as_ref().expect("should have active bid");
+        assert_eq!(bid.remaining_bidders[0], p3, "p3 should bid next, not p1");
     }
 
     #[test]
