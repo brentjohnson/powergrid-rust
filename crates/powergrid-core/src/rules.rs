@@ -373,6 +373,11 @@ fn advance_auction(
 // ---------------------------------------------------------------------------
 
 fn begin_buy_resources(state: &mut GameState) {
+    // After the first auction, recalculate order based on plants purchased
+    // (no cities exist yet, so it sorts by highest plant number).
+    if state.round == 1 {
+        recalculate_player_order(state);
+    }
     // Reverse player order.
     let remaining: Vec<PlayerId> = state.player_order.iter().rev().cloned().collect();
     state.phase = Phase::BuyResources { remaining };
