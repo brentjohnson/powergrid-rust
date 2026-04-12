@@ -44,7 +44,7 @@ pub enum PlantKind {
     CoalOrOil,
     Garbage,
     Uranium,
-    Wind,  // no resource cost
+    Wind,   // no resource cost
     Fusion, // no resource cost (Step 3 era)
 }
 
@@ -153,10 +153,12 @@ impl ResourceMarket {
 /// Returns the price per unit at each market slot (index 0 = most expensive / scarce).
 fn price_table(resource: Resource) -> &'static [u8] {
     match resource {
-        Resource::Coal =>    &[8,8,7,7,6,6,5,5,4,4,3,3,2,2,1,1,1,1,1,1,1,1,1,1],
-        Resource::Oil =>     &[8,8,7,7,6,6,5,5,4,4,3,3,2,2,1,1,1,1],
-        Resource::Garbage => &[8,7,6,5,4,3,2,1,1,1],  // padded to match actual board
-        Resource::Uranium => &[16,14,12,10,8,6,4,2,1,1],
+        Resource::Coal => &[
+            8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        ],
+        Resource::Oil => &[8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1, 1, 1],
+        Resource::Garbage => &[8, 7, 6, 5, 4, 3, 2, 1, 1, 1], // padded to match actual board
+        Resource::Uranium => &[16, 14, 12, 10, 8, 6, 4, 2, 1, 1],
     }
 }
 
@@ -236,12 +238,19 @@ impl Player {
 
     /// Max resources this player can store across all their plants.
     pub fn resource_capacity(&self, resource: Resource) -> u8 {
-        self.plants.iter().map(|p| {
-            let accepts = p.kind.resources().contains(&resource)
-                || (resource == Resource::Coal && p.kind == PlantKind::CoalOrOil)
-                || (resource == Resource::Oil && p.kind == PlantKind::CoalOrOil);
-            if accepts { p.cost * 2 } else { 0 }
-        }).sum()
+        self.plants
+            .iter()
+            .map(|p| {
+                let accepts = p.kind.resources().contains(&resource)
+                    || (resource == Resource::Coal && p.kind == PlantKind::CoalOrOil)
+                    || (resource == Resource::Oil && p.kind == PlantKind::CoalOrOil);
+                if accepts {
+                    p.cost * 2
+                } else {
+                    0
+                }
+            })
+            .sum()
     }
 
     /// Number of cities this player can power given their plants and stored resources.
@@ -340,13 +349,9 @@ pub enum Phase {
         remaining: Vec<PlayerId>, // players yet to act, in order
     },
     /// Build cities phase: players build in reverse order.
-    BuildCities {
-        remaining: Vec<PlayerId>,
-    },
+    BuildCities { remaining: Vec<PlayerId> },
     /// Bureaucracy: power cities, collect income, restock market.
-    Bureaucracy {
-        remaining: Vec<PlayerId>,
-    },
+    Bureaucracy { remaining: Vec<PlayerId> },
     /// Game over.
     GameOver { winner: PlayerId },
 }

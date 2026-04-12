@@ -1,12 +1,12 @@
+use crate::app::Message;
 use iced::{
     widget::{button, column, container, row, scrollable, text, text_input},
     Element, Length,
 };
 use powergrid_core::{
-    GameState,
     types::{Phase, PlayerColor, Resource},
+    GameState,
 };
-use crate::app::Message;
 
 // ---------------------------------------------------------------------------
 // Connect screen
@@ -51,8 +51,7 @@ impl ConnectScreen {
             text_input("ws://localhost:3000/ws", &self.server_url)
                 .on_input(Message::ServerUrlChanged),
             text("Your Name"),
-            text_input("Enter your name", &self.player_name)
-                .on_input(Message::NameChanged),
+            text_input("Enter your name", &self.player_name).on_input(Message::NameChanged),
             text("Color"),
             color_buttons,
             connect_btn,
@@ -97,18 +96,21 @@ fn color_button(color: PlayerColor, selected: PlayerColor) -> Element<'static, M
 // Lobby screen
 // ---------------------------------------------------------------------------
 
-pub fn lobby_view<'a>(state: &'a GameState, is_host: bool, error: Option<&'a str>) -> Element<'a, Message> {
-    let players_list = state.players.iter().fold(
-        column![text("Players:").size(18)].spacing(4),
-        |col, p| col.push(text(format!("  {} ({:?})", p.name, p.color))),
-    );
+pub fn lobby_view<'a>(
+    state: &'a GameState,
+    is_host: bool,
+    error: Option<&'a str>,
+) -> Element<'a, Message> {
+    let players_list = state
+        .players
+        .iter()
+        .fold(column![text("Players:").size(18)].spacing(4), |col, p| {
+            col.push(text(format!("  {} ({:?})", p.name, p.color)))
+        });
 
-    let mut col = column![
-        text("Powergrid — Lobby").size(28),
-        players_list,
-    ]
-    .spacing(16)
-    .padding(40);
+    let mut col = column![text("Powergrid — Lobby").size(28), players_list,]
+        .spacing(16)
+        .padding(40);
 
     if is_host {
         let start_btn = if state.players.len() >= 2 {
@@ -137,26 +139,36 @@ pub fn lobby_view<'a>(state: &'a GameState, is_host: bool, error: Option<&'a str
 // Game screen
 // ---------------------------------------------------------------------------
 
-pub fn game_view<'a>(state: &'a GameState, my_id: uuid::Uuid, bid_amount: &'a str, error: Option<&'a str>) -> Element<'a, Message> {
+pub fn game_view<'a>(
+    state: &'a GameState,
+    my_id: uuid::Uuid,
+    bid_amount: &'a str,
+    error: Option<&'a str>,
+) -> Element<'a, Message> {
     let phase_label = phase_description(&state.phase);
 
     let me = state.player(my_id);
 
     // Player status panel.
-    let player_panel = state.players.iter().fold(
-        column![text("Players").size(16)].spacing(4),
-        |col, p| {
-            let marker = if p.id == my_id { " ◀" } else { "" };
-            col.push(text(format!(
-                "{}{}: {} cities, ${}, plants: {}",
-                p.name,
-                marker,
-                p.cities.len(),
-                p.money,
-                p.plants.iter().map(|pl| pl.number.to_string()).collect::<Vec<_>>().join(",")
-            )))
-        },
-    );
+    let player_panel =
+        state
+            .players
+            .iter()
+            .fold(column![text("Players").size(16)].spacing(4), |col, p| {
+                let marker = if p.id == my_id { " ◀" } else { "" };
+                col.push(text(format!(
+                    "{}{}: {} cities, ${}, plants: {}",
+                    p.name,
+                    marker,
+                    p.cities.len(),
+                    p.money,
+                    p.plants
+                        .iter()
+                        .map(|pl| pl.number.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )))
+            });
 
     // Power plant market.
     let market = column![
@@ -172,7 +184,10 @@ pub fn game_view<'a>(state: &'a GameState, my_id: uuid::Uuid, bid_amount: &'a st
     let res = &state.resources;
     let resources = column![
         text("Resources").size(16),
-        text(format!("Coal: {}  Oil: {}  Garbage: {}  Uranium: {}", res.coal, res.oil, res.garbage, res.uranium)),
+        text(format!(
+            "Coal: {}  Oil: {}  Garbage: {}  Uranium: {}",
+            res.coal, res.oil, res.garbage, res.uranium
+        )),
     ]
     .spacing(4);
 
@@ -198,10 +213,14 @@ pub fn game_view<'a>(state: &'a GameState, my_id: uuid::Uuid, bid_amount: &'a st
     };
 
     // Event log.
-    let log = state.event_log.iter().rev().take(10).fold(
-        column![text("Log").size(14)].spacing(2),
-        |col, entry| col.push(text(entry.as_str()).size(12)),
-    );
+    let log = state
+        .event_log
+        .iter()
+        .rev()
+        .take(10)
+        .fold(column![text("Log").size(14)].spacing(2), |col, entry| {
+            col.push(text(entry.as_str()).size(12))
+        });
 
     let left = column![
         text(format!("Round {} — {}", state.round, phase_label)).size(20),
@@ -223,37 +242,41 @@ pub fn game_view<'a>(state: &'a GameState, my_id: uuid::Uuid, bid_amount: &'a st
 }
 
 fn plants_row(plants: &[powergrid_core::types::PowerPlant]) -> Element<'static, Message> {
-    plants.iter().fold(row![].spacing(4), |r, p| {
-        let handle = plant_card_handle(p.number);
-        r.push(
-            button(iced::widget::image(handle).width(54).height(54))
-                .padding(0)
-                .on_press(Message::SelectPlant(p.number))
-        )
-    })
-    .into()
+    plants
+        .iter()
+        .fold(row![].spacing(4), |r, p| {
+            let handle = plant_card_handle(p.number);
+            r.push(
+                button(iced::widget::image(handle).width(54).height(54))
+                    .padding(0)
+                    .on_press(Message::SelectPlant(p.number)),
+            )
+        })
+        .into()
 }
 
 fn owned_plants_row(plants: &[powergrid_core::types::PowerPlant]) -> Element<'static, Message> {
     if plants.is_empty() {
         return text("(none)").size(12).into();
     }
-    plants.iter().fold(row![].spacing(4), |r, p| {
-        let handle = plant_card_handle(p.number);
-        r.push(iced::widget::image(handle).width(54).height(54))
-    })
-    .into()
+    plants
+        .iter()
+        .fold(row![].spacing(4), |r, p| {
+            let handle = plant_card_handle(p.number);
+            r.push(iced::widget::image(handle).width(54).height(54))
+        })
+        .into()
 }
 
 fn plant_card_handle(number: u8) -> iced::widget::image::Handle {
     let bytes: &'static [u8] = match number {
-        3  => include_bytes!("../assets/cards/card_03.png"),
-        4  => include_bytes!("../assets/cards/card_04.png"),
-        5  => include_bytes!("../assets/cards/card_05.png"),
-        6  => include_bytes!("../assets/cards/card_06.png"),
-        7  => include_bytes!("../assets/cards/card_07.png"),
-        8  => include_bytes!("../assets/cards/card_08.png"),
-        9  => include_bytes!("../assets/cards/card_09.png"),
+        3 => include_bytes!("../assets/cards/card_03.png"),
+        4 => include_bytes!("../assets/cards/card_04.png"),
+        5 => include_bytes!("../assets/cards/card_05.png"),
+        6 => include_bytes!("../assets/cards/card_06.png"),
+        7 => include_bytes!("../assets/cards/card_07.png"),
+        8 => include_bytes!("../assets/cards/card_08.png"),
+        9 => include_bytes!("../assets/cards/card_09.png"),
         10 => include_bytes!("../assets/cards/card_10.png"),
         11 => include_bytes!("../assets/cards/card_11.png"),
         12 => include_bytes!("../assets/cards/card_12.png"),
@@ -289,21 +312,32 @@ fn plant_card_handle(number: u8) -> iced::widget::image::Handle {
         44 => include_bytes!("../assets/cards/card_44.png"),
         46 => include_bytes!("../assets/cards/card_46.png"),
         50 => include_bytes!("../assets/cards/card_50.png"),
-        _  => include_bytes!("../assets/cards/card_step3.png"),
+        _ => include_bytes!("../assets/cards/card_step3.png"),
     };
     iced::widget::image::Handle::from_bytes(bytes)
 }
 
-fn action_panel<'a>(state: &'a GameState, my_id: uuid::Uuid, bid_amount: &'a str) -> Element<'a, Message> {
+fn action_panel<'a>(
+    state: &'a GameState,
+    my_id: uuid::Uuid,
+    bid_amount: &'a str,
+) -> Element<'a, Message> {
     match &state.phase {
-        Phase::Auction { current_bidder_idx, active_bid, .. } => {
+        Phase::Auction {
+            current_bidder_idx,
+            active_bid,
+            ..
+        } => {
             let my_turn = state.player_order.get(*current_bidder_idx) == Some(&my_id);
             if let Some(bid) = active_bid {
                 let is_my_bid_turn = bid.remaining_bidders.first() == Some(&my_id);
                 if is_my_bid_turn {
                     let bid_valid = bid_amount.trim().parse::<u32>().is_ok();
                     column![
-                        text(format!("Active bid on plant #{}: ${}", bid.plant_number, bid.amount)),
+                        text(format!(
+                            "Active bid on plant #{}: ${}",
+                            bid.plant_number, bid.amount
+                        )),
                         text("Enter amount and press Bid, or Pass"),
                         row![
                             text_input("Enter bid amount", bid_amount)
@@ -311,16 +345,25 @@ fn action_panel<'a>(state: &'a GameState, my_id: uuid::Uuid, bid_amount: &'a str
                                 .width(150),
                             button("Bid").on_press_maybe(bid_valid.then_some(Message::PlaceBid)),
                             button("Pass Bid").on_press(Message::PassAuction),
-                        ].spacing(8),
-                    ].spacing(8).into()
+                        ]
+                        .spacing(8),
+                    ]
+                    .spacing(8)
+                    .into()
                 } else {
-                    text(format!("Bidding on plant #{} — waiting...", bid.plant_number)).into()
+                    text(format!(
+                        "Bidding on plant #{} — waiting...",
+                        bid.plant_number
+                    ))
+                    .into()
                 }
             } else if my_turn {
                 column![
                     text("Your turn — select a plant from the market above, or:"),
                     button("Pass").on_press(Message::PassAuction),
-                ].spacing(8).into()
+                ]
+                .spacing(8)
+                .into()
             } else {
                 text("Waiting for other players to bid...").into()
             }
@@ -335,8 +378,11 @@ fn action_panel<'a>(state: &'a GameState, my_id: uuid::Uuid, bid_amount: &'a str
                         button("Garbage").on_press(Message::BuyResource(Resource::Garbage)),
                         button("Uranium").on_press(Message::BuyResource(Resource::Uranium)),
                         button("Done").on_press(Message::DoneBuying),
-                    ].spacing(8),
-                ].spacing(8).into()
+                    ]
+                    .spacing(8),
+                ]
+                .spacing(8)
+                .into()
             } else {
                 text("Waiting for other players to buy resources...").into()
             }
@@ -345,10 +391,10 @@ fn action_panel<'a>(state: &'a GameState, my_id: uuid::Uuid, bid_amount: &'a str
             if remaining.first() == Some(&my_id) {
                 column![
                     text("Build cities — enter city ID below:"),
-                    row![
-                        button("Done Building").on_press(Message::DoneBuilding),
-                    ].spacing(8),
-                ].spacing(8).into()
+                    row![button("Done Building").on_press(Message::DoneBuilding),].spacing(8),
+                ]
+                .spacing(8)
+                .into()
             } else {
                 text("Waiting for other players to build...").into()
             }
@@ -358,13 +404,18 @@ fn action_panel<'a>(state: &'a GameState, my_id: uuid::Uuid, bid_amount: &'a str
                 column![
                     text("Power your cities — press to fire all plants you can:"),
                     button("Power Cities").on_press(Message::PowerCities),
-                ].spacing(8).into()
+                ]
+                .spacing(8)
+                .into()
             } else {
                 text("Waiting for other players...").into()
             }
         }
         Phase::GameOver { winner } => {
-            let name = state.player(*winner).map(|p| p.name.as_str()).unwrap_or("Unknown");
+            let name = state
+                .player(*winner)
+                .map(|p| p.name.as_str())
+                .unwrap_or("Unknown");
             text(format!("Game Over! {} wins!", name)).size(24).into()
         }
         _ => text("").into(),

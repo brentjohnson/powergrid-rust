@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use crate::map::Map;
-use crate::types::{Phase, Player, PlayerId, PlantMarket, ResourceMarket};
+use crate::types::{Phase, PlantMarket, Player, PlayerId, ResourceMarket};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {

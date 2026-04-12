@@ -1,7 +1,7 @@
 use futures::{SinkExt, StreamExt};
 use iced::futures::channel::mpsc;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
 use powergrid_core::actions::{Action, ServerMessage};
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone)]
@@ -28,10 +28,7 @@ pub fn connect(url: String) -> iced::Subscription<WsEvent> {
     )
 }
 
-async fn ws_worker(
-    url: String,
-    event_tx: tokio::sync::mpsc::UnboundedSender<WsEvent>,
-) {
+async fn ws_worker(url: String, event_tx: tokio::sync::mpsc::UnboundedSender<WsEvent>) {
     loop {
         let ws_stream = match connect_async(&url).await {
             Ok((s, _)) => s,

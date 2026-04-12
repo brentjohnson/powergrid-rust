@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Raw TOML-deserializable map format.
 #[derive(Debug, Deserialize)]
@@ -47,20 +47,25 @@ impl Map {
     pub fn from_data(data: MapData) -> Self {
         let mut cities = HashMap::new();
         for c in data.cities {
-            cities.insert(c.id.clone(), City {
-                id: c.id,
-                name: c.name,
-                region: c.region,
-                owners: Vec::new(),
-            });
+            cities.insert(
+                c.id.clone(),
+                City {
+                    id: c.id,
+                    name: c.name,
+                    region: c.region,
+                    owners: Vec::new(),
+                },
+            );
         }
 
         let mut edges: HashMap<String, Vec<(String, u32)>> = HashMap::new();
         for conn in data.connections {
-            edges.entry(conn.from.clone())
+            edges
+                .entry(conn.from.clone())
                 .or_default()
                 .push((conn.to.clone(), conn.cost));
-            edges.entry(conn.to.clone())
+            edges
+                .entry(conn.to.clone())
                 .or_default()
                 .push((conn.from.clone(), conn.cost));
         }
@@ -80,13 +85,9 @@ impl Map {
 
     /// Cheapest network connection cost from any city a player owns to `target`.
     /// Uses Dijkstra's algorithm.
-    pub fn connection_cost_to(
-        &self,
-        owned_cities: &[String],
-        target: &str,
-    ) -> Option<u32> {
-        use std::collections::BinaryHeap;
+    pub fn connection_cost_to(&self, owned_cities: &[String], target: &str) -> Option<u32> {
         use std::cmp::Reverse;
+        use std::collections::BinaryHeap;
 
         if owned_cities.is_empty() {
             // First city: no routing cost, just the city connection fee.

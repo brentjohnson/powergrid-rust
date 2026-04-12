@@ -1,39 +1,27 @@
+use crate::types::{CityId, PlayerColor, Resource};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use crate::types::{CityId, PlayerColor, Resource};
 
 /// Actions that a client can send to the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
     /// Join the game lobby.
-    JoinGame {
-        name: String,
-        color: PlayerColor,
-    },
+    JoinGame { name: String, color: PlayerColor },
     /// Host starts the game (transitions Lobby → PlayerOrder → Auction).
     StartGame,
     /// During auction: select a plant to put up for bid.
-    SelectPlant {
-        plant_number: u8,
-    },
+    SelectPlant { plant_number: u8 },
     /// During auction: place or raise a bid on the current plant.
-    PlaceBid {
-        amount: u32,
-    },
+    PlaceBid { amount: u32 },
     /// During auction: pass on the current bid or skip selecting a plant.
     PassAuction,
     /// During buy resources: purchase resources from the market.
-    BuyResources {
-        resource: Resource,
-        amount: u8,
-    },
+    BuyResources { resource: Resource, amount: u8 },
     /// During buy resources: done buying (pass).
     DoneBuying,
     /// During build cities: build in a city.
-    BuildCity {
-        city_id: CityId,
-    },
+    BuildCity { city_id: CityId },
     /// During build cities: done building (pass).
     DoneBuilding,
     /// During bureaucracy: declare which plants to fire.
@@ -104,9 +92,14 @@ mod tests {
 
     #[test]
     fn test_action_error_serde_roundtrip() {
-        let msg = ServerMessage::ActionError { message: "it is not your turn".to_string() };
+        let msg = ServerMessage::ActionError {
+            message: "it is not your turn".to_string(),
+        };
         let json = serde_json::to_string(&msg).expect("serialization should succeed");
-        let parsed: ServerMessage = serde_json::from_str(&json).expect("deserialization should succeed");
-        assert!(matches!(parsed, ServerMessage::ActionError { message } if message == "it is not your turn"));
+        let parsed: ServerMessage =
+            serde_json::from_str(&json).expect("deserialization should succeed");
+        assert!(
+            matches!(parsed, ServerMessage::ActionError { message } if message == "it is not your turn")
+        );
     }
 }

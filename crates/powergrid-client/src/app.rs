@@ -160,7 +160,10 @@ impl App {
                 self.send(Action::PassAuction);
             }
             Message::BuyResource(resource) => {
-                self.send(Action::BuyResources { resource, amount: 1 });
+                self.send(Action::BuyResources {
+                    resource,
+                    amount: 1,
+                });
             }
             Message::DoneBuying => {
                 self.send(Action::DoneBuying);
@@ -176,7 +179,8 @@ impl App {
                 if let Some(state) = &self.game_state {
                     if let Some(id) = self.my_id {
                         if let Some(player) = state.player(id) {
-                            let plant_numbers: Vec<u8> = player.plants.iter().map(|p| p.number).collect();
+                            let plant_numbers: Vec<u8> =
+                                player.plants.iter().map(|p| p.number).collect();
                             self.send(Action::PowerCities { plant_numbers });
                         }
                     }
@@ -196,7 +200,12 @@ impl App {
                     if matches!(state.phase, powergrid_core::types::Phase::Lobby) {
                         screens::lobby_view(state, is_host, self.error_message.as_deref())
                     } else {
-                        screens::game_view(state, my_id, &self.bid_amount, self.error_message.as_deref())
+                        screens::game_view(
+                            state,
+                            my_id,
+                            &self.bid_amount,
+                            self.error_message.as_deref(),
+                        )
                     }
                 } else {
                     iced::widget::text("Connecting...").into()

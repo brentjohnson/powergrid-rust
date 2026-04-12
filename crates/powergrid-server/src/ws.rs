@@ -1,13 +1,13 @@
+use crate::SharedState;
 use axum::extract::ws::{Message, WebSocket};
 use futures::{SinkExt, StreamExt};
-use tokio::sync::mpsc;
-use tracing::{info, warn};
-use uuid::Uuid;
 use powergrid_core::{
     actions::{Action, ServerMessage},
     rules::apply_action,
 };
-use crate::SharedState;
+use tokio::sync::mpsc;
+use tracing::{info, warn};
+use uuid::Uuid;
 
 pub async fn handle_socket(socket: WebSocket, state: SharedState) {
     let player_id = Uuid::new_v4();
@@ -55,19 +55,27 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
         let mut s = state.lock().await;
         match apply_action(&mut s.game, player_id, action) {
             Ok(()) => {
-                info!("Action from {player_id} succeeded; broadcasting state to {} client(s)", s.clients.len());
+                info!(
+                    "Action from {player_id} succeeded; broadcasting state to {} client(s)",
+                    s.clients.len()
+                );
                 // Broadcast full state to all clients.
-                let msg = serde_json::to_string(
-                    &ServerMessage::StateUpdate(s.game.clone())
-                ).unwrap();
-                s.clients.retain(|(_, tx): &(Uuid, _)| tx.send(msg.clone()).is_ok());
+                let msg =
+                    serde_json::to_string(&ServerMessage::StateUpdate(s.game.clone())).unwrap();
+                s.clients
+                    .retain(|(_, tx): &(Uuid, _)| tx.send(msg.clone()).is_ok());
             }
             Err(e) => {
                 warn!("Action from {player_id} rejected: {e}");
-                let err_msg = serde_json::to_string(
-                    &ServerMessage::ActionError { message: e.to_string() }
-                ).unwrap();
-                if let Some((_, tx)) = s.clients.iter().find(|(id, _): &&(Uuid, _)| *id == player_id) {
+                let err_msg = serde_json::to_string(&ServerMessage::ActionError {
+                    message: e.to_string(),
+                })
+                .unwrap();
+                if let Some((_, tx)) = s
+                    .clients
+                    .iter()
+                    .find(|(id, _): &&(Uuid, _)| *id == player_id)
+                {
                     let _ = tx.send(err_msg);
                 }
             }
@@ -87,7 +95,11 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
 async fn send_error(state: &SharedState, player_id: Uuid, msg: String) {
     let err_msg = serde_json::to_string(&ServerMessage::ActionError { message: msg }).unwrap();
     let s = state.lock().await;
-    if let Some((_, tx)) = s.clients.iter().find(|(id, _): &&(Uuid, _)| *id == player_id) {
+    if let Some((_, tx)) = s
+        .clients
+        .iter()
+        .find(|(id, _): &&(Uuid, _)| *id == player_id)
+    {
         let _ = tx.send(err_msg);
     }
 }

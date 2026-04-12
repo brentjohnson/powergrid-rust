@@ -2,8 +2,8 @@ mod app;
 mod connection;
 mod screens;
 
-use iced::application;
 use app::App;
+use iced::application;
 
 pub fn main() -> iced::Result {
     application("Powergrid", App::update, App::view)

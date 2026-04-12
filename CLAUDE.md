@@ -11,6 +11,12 @@ cargo build
 # Run tests (game logic lives here)
 cargo test -p powergrid-core
 
+# Check types/lints
+cargo clippy --all-targets -- -D warnings
+
+# Format code
+cargo fmt
+
 # Run a single test
 cargo test -p powergrid-core test_join_and_start
 

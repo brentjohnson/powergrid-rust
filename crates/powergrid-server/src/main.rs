@@ -1,15 +1,15 @@
 mod ws;
 
-use std::sync::Arc;
 use axum::{
-    Router,
     extract::{State, WebSocketUpgrade},
     response::IntoResponse,
     routing::get,
+    Router,
 };
+use powergrid_core::{map::Map, GameState};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::info;
-use powergrid_core::{GameState, map::Map};
 
 pub type SharedState = Arc<Mutex<ServerState>>;
 
@@ -32,15 +32,12 @@ impl ServerState {
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let map_path = std::env::var("MAP_FILE")
-        .unwrap_or_else(|_| "maps/germany.toml".to_string());
-    let port = std::env::var("PORT")
-        .unwrap_or_else(|_| "3000".to_string());
+    let map_path = std::env::var("MAP_FILE").unwrap_or_else(|_| "maps/germany.toml".to_string());
+    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
 
     let map_str = std::fs::read_to_string(&map_path)
         .unwrap_or_else(|e| panic!("Failed to read map file {map_path}: {e}"));
-    let map = Map::load(&map_str)
-        .unwrap_or_else(|e| panic!("Failed to parse map: {e}"));
+    let map = Map::load(&map_str).unwrap_or_else(|e| panic!("Failed to parse map: {e}"));
 
     info!("Loaded map: {}", map.name);
 
@@ -61,9 +58,6 @@ async fn health() -> &'static str {
     "ok"
 }
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<SharedState>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<SharedState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| ws::handle_socket(socket, state))
 }
