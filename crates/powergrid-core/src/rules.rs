@@ -121,8 +121,10 @@ fn handle_select_plant(
     }
 
     // Start bid at the plant's number (minimum bid).
+    // The selector has implicitly bid the minimum by selecting; exclude them so
+    // other players respond first. They re-enter the rotation if outbid.
     let remaining_bidders = state.player_order.iter()
-        .filter(|&&id| !bought.contains(&id) && !passed.contains(&id))
+        .filter(|&&id| !bought.contains(&id) && !passed.contains(&id) && id != actor)
         .cloned()
         .collect();
 
@@ -169,13 +171,16 @@ fn handle_place_bid(
         return Err(ActionError::CannotAfford);
     }
 
+    let old_highest = bid.highest_bidder;
     bid.highest_bidder = actor;
     bid.amount = amount;
     bid.remaining_bidders.remove(0);
     // Move this player to the end — they bid again only if others raise.
     bid.remaining_bidders.push(actor);
-    // Remove the previous highest bidder from the rotation if it's not current actor
-    // (they remain since they placed the bid, others must respond).
+    // Give the previous highest bidder a chance to counter-bid.
+    if old_highest != actor && !bid.remaining_bidders.contains(&old_highest) {
+        bid.remaining_bidders.insert(0, old_highest);
+    }
 
     state.phase = Phase::Auction {
         current_bidder_idx,
