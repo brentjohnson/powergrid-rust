@@ -34,7 +34,6 @@ pub enum Message {
     DoneBuying,
 
     // Build
-    #[allow(dead_code)]
     BuildCity(String),
     DoneBuilding,
 

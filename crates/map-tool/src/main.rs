@@ -11,6 +11,7 @@ use std::{env, fs, path::PathBuf};
 
 #[derive(Debug, Clone)]
 struct Slot {
+    /// Display label (resource name, "turn_order", or city name).
     resource: String,
     index: usize,
     /// Fractional (0..1) position on the map image. None = not yet placed.
@@ -21,6 +22,17 @@ impl Slot {
     fn label(&self) -> String {
         format!("{} {}", self.resource, self.index)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Slot kind for overlay coloring
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+enum SlotKind {
+    Resource,
+    TurnOrder,
+    City,
 }
 
 // ---------------------------------------------------------------------------
@@ -37,6 +49,8 @@ enum Message {
     SelectResourceSlot(usize),
     /// User selected a turn order slot in the sidebar list.
     SelectTurnOrderSlot(usize),
+    /// User selected a city slot in the sidebar list.
+    SelectCitySlot(usize),
     /// Save coordinates back to the TOML file.
     Save,
 }
@@ -46,14 +60,22 @@ struct App {
     img_w: f32,
     img_h: f32,
     toml_path: PathBuf,
-    /// Original file content up to (but not including) the first generated section.
-    toml_prefix: String,
+    // Map data stored for full-file regeneration on save.
+    map_name: String,
+    map_regions: Vec<String>,
+    /// (id, name, region) for each city.
+    city_data: Vec<(String, String, String)>,
+    /// (from, to, cost) for each connection.
+    connection_data: Vec<(String, String, u32)>,
     resource_slots: Vec<Slot>,
     turn_order_slots: Vec<Slot>,
+    city_slots: Vec<Slot>,
     /// Index into `resource_slots` of the currently selected slot, if any.
     selected_resource: Option<usize>,
     /// Index into `turn_order_slots` of the currently selected slot, if any.
     selected_turn_order: Option<usize>,
+    /// Index into `city_slots` of the currently selected slot, if any.
+    selected_city: Option<usize>,
     cursor_pct: Option<(f32, f32)>,
     status_msg: String,
 }
@@ -76,23 +98,24 @@ impl App {
         let raw = fs::read_to_string(&toml_path)
             .unwrap_or_else(|e| panic!("Cannot read {}: {e}", toml_path.display()));
 
-        // Split at whichever generated section comes first so we can regenerate both.
-        let split_pos = [
-            raw.find("[[resource_slots]]"),
-            raw.find("[[turn_order_slots]]"),
-        ]
-        .into_iter()
-        .flatten()
-        .min();
-        let toml_prefix = if let Some(pos) = split_pos {
-            raw[..pos].trim_end().to_string()
-        } else {
-            raw.trim_end().to_string()
-        };
-
         let map_data: MapData = toml::from_str(&raw)
             .unwrap_or_else(|e| panic!("Cannot parse {}: {e}", toml_path.display()));
 
+        // Store the base map data for regeneration on save.
+        let map_name = map_data.name.clone();
+        let map_regions = map_data.regions.clone();
+        let city_data: Vec<(String, String, String)> = map_data
+            .cities
+            .iter()
+            .map(|c| (c.id.clone(), c.name.clone(), c.region.clone()))
+            .collect();
+        let connection_data: Vec<(String, String, u32)> = map_data
+            .connections
+            .iter()
+            .map(|c| (c.from.clone(), c.to.clone(), c.cost))
+            .collect();
+
+        // Build slot lists.
         let mut resource_slots = build_resource_slot_list(&map_data);
         for rs in &map_data.resource_slots {
             if let Some(slot) = resource_slots
@@ -110,13 +133,27 @@ impl App {
             }
         }
 
+        let city_slots: Vec<Slot> = map_data
+            .cities
+            .iter()
+            .enumerate()
+            .map(|(i, c)| Slot {
+                resource: c.name.clone(),
+                index: i,
+                pos: c.x.zip(c.y),
+            })
+            .collect();
+
         let res_placed = resource_slots.iter().filter(|s| s.pos.is_some()).count();
         let to_placed = turn_order_slots.iter().filter(|s| s.pos.is_some()).count();
+        let city_placed = city_slots.iter().filter(|s| s.pos.is_some()).count();
         let status_msg = format!(
-            "Resources: {}/{} placed. Turn order: {}/6 placed.",
+            "Resources: {}/{} | Turn order: {}/6 | Cities: {}/{}",
             res_placed,
             resource_slots.len(),
-            to_placed
+            to_placed,
+            city_placed,
+            city_slots.len(),
         );
 
         (
@@ -125,11 +162,16 @@ impl App {
                 img_w,
                 img_h,
                 toml_path,
-                toml_prefix,
+                map_name,
+                map_regions,
+                city_data,
+                connection_data,
                 resource_slots,
                 turn_order_slots,
+                city_slots,
                 selected_resource: None,
                 selected_turn_order: None,
+                selected_city: None,
                 cursor_pct: None,
                 status_msg,
             },
@@ -153,16 +195,28 @@ impl App {
                     if idx + 1 < self.turn_order_slots.len() {
                         self.selected_turn_order = Some(idx + 1);
                     }
+                } else if let Some(idx) = self.selected_city {
+                    self.city_slots[idx].pos = Some((pct.x, pct.y));
+                    if idx + 1 < self.city_slots.len() {
+                        self.selected_city = Some(idx + 1);
+                    }
                 }
                 self.refresh_status();
             }
             Message::SelectResourceSlot(idx) => {
                 self.selected_resource = Some(idx);
                 self.selected_turn_order = None;
+                self.selected_city = None;
             }
             Message::SelectTurnOrderSlot(idx) => {
                 self.selected_turn_order = Some(idx);
                 self.selected_resource = None;
+                self.selected_city = None;
+            }
+            Message::SelectCitySlot(idx) => {
+                self.selected_city = Some(idx);
+                self.selected_resource = None;
+                self.selected_turn_order = None;
             }
             Message::Save => match self.save_toml() {
                 Ok(()) => {
@@ -187,17 +241,53 @@ impl App {
             .iter()
             .filter(|s| s.pos.is_some())
             .count();
+        let city_placed = self.city_slots.iter().filter(|s| s.pos.is_some()).count();
         self.status_msg = format!(
-            "Resources: {}/{} placed. Turn order: {}/6 placed.",
+            "Resources: {}/{} | Turn order: {}/6 | Cities: {}/{}",
             res_placed,
             self.resource_slots.len(),
-            to_placed
+            to_placed,
+            city_placed,
+            self.city_slots.len(),
         );
     }
 
     fn save_toml(&self) -> Result<(), String> {
-        let mut out = self.toml_prefix.clone();
-        out.push('\n');
+        let mut out = String::new();
+
+        // Header: name and regions.
+        out.push_str(&format!("name = \"{}\"\n", self.map_name));
+        let regions_toml = self
+            .map_regions
+            .iter()
+            .map(|r| format!("\"{}\"", r))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!("regions = [{regions_toml}]\n"));
+
+        // Cities (with x/y if placed).
+        for (i, (id, name, region)) in self.city_data.iter().enumerate() {
+            out.push('\n');
+            out.push_str("[[cities]]\n");
+            out.push_str(&format!("id = \"{id}\"\n"));
+            out.push_str(&format!("name = \"{name}\"\n"));
+            out.push_str(&format!("region = \"{region}\"\n"));
+            if let Some((x, y)) = self.city_slots.get(i).and_then(|s| s.pos) {
+                out.push_str(&format!("x = {x:.4}\n"));
+                out.push_str(&format!("y = {y:.4}\n"));
+            }
+        }
+
+        // Connections.
+        for (from, to, cost) in &self.connection_data {
+            out.push('\n');
+            out.push_str("[[connections]]\n");
+            out.push_str(&format!("from = \"{from}\"\n"));
+            out.push_str(&format!("to = \"{to}\"\n"));
+            out.push_str(&format!("cost = {cost}\n"));
+        }
+
+        // Resource slots.
         for slot in &self.resource_slots {
             if let Some((x, y)) = slot.pos {
                 out.push('\n');
@@ -208,6 +298,8 @@ impl App {
                 out.push_str(&format!("y = {y:.4}\n"));
             }
         }
+
+        // Turn order slots.
         for slot in &self.turn_order_slots {
             if let Some((x, y)) = slot.pos {
                 out.push('\n');
@@ -217,6 +309,7 @@ impl App {
                 out.push_str(&format!("y = {y:.4}\n"));
             }
         }
+
         fs::write(&self.toml_path, &out).map_err(|e| e.to_string())
     }
 
@@ -231,11 +324,14 @@ impl App {
             .iter()
             .filter(|s| s.pos.is_some())
             .count();
+        let city_placed = self.city_slots.iter().filter(|s| s.pos.is_some()).count();
         let header = text(format!(
-            "Resources: {}/{}\nTurn order: {}/6",
+            "Resources: {}/{}\nTurn order: {}/6\nCities: {}/{}",
             res_placed,
             self.resource_slots.len(),
-            to_placed
+            to_placed,
+            city_placed,
+            self.city_slots.len(),
         ))
         .size(13)
         .color(Color::WHITE);
@@ -282,7 +378,24 @@ impl App {
             },
         );
 
-        let slot_list: Element<_> = scrollable(column![res_list, to_list].spacing(8))
+        // City slots list
+        let city_header = text("-- Cities --")
+            .size(12)
+            .color(Color::from_rgb(0.7, 0.7, 0.7));
+        let city_list = self.city_slots.iter().enumerate().fold(
+            column![city_header].spacing(2),
+            |col, (i, slot)| {
+                let is_selected = self.selected_city == Some(i);
+                let label = if slot.pos.is_some() {
+                    format!("✓ {}", slot.resource)
+                } else {
+                    format!("  {}", slot.resource)
+                };
+                col.push(slot_button(label, is_selected, Message::SelectCitySlot(i)))
+            },
+        );
+
+        let slot_list: Element<_> = scrollable(column![res_list, to_list, city_list].spacing(8))
             .height(Length::Fill)
             .into();
 
@@ -314,14 +427,13 @@ impl App {
             });
 
         // Build placed positions for the overlay.
-        // (x, y, is_selected, is_turn_order)
-        let mut placed_positions: Vec<(f32, f32, bool, bool)> = self
+        let mut placed_positions: Vec<(f32, f32, bool, SlotKind)> = self
             .resource_slots
             .iter()
             .enumerate()
             .filter_map(|(i, s)| {
                 s.pos
-                    .map(|(x, y)| (x, y, self.selected_resource == Some(i), false))
+                    .map(|(x, y)| (x, y, self.selected_resource == Some(i), SlotKind::Resource))
             })
             .collect();
         placed_positions.extend(
@@ -329,10 +441,20 @@ impl App {
                 .iter()
                 .enumerate()
                 .filter_map(|(i, s)| {
-                    s.pos
-                        .map(|(x, y)| (x, y, self.selected_turn_order == Some(i), true))
+                    s.pos.map(|(x, y)| {
+                        (
+                            x,
+                            y,
+                            self.selected_turn_order == Some(i),
+                            SlotKind::TurnOrder,
+                        )
+                    })
                 }),
         );
+        placed_positions.extend(self.city_slots.iter().enumerate().filter_map(|(i, s)| {
+            s.pos
+                .map(|(x, y)| (x, y, self.selected_city == Some(i), SlotKind::City))
+        }));
 
         let overlay = CoordOverlay {
             img_w: self.img_w,
@@ -498,8 +620,8 @@ fn to_pct(local: Point, disp_w: f32, disp_h: f32, off_x: f32, off_y: f32) -> Opt
 struct CoordOverlay {
     img_w: f32,
     img_h: f32,
-    /// (x_pct, y_pct, is_selected, is_turn_order) for each placed slot.
-    placed: Vec<(f32, f32, bool, bool)>,
+    /// (x_pct, y_pct, is_selected, kind) for each placed slot.
+    placed: Vec<(f32, f32, bool, SlotKind)>,
 }
 
 impl canvas::Program<Message> for CoordOverlay {
@@ -548,15 +670,17 @@ impl canvas::Program<Message> for CoordOverlay {
         let radius = (disp_w * 0.008).max(4.0);
 
         let mut frame = canvas::Frame::new(renderer, bounds.size());
-        for (x_pct, y_pct, is_selected, is_turn_order) in &self.placed {
+        for (x_pct, y_pct, is_selected, kind) in &self.placed {
             let cx = off_x + x_pct * disp_w;
             let cy = off_y + y_pct * disp_h;
             let color = if *is_selected {
                 Color::from_rgba(1.0, 1.0, 0.0, 0.9)
-            } else if *is_turn_order {
-                Color::from_rgba(1.0, 1.0, 1.0, 0.85)
             } else {
-                Color::from_rgba(0.0, 0.8, 1.0, 0.7)
+                match kind {
+                    SlotKind::Resource => Color::from_rgba(0.0, 0.8, 1.0, 0.7),
+                    SlotKind::TurnOrder => Color::from_rgba(1.0, 1.0, 1.0, 0.85),
+                    SlotKind::City => Color::from_rgba(0.2, 0.9, 0.2, 0.85),
+                }
             };
             let circle = canvas::Path::circle(Point::new(cx, cy), radius);
             frame.fill(&circle, color);

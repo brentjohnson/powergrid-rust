@@ -4,10 +4,11 @@ use iced::{
     Color, Element, Length, Point, Rectangle, Renderer, Theme,
 };
 use powergrid_core::{
-    map::{ResourceSlot, TurnOrderSlot},
+    map::{City, ResourceSlot, TurnOrderSlot},
     types::{Phase, PlayerColor, PlayerId, Resource},
     GameState,
 };
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Resource market overlay — draws colored circles on the map's market board
@@ -20,6 +21,12 @@ const IMG_H: f32 = 2048.0;
 /// Circle radius expressed as a fraction of the displayed image width.
 const SLOT_RADIUS_FRAC: f32 = 0.009;
 
+/// Hit-test radius for city clicks, as a fraction of image width.
+const CITY_HIT_RADIUS: f32 = 0.03;
+
+/// Display radius for city markers, as a fraction of image width.
+const CITY_RADIUS_FRAC: f32 = 0.006;
+
 struct MarketOverlay<'a> {
     coal: u8,
     oil: u8,
@@ -29,10 +36,63 @@ struct MarketOverlay<'a> {
     turn_order_slots: &'a [TurnOrderSlot],
     /// (slot_index, player_color) for each player in turn order (index 0 = first place).
     turn_order_players: Vec<(usize, PlayerColor)>,
+    cities: &'a HashMap<String, City>,
+    phase: &'a Phase,
+    my_id: PlayerId,
 }
 
 impl canvas::Program<Message> for MarketOverlay<'_> {
     type State = ();
+
+    fn update(
+        &self,
+        _state: &mut (),
+        event: canvas::Event,
+        bounds: Rectangle,
+        cursor: iced::mouse::Cursor,
+    ) -> (canvas::event::Status, Option<Message>) {
+        // Only handle clicks during BuildCities when it's our turn.
+        let is_my_build_turn = matches!(&self.phase, Phase::BuildCities { remaining }
+            if remaining.first() == Some(&self.my_id));
+        if !is_my_build_turn {
+            return (canvas::event::Status::Ignored, None);
+        }
+
+        if let canvas::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) =
+            event
+        {
+            if let Some(local) = cursor.position_in(bounds) {
+                let img_ratio = IMG_W / IMG_H;
+                let bounds_ratio = bounds.width / bounds.height;
+                let (img_w, img_h) = if bounds_ratio < img_ratio {
+                    let s = bounds.width / IMG_W;
+                    (bounds.width, IMG_H * s)
+                } else {
+                    let s = bounds.height / IMG_H;
+                    (IMG_W * s, bounds.height)
+                };
+                let offset_x = (bounds.width - img_w) / 2.0;
+                let offset_y = (bounds.height - img_h) / 2.0;
+
+                let x_pct = (local.x - offset_x) / img_w;
+                let y_pct = (local.y - offset_y) / img_h;
+
+                for (city_id, city) in self.cities {
+                    if let (Some(cx), Some(cy)) = (city.x, city.y) {
+                        let dx = x_pct - cx;
+                        let dy = y_pct - cy;
+                        if dx * dx + dy * dy <= CITY_HIT_RADIUS * CITY_HIT_RADIUS {
+                            return (
+                                canvas::event::Status::Captured,
+                                Some(Message::BuildCity(city_id.clone())),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        (canvas::event::Status::Ignored, None)
+    }
 
     fn draw(
         &self,
@@ -109,6 +169,26 @@ impl canvas::Program<Message> for MarketOverlay<'_> {
                 frame.fill(&outline, Color::WHITE);
                 let fill = canvas::Path::circle(Point::new(cx, cy), radius);
                 frame.fill(&fill, player_color_to_iced(*player_color));
+            }
+        }
+
+        // Draw city position markers.
+        let city_radius = CITY_RADIUS_FRAC * img_w;
+        let is_build_phase = matches!(&self.phase, Phase::BuildCities { remaining }
+            if remaining.first() == Some(&self.my_id));
+        for city in self.cities.values() {
+            if let (Some(cx), Some(cy)) = (city.x, city.y) {
+                let px = offset_x + cx * img_w;
+                let py = offset_y + cy * img_h;
+                let color = if !city.owners.is_empty() {
+                    Color::from_rgba(0.2, 0.9, 0.2, 0.8)
+                } else if is_build_phase {
+                    Color::from_rgba(1.0, 1.0, 1.0, 0.7)
+                } else {
+                    Color::from_rgba(1.0, 1.0, 1.0, 0.35)
+                };
+                let circle = canvas::Path::circle(Point::new(px, py), city_radius);
+                frame.fill(&circle, color);
             }
         }
 
@@ -363,6 +443,9 @@ pub fn game_view<'a>(
         slots: &state.map.resource_slots,
         turn_order_slots: &state.map.turn_order_slots,
         turn_order_players,
+        cities: &state.map.cities,
+        phase: &state.phase,
+        my_id,
     };
     let map_panel = container(stack![
         iced::widget::image(germany_map_handle())
@@ -548,7 +631,7 @@ fn action_panel<'a>(
         Phase::BuildCities { remaining } => {
             if remaining.first() == Some(&my_id) {
                 column![
-                    text("Build cities — enter city ID below:"),
+                    text("Build cities — click a city on the map:"),
                     row![button("Done Building").on_press(Message::DoneBuilding),].spacing(8),
                 ]
                 .spacing(8)

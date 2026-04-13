@@ -41,6 +41,10 @@ pub struct CityData {
     pub id: String,
     pub name: String,
     pub region: String,
+    #[serde(default)]
+    pub x: Option<f32>,
+    #[serde(default)]
+    pub y: Option<f32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -89,6 +93,10 @@ pub struct City {
     pub region: String,
     /// Players who have built here (max 3 in base game).
     pub owners: Vec<crate::types::PlayerId>,
+    /// Fractional x position on the map image (0.0–1.0). None if not yet placed.
+    pub x: Option<f32>,
+    /// Fractional y position on the map image (0.0–1.0). None if not yet placed.
+    pub y: Option<f32>,
 }
 
 impl Map {
@@ -102,6 +110,8 @@ impl Map {
                     name: c.name,
                     region: c.region,
                     owners: Vec::new(),
+                    x: c.x,
+                    y: c.y,
                 },
             );
         }

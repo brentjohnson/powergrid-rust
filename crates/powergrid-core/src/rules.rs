@@ -1023,16 +1023,22 @@ mod tests {
                     id: "a".into(),
                     name: "A".into(),
                     region: "r1".into(),
+                    x: None,
+                    y: None,
                 },
                 CityData {
                     id: "b".into(),
                     name: "B".into(),
                     region: "r1".into(),
+                    x: None,
+                    y: None,
                 },
                 CityData {
                     id: "c".into(),
                     name: "C".into(),
                     region: "r1".into(),
+                    x: None,
+                    y: None,
                 },
             ],
             connections: vec![
