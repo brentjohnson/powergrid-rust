@@ -6,6 +6,9 @@ use std::collections::HashMap;
 pub struct MapData {
     pub name: String,
     pub regions: Vec<String>,
+    /// Relative path to the board image (e.g. "germany.png"), resolved from the TOML file's directory.
+    #[serde(default)]
+    pub image: Option<String>,
     pub cities: Vec<CityData>,
     pub connections: Vec<ConnectionData>,
     #[serde(default)]

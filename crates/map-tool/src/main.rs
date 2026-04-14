@@ -5,6 +5,8 @@ use iced::{
 use powergrid_core::map::MapData;
 use std::{env, fs, path::PathBuf};
 
+const MAP_ASSETS_DIR: &str = "crates/powergrid-client/assets/maps";
+
 // ---------------------------------------------------------------------------
 // A positioned slot (in-memory working state)
 // ---------------------------------------------------------------------------
@@ -62,6 +64,7 @@ struct App {
     toml_path: PathBuf,
     // Map data stored for full-file regeneration on save.
     map_name: String,
+    map_image: Option<String>,
     map_regions: Vec<String>,
     /// (id, name, region) for each city.
     city_data: Vec<(String, String, String)>,
@@ -83,26 +86,33 @@ struct App {
 impl App {
     fn new() -> (Self, iced::Task<Message>) {
         let mut args = env::args().skip(1);
-        let image_path = args
-            .next()
-            .expect("Usage: map-tool <image_path> <toml_path> [width] [height]");
-        let toml_path: PathBuf = args
-            .next()
-            .expect("Usage: map-tool <image_path> <toml_path> [width] [height]")
-            .into();
-        let img_w: f32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(1536.0);
-        let img_h: f32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(2048.0);
-
-        let image_handle = iced::widget::image::Handle::from_path(&image_path);
+        let toml_path: PathBuf = args.next().expect("Usage: map-tool <toml_path>").into();
 
         let raw = fs::read_to_string(&toml_path)
             .unwrap_or_else(|e| panic!("Cannot read {}: {e}", toml_path.display()));
-
         let map_data: MapData = toml::from_str(&raw)
             .unwrap_or_else(|e| panic!("Cannot parse {}: {e}", toml_path.display()));
 
+        let image_filename = map_data
+            .image
+            .as_deref()
+            .expect("Map TOML must have an `image` field");
+        let image_path = PathBuf::from(MAP_ASSETS_DIR).join(image_filename);
+
+        let (iw, ih) = image::image_dimensions(&image_path).unwrap_or_else(|e| {
+            panic!(
+                "Cannot read image dimensions from {}: {e}",
+                image_path.display()
+            )
+        });
+        let img_w = iw as f32;
+        let img_h = ih as f32;
+
+        let image_handle = iced::widget::image::Handle::from_path(&image_path);
+
         // Store the base map data for regeneration on save.
         let map_name = map_data.name.clone();
+        let map_image = map_data.image.clone();
         let map_regions = map_data.regions.clone();
         let city_data: Vec<(String, String, String)> = map_data
             .cities
@@ -163,6 +173,7 @@ impl App {
                 img_h,
                 toml_path,
                 map_name,
+                map_image,
                 map_regions,
                 city_data,
                 connection_data,
@@ -255,8 +266,11 @@ impl App {
     fn save_toml(&self) -> Result<(), String> {
         let mut out = String::new();
 
-        // Header: name and regions.
+        // Header: name, image, and regions.
         out.push_str(&format!("name = \"{}\"\n", self.map_name));
+        if let Some(img) = &self.map_image {
+            out.push_str(&format!("image = \"{img}\"\n"));
+        }
         let regions_toml = self
             .map_regions
             .iter()

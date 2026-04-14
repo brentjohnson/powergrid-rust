@@ -1,4 +1,5 @@
 name = "Germany"
+image = "germany.png"
 regions = ["northwest", "northeast", "west", "east", "southwest", "southeast"]
 
 [[cities]]

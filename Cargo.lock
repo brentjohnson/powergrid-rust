@@ -2134,6 +2134,7 @@ name = "map-tool"
 version = "0.1.0"
 dependencies = [
  "iced",
+ "image",
  "powergrid-core",
  "toml",
 ]
