@@ -14,9 +14,9 @@ use std::collections::HashMap;
 // Resource market overlay — draws colored circles on the map's market board
 // ---------------------------------------------------------------------------
 
-/// Original map image dimensions (germany.jpg is 1536 × 2048).
-const IMG_W: f32 = 1536.0;
-const IMG_H: f32 = 2048.0;
+/// Original map image dimensions (germany.jpg is 1869 × 2593).
+const IMG_W: f32 = 1869.0;
+const IMG_H: f32 = 2593.0;
 
 /// Circle radius expressed as a fraction of the displayed image width.
 const SLOT_RADIUS_FRAC: f32 = 0.009;
@@ -506,7 +506,7 @@ fn owned_plants_row(plants: &[powergrid_core::types::PowerPlant]) -> Element<'st
 }
 
 fn germany_map_handle() -> iced::widget::image::Handle {
-    iced::widget::image::Handle::from_bytes(include_bytes!("../assets/maps/germany.jpg").as_slice())
+    iced::widget::image::Handle::from_bytes(include_bytes!("../assets/maps/germany.png").as_slice())
 }
 
 fn plant_card_handle(number: u8) -> iced::widget::image::Handle {

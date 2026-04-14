@@ -251,6 +251,76 @@ region = "northeast"
 x = 0.6560
 y = 0.1117
 
+[[cities]]
+id = "wilhelmshaven"
+name = "Wilhelmshaven"
+region = "northwest"
+x = 0.3267
+y = 0.1937
+
+[[cities]]
+id = "cuxhaven"
+name = "Cuxhaven"
+region = "northwest"
+x = 0.3724
+y = 0.1561
+
+[[cities]]
+id = "luebeck"
+name = "Lübeck"
+region = "northwest"
+x = 0.5395
+y = 0.1531
+
+[[cities]]
+id = "torgelow"
+name = "Torgelow"
+region = "northeast"
+x = 0.8779
+y = 0.2043
+
+[[cities]]
+id = "potsdam"
+name = "Potsdam"
+region = "northeast"
+x = 0.7521
+y = 0.3301
+
+[[cities]]
+id = "frankfurt_oder"
+name = "Frankfurt (Oder)"
+region = "northeast"
+x = 0.8753
+y = 0.3531
+
+[[cities]]
+id = "cottbus"
+name = "Cottbus"
+region = "northeast"
+x = 0.8618
+y = 0.4319
+
+[[cities]]
+id = "gera"
+name = "Gera"
+region = "east"
+x = 0.6773
+y = 0.5468
+
+[[cities]]
+id = "bonn"
+name = "Bonn"
+region = "southwest"
+x = 0.1804
+y = 0.5489
+
+[[cities]]
+id = "mainz"
+name = "Mainz"
+region = "southwest"
+x = 0.2930
+y = 0.6283
+
 [[connections]]
 from = "flensburg"
 to = "kiel"
@@ -565,6 +635,121 @@ cost = 10
 from = "berlin"
 to = "dresden"
 cost = 16
+
+[[connections]]
+from = "wilhelmshaven"
+to = "bremen"
+cost = 11
+
+[[connections]]
+from = "wilhelmshaven"
+to = "cuxhaven"
+cost = 10
+
+[[connections]]
+from = "cuxhaven"
+to = "hamburg"
+cost = 11
+
+[[connections]]
+from = "luebeck"
+to = "hamburg"
+cost = 6
+
+[[connections]]
+from = "luebeck"
+to = "schwerin"
+cost = 6
+
+[[connections]]
+from = "luebeck"
+to = "kiel"
+cost = 8
+
+[[connections]]
+from = "torgelow"
+to = "rostock"
+cost = 14
+
+[[connections]]
+from = "torgelow"
+to = "schwerin"
+cost = 11
+
+[[connections]]
+from = "potsdam"
+to = "berlin"
+cost = 0
+
+[[connections]]
+from = "potsdam"
+to = "magdeburg"
+cost = 13
+
+[[connections]]
+from = "frankfurt_oder"
+to = "berlin"
+cost = 6
+
+[[connections]]
+from = "frankfurt_oder"
+to = "cottbus"
+cost = 6
+
+[[connections]]
+from = "cottbus"
+to = "dresden"
+cost = 13
+
+[[connections]]
+from = "cottbus"
+to = "leipzig"
+cost = 21
+
+[[connections]]
+from = "gera"
+to = "erfurt"
+cost = 8
+
+[[connections]]
+from = "gera"
+to = "leipzig"
+cost = 8
+
+[[connections]]
+from = "gera"
+to = "dresden"
+cost = 19
+
+[[connections]]
+from = "bonn"
+to = "koeln"
+cost = 4
+
+[[connections]]
+from = "bonn"
+to = "aachen"
+cost = 10
+
+[[connections]]
+from = "bonn"
+to = "trier"
+cost = 12
+
+[[connections]]
+from = "mainz"
+to = "frankfurt"
+cost = 0
+
+[[connections]]
+from = "mainz"
+to = "wiesbaden"
+cost = 0
+
+[[connections]]
+from = "mainz"
+to = "mannheim"
+cost = 8
 
 [[resource_slots]]
 resource = "coal"
