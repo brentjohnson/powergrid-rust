@@ -9,6 +9,276 @@ use powergrid_core::{
     GameState,
 };
 use std::collections::HashMap;
+use std::sync::LazyLock;
+
+static GERMANY_MAP_HANDLE: LazyLock<iced::widget::image::Handle> = LazyLock::new(|| {
+    iced::widget::image::Handle::from_bytes(include_bytes!("../assets/maps/germany.png").as_slice())
+});
+
+static PLANT_CARD_HANDLES: LazyLock<HashMap<u8, iced::widget::image::Handle>> =
+    LazyLock::new(|| {
+        let mut m = HashMap::new();
+        m.insert(
+            3,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_03.png").as_slice(),
+            ),
+        );
+        m.insert(
+            4,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_04.png").as_slice(),
+            ),
+        );
+        m.insert(
+            5,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_05.png").as_slice(),
+            ),
+        );
+        m.insert(
+            6,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_06.png").as_slice(),
+            ),
+        );
+        m.insert(
+            7,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_07.png").as_slice(),
+            ),
+        );
+        m.insert(
+            8,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_08.png").as_slice(),
+            ),
+        );
+        m.insert(
+            9,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_09.png").as_slice(),
+            ),
+        );
+        m.insert(
+            10,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_10.png").as_slice(),
+            ),
+        );
+        m.insert(
+            11,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_11.png").as_slice(),
+            ),
+        );
+        m.insert(
+            12,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_12.png").as_slice(),
+            ),
+        );
+        m.insert(
+            13,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_13.png").as_slice(),
+            ),
+        );
+        m.insert(
+            14,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_14.png").as_slice(),
+            ),
+        );
+        m.insert(
+            15,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_15.png").as_slice(),
+            ),
+        );
+        m.insert(
+            16,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_16.png").as_slice(),
+            ),
+        );
+        m.insert(
+            17,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_17.png").as_slice(),
+            ),
+        );
+        m.insert(
+            18,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_18.png").as_slice(),
+            ),
+        );
+        m.insert(
+            19,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_19.png").as_slice(),
+            ),
+        );
+        m.insert(
+            20,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_20.png").as_slice(),
+            ),
+        );
+        m.insert(
+            21,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_21.png").as_slice(),
+            ),
+        );
+        m.insert(
+            22,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_22.png").as_slice(),
+            ),
+        );
+        m.insert(
+            23,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_23.png").as_slice(),
+            ),
+        );
+        m.insert(
+            24,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_24.png").as_slice(),
+            ),
+        );
+        m.insert(
+            25,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_25.png").as_slice(),
+            ),
+        );
+        m.insert(
+            26,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_26.png").as_slice(),
+            ),
+        );
+        m.insert(
+            27,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_27.png").as_slice(),
+            ),
+        );
+        m.insert(
+            28,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_28.png").as_slice(),
+            ),
+        );
+        m.insert(
+            29,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_29.png").as_slice(),
+            ),
+        );
+        m.insert(
+            30,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_30.png").as_slice(),
+            ),
+        );
+        m.insert(
+            31,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_31.png").as_slice(),
+            ),
+        );
+        m.insert(
+            32,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_32.png").as_slice(),
+            ),
+        );
+        m.insert(
+            33,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_33.png").as_slice(),
+            ),
+        );
+        m.insert(
+            34,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_34.png").as_slice(),
+            ),
+        );
+        m.insert(
+            35,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_35.png").as_slice(),
+            ),
+        );
+        m.insert(
+            36,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_36.png").as_slice(),
+            ),
+        );
+        m.insert(
+            37,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_37.png").as_slice(),
+            ),
+        );
+        m.insert(
+            38,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_38.png").as_slice(),
+            ),
+        );
+        m.insert(
+            39,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_39.png").as_slice(),
+            ),
+        );
+        m.insert(
+            40,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_40.png").as_slice(),
+            ),
+        );
+        m.insert(
+            42,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_42.png").as_slice(),
+            ),
+        );
+        m.insert(
+            44,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_44.png").as_slice(),
+            ),
+        );
+        m.insert(
+            46,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_46.png").as_slice(),
+            ),
+        );
+        m.insert(
+            50,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_50.png").as_slice(),
+            ),
+        );
+        // Sentinel key 0 = step3 fallback card
+        m.insert(
+            0,
+            iced::widget::image::Handle::from_bytes(
+                include_bytes!("../assets/cards/card_step3.png").as_slice(),
+            ),
+        );
+        m
+    });
 
 // ---------------------------------------------------------------------------
 // Resource market overlay — draws colored circles on the map's market board
@@ -506,56 +776,14 @@ fn owned_plants_row(plants: &[powergrid_core::types::PowerPlant]) -> Element<'st
 }
 
 fn germany_map_handle() -> iced::widget::image::Handle {
-    iced::widget::image::Handle::from_bytes(include_bytes!("../assets/maps/germany.png").as_slice())
+    GERMANY_MAP_HANDLE.clone()
 }
 
 fn plant_card_handle(number: u8) -> iced::widget::image::Handle {
-    let bytes: &'static [u8] = match number {
-        3 => include_bytes!("../assets/cards/card_03.png"),
-        4 => include_bytes!("../assets/cards/card_04.png"),
-        5 => include_bytes!("../assets/cards/card_05.png"),
-        6 => include_bytes!("../assets/cards/card_06.png"),
-        7 => include_bytes!("../assets/cards/card_07.png"),
-        8 => include_bytes!("../assets/cards/card_08.png"),
-        9 => include_bytes!("../assets/cards/card_09.png"),
-        10 => include_bytes!("../assets/cards/card_10.png"),
-        11 => include_bytes!("../assets/cards/card_11.png"),
-        12 => include_bytes!("../assets/cards/card_12.png"),
-        13 => include_bytes!("../assets/cards/card_13.png"),
-        14 => include_bytes!("../assets/cards/card_14.png"),
-        15 => include_bytes!("../assets/cards/card_15.png"),
-        16 => include_bytes!("../assets/cards/card_16.png"),
-        17 => include_bytes!("../assets/cards/card_17.png"),
-        18 => include_bytes!("../assets/cards/card_18.png"),
-        19 => include_bytes!("../assets/cards/card_19.png"),
-        20 => include_bytes!("../assets/cards/card_20.png"),
-        21 => include_bytes!("../assets/cards/card_21.png"),
-        22 => include_bytes!("../assets/cards/card_22.png"),
-        23 => include_bytes!("../assets/cards/card_23.png"),
-        24 => include_bytes!("../assets/cards/card_24.png"),
-        25 => include_bytes!("../assets/cards/card_25.png"),
-        26 => include_bytes!("../assets/cards/card_26.png"),
-        27 => include_bytes!("../assets/cards/card_27.png"),
-        28 => include_bytes!("../assets/cards/card_28.png"),
-        29 => include_bytes!("../assets/cards/card_29.png"),
-        30 => include_bytes!("../assets/cards/card_30.png"),
-        31 => include_bytes!("../assets/cards/card_31.png"),
-        32 => include_bytes!("../assets/cards/card_32.png"),
-        33 => include_bytes!("../assets/cards/card_33.png"),
-        34 => include_bytes!("../assets/cards/card_34.png"),
-        35 => include_bytes!("../assets/cards/card_35.png"),
-        36 => include_bytes!("../assets/cards/card_36.png"),
-        37 => include_bytes!("../assets/cards/card_37.png"),
-        38 => include_bytes!("../assets/cards/card_38.png"),
-        39 => include_bytes!("../assets/cards/card_39.png"),
-        40 => include_bytes!("../assets/cards/card_40.png"),
-        42 => include_bytes!("../assets/cards/card_42.png"),
-        44 => include_bytes!("../assets/cards/card_44.png"),
-        46 => include_bytes!("../assets/cards/card_46.png"),
-        50 => include_bytes!("../assets/cards/card_50.png"),
-        _ => include_bytes!("../assets/cards/card_step3.png"),
-    };
-    iced::widget::image::Handle::from_bytes(bytes)
+    PLANT_CARD_HANDLES
+        .get(&number)
+        .unwrap_or_else(|| &PLANT_CARD_HANDLES[&0])
+        .clone()
 }
 
 fn action_panel<'a>(
