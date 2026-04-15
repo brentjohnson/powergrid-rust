@@ -1,7 +1,7 @@
 use crate::app::Message;
 use iced::{
     widget::{button, canvas, column, container, row, scrollable, stack, text, text_input},
-    Color, Element, Length, Point, Rectangle, Renderer, Theme,
+    Color, Element, Length, Point, Rectangle, Renderer, Theme, Vector,
 };
 use powergrid_core::{
     map::{City, ResourceSlot, TurnOrderSlot},
@@ -297,6 +297,65 @@ const CITY_HIT_RADIUS: f32 = 0.03;
 /// Display radius for city markers, as a fraction of image width.
 const CITY_RADIUS_FRAC: f32 = 0.006;
 
+/// Compute the ContentFit::Contain image layout within the given bounds.
+/// Returns (img_w, img_h, offset_x, offset_y).
+fn base_image_layout(bounds: Rectangle) -> (f32, f32, f32, f32) {
+    let img_ratio = IMG_W / IMG_H;
+    let bounds_ratio = bounds.width / bounds.height;
+    let (img_w, img_h) = if bounds_ratio < img_ratio {
+        let s = bounds.width / IMG_W;
+        (bounds.width, IMG_H * s)
+    } else {
+        let s = bounds.height / IMG_H;
+        (IMG_W * s, bounds.height)
+    };
+    let offset_x = (bounds.width - img_w) / 2.0;
+    let offset_y = (bounds.height - img_h) / 2.0;
+    (img_w, img_h, offset_x, offset_y)
+}
+
+/// Ephemeral drag-tracking state for the map overlay canvas.
+#[derive(Default)]
+struct MapDragState {
+    dragging: bool,
+    last_cursor: Point,
+    drag_distance: f32,
+}
+
+/// Bottom canvas: renders only the map image at the current zoom/pan.
+struct MapBackground {
+    zoom: f32,
+    pan: Vector,
+}
+
+impl canvas::Program<Message> for MapBackground {
+    type State = ();
+
+    fn draw(
+        &self,
+        _state: &(),
+        renderer: &Renderer,
+        _theme: &Theme,
+        bounds: Rectangle,
+        _cursor: iced::mouse::Cursor,
+    ) -> Vec<canvas::Geometry<Renderer>> {
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+        let (img_w, img_h, offset_x, offset_y) = base_image_layout(bounds);
+        frame.with_save(|frame| {
+            frame.translate(self.pan);
+            frame.scale(self.zoom);
+            frame.draw_image(
+                Rectangle::new(
+                    Point::new(offset_x, offset_y),
+                    iced::Size::new(img_w, img_h),
+                ),
+                canvas::Image::new(GERMANY_MAP_HANDLE.clone()),
+            );
+        });
+        vec![frame.into_geometry()]
+    }
+}
+
 struct MarketOverlay<'a> {
     coal: u8,
     oil: u8,
@@ -309,158 +368,210 @@ struct MarketOverlay<'a> {
     cities: &'a HashMap<String, City>,
     phase: &'a Phase,
     my_id: PlayerId,
+    zoom: f32,
+    pan: Vector,
 }
 
 impl canvas::Program<Message> for MarketOverlay<'_> {
-    type State = ();
+    type State = MapDragState;
 
     fn update(
         &self,
-        _state: &mut (),
+        state: &mut MapDragState,
         event: canvas::Event,
         bounds: Rectangle,
         cursor: iced::mouse::Cursor,
     ) -> (canvas::event::Status, Option<Message>) {
-        // Only handle clicks during BuildCities when it's our turn.
-        let is_my_build_turn = matches!(&self.phase, Phase::BuildCities { remaining }
-            if remaining.first() == Some(&self.my_id));
-        if !is_my_build_turn {
-            return (canvas::event::Status::Ignored, None);
-        }
-
-        if let canvas::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) =
-            event
-        {
-            if let Some(local) = cursor.position_in(bounds) {
-                let img_ratio = IMG_W / IMG_H;
-                let bounds_ratio = bounds.width / bounds.height;
-                let (img_w, img_h) = if bounds_ratio < img_ratio {
-                    let s = bounds.width / IMG_W;
-                    (bounds.width, IMG_H * s)
-                } else {
-                    let s = bounds.height / IMG_H;
-                    (IMG_W * s, bounds.height)
-                };
-                let offset_x = (bounds.width - img_w) / 2.0;
-                let offset_y = (bounds.height - img_h) / 2.0;
-
-                let x_pct = (local.x - offset_x) / img_w;
-                let y_pct = (local.y - offset_y) / img_h;
-
-                for (city_id, city) in self.cities {
-                    if let (Some(cx), Some(cy)) = (city.x, city.y) {
-                        let dx = x_pct - cx;
-                        let dy = y_pct - cy;
-                        if dx * dx + dy * dy <= CITY_HIT_RADIUS * CITY_HIT_RADIUS {
-                            return (
-                                canvas::event::Status::Captured,
-                                Some(Message::BuildCity(city_id.clone())),
-                            );
-                        }
+        match event {
+            canvas::Event::Mouse(mouse_event) => match mouse_event {
+                iced::mouse::Event::WheelScrolled { delta } => {
+                    let Some(screen_pos) = cursor.position_in(bounds) else {
+                        return (canvas::event::Status::Ignored, None);
+                    };
+                    let delta_y = match delta {
+                        iced::mouse::ScrollDelta::Lines { y, .. } => y,
+                        iced::mouse::ScrollDelta::Pixels { y, .. } => y / 20.0,
+                    };
+                    let factor = 1.15f32.powf(delta_y);
+                    (
+                        canvas::event::Status::Captured,
+                        Some(Message::MapZoom {
+                            factor,
+                            cursor_x: screen_pos.x,
+                            cursor_y: screen_pos.y,
+                        }),
+                    )
+                }
+                iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left) => {
+                    if let Some(pos) = cursor.position_in(bounds) {
+                        state.dragging = true;
+                        state.last_cursor = pos;
+                        state.drag_distance = 0.0;
+                        (canvas::event::Status::Captured, None)
+                    } else {
+                        (canvas::event::Status::Ignored, None)
                     }
                 }
-            }
+                iced::mouse::Event::CursorMoved { .. } => {
+                    if state.dragging {
+                        if let Some(pos) = cursor.position_in(bounds) {
+                            let dx = pos.x - state.last_cursor.x;
+                            let dy = pos.y - state.last_cursor.y;
+                            state.drag_distance += (dx * dx + dy * dy).sqrt();
+                            state.last_cursor = pos;
+                            (
+                                canvas::event::Status::Captured,
+                                Some(Message::MapPan { dx, dy }),
+                            )
+                        } else {
+                            state.dragging = false;
+                            (canvas::event::Status::Ignored, None)
+                        }
+                    } else {
+                        (canvas::event::Status::Ignored, None)
+                    }
+                }
+                iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left) => {
+                    let was_dragging = state.dragging;
+                    let drag_dist = state.drag_distance;
+                    let release_pos = state.last_cursor;
+                    state.dragging = false;
+
+                    // Small movement = treat as a click for city selection.
+                    if was_dragging && drag_dist < 5.0 {
+                        let is_my_build_turn = matches!(&self.phase, Phase::BuildCities { remaining }
+                            if remaining.first() == Some(&self.my_id));
+                        if is_my_build_turn {
+                            let (img_w, img_h, offset_x, offset_y) = base_image_layout(bounds);
+                            // Inverse of the canvas transform: screen = pan + zoom * local
+                            let local_x = (release_pos.x - self.pan.x) / self.zoom;
+                            let local_y = (release_pos.y - self.pan.y) / self.zoom;
+                            let x_pct = (local_x - offset_x) / img_w;
+                            let y_pct = (local_y - offset_y) / img_h;
+
+                            for (city_id, city) in self.cities {
+                                if let (Some(cx), Some(cy)) = (city.x, city.y) {
+                                    let dx = x_pct - cx;
+                                    let dy = y_pct - cy;
+                                    if dx * dx + dy * dy <= CITY_HIT_RADIUS * CITY_HIT_RADIUS {
+                                        return (
+                                            canvas::event::Status::Captured,
+                                            Some(Message::BuildCity(city_id.clone())),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    (canvas::event::Status::Captured, None)
+                }
+                _ => (canvas::event::Status::Ignored, None),
+            },
+            _ => (canvas::event::Status::Ignored, None),
         }
-        (canvas::event::Status::Ignored, None)
+    }
+
+    fn mouse_interaction(
+        &self,
+        state: &MapDragState,
+        bounds: Rectangle,
+        cursor: iced::mouse::Cursor,
+    ) -> iced::mouse::Interaction {
+        if cursor.is_over(bounds) {
+            if state.dragging {
+                iced::mouse::Interaction::Grabbing
+            } else {
+                iced::mouse::Interaction::Grab
+            }
+        } else {
+            iced::mouse::Interaction::default()
+        }
     }
 
     fn draw(
         &self,
-        _state: &(),
+        _state: &MapDragState,
         renderer: &Renderer,
         _theme: &Theme,
         bounds: Rectangle,
         _cursor: iced::mouse::Cursor,
     ) -> Vec<canvas::Geometry<Renderer>> {
-        let mut frame = canvas::Frame::new(renderer, bounds.size());
-
-        // Replicate ContentFit::Contain scaling: maintain 3:4 aspect ratio.
-        let img_ratio = IMG_W / IMG_H;
-        let bounds_ratio = bounds.width / bounds.height;
-        let (img_w, img_h) = if bounds_ratio < img_ratio {
-            let s = bounds.width / IMG_W;
-            (bounds.width, IMG_H * s)
-        } else {
-            let s = bounds.height / IMG_H;
-            (IMG_W * s, bounds.height)
-        };
-        let offset_x = (bounds.width - img_w) / 2.0;
-        let offset_y = (bounds.height - img_h) / 2.0;
+        let (img_w, img_h, offset_x, offset_y) = base_image_layout(bounds);
         let radius = SLOT_RADIUS_FRAC * img_w;
-
-        let draw_resource =
-            |frame: &mut canvas::Frame, color: Color, resource_name: &str, current: u8| {
-                let mut resource_slots: Vec<&ResourceSlot> = self
-                    .slots
-                    .iter()
-                    .filter(|s| s.resource == resource_name)
-                    .collect();
-                resource_slots.sort_by_key(|s| s.index);
-                let total = resource_slots.len();
-                if total == 0 || current == 0 {
-                    return;
-                }
-                let occupied_from = total.saturating_sub(current as usize);
-                for slot in &resource_slots[occupied_from..] {
-                    let cx = offset_x + slot.x * img_w;
-                    let cy = offset_y + slot.y * img_h;
-                    let circle = canvas::Path::circle(Point::new(cx, cy), radius);
-                    frame.fill(&circle, color);
-                }
-            };
-
-        draw_resource(
-            &mut frame,
-            Color::from_rgb(0.42, 0.27, 0.14),
-            "coal",
-            self.coal,
-        );
-        draw_resource(&mut frame, Color::from_rgb(0.1, 0.1, 0.1), "oil", self.oil);
-        draw_resource(
-            &mut frame,
-            Color::from_rgb(0.95, 0.85, 0.1),
-            "garbage",
-            self.garbage,
-        );
-        draw_resource(
-            &mut frame,
-            Color::from_rgb(0.85, 0.1, 0.1),
-            "uranium",
-            self.uranium,
-        );
-
-        // Draw turn order markers: player-colored circles at the turn order spaces.
-        for (slot_idx, player_color) in &self.turn_order_players {
-            if let Some(slot) = self.turn_order_slots.iter().find(|s| s.index == *slot_idx) {
-                let cx = offset_x + slot.x * img_w;
-                let cy = offset_y + slot.y * img_h;
-                // White outline for visibility.
-                let outline = canvas::Path::circle(Point::new(cx, cy), radius + 1.5);
-                frame.fill(&outline, Color::WHITE);
-                let fill = canvas::Path::circle(Point::new(cx, cy), radius);
-                frame.fill(&fill, player_color_to_iced(*player_color));
-            }
-        }
-
-        // Draw city position markers.
         let city_radius = CITY_RADIUS_FRAC * img_w;
         let is_build_phase = matches!(&self.phase, Phase::BuildCities { remaining }
             if remaining.first() == Some(&self.my_id));
-        for city in self.cities.values() {
-            if let (Some(cx), Some(cy)) = (city.x, city.y) {
-                let px = offset_x + cx * img_w;
-                let py = offset_y + cy * img_h;
-                let color = if !city.owners.is_empty() {
-                    Color::from_rgba(0.2, 0.9, 0.2, 0.8)
-                } else if is_build_phase {
-                    Color::from_rgba(1.0, 1.0, 1.0, 0.7)
-                } else {
-                    Color::from_rgba(1.0, 1.0, 1.0, 0.35)
+
+        // Only overlay paths go here; the map image lives in the MapBackground
+        // canvas below in the stack, which gets its own rendering layer.
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+        frame.with_save(|frame| {
+            frame.translate(self.pan);
+            frame.scale(self.zoom);
+
+            let draw_resource =
+                |frame: &mut canvas::Frame, color: Color, resource_name: &str, current: u8| {
+                    let mut resource_slots: Vec<&ResourceSlot> = self
+                        .slots
+                        .iter()
+                        .filter(|s| s.resource == resource_name)
+                        .collect();
+                    resource_slots.sort_by_key(|s| s.index);
+                    let total = resource_slots.len();
+                    if total == 0 || current == 0 {
+                        return;
+                    }
+                    let occupied_from = total.saturating_sub(current as usize);
+                    for slot in &resource_slots[occupied_from..] {
+                        let cx = offset_x + slot.x * img_w;
+                        let cy = offset_y + slot.y * img_h;
+                        let circle = canvas::Path::circle(Point::new(cx, cy), radius);
+                        frame.fill(&circle, color);
+                    }
                 };
-                let circle = canvas::Path::circle(Point::new(px, py), city_radius);
-                frame.fill(&circle, color);
+
+            draw_resource(frame, Color::from_rgb(0.42, 0.27, 0.14), "coal", self.coal);
+            draw_resource(frame, Color::from_rgb(0.1, 0.1, 0.1), "oil", self.oil);
+            draw_resource(
+                frame,
+                Color::from_rgb(0.95, 0.85, 0.1),
+                "garbage",
+                self.garbage,
+            );
+            draw_resource(
+                frame,
+                Color::from_rgb(0.85, 0.1, 0.1),
+                "uranium",
+                self.uranium,
+            );
+
+            for (slot_idx, player_color) in &self.turn_order_players {
+                if let Some(slot) = self.turn_order_slots.iter().find(|s| s.index == *slot_idx) {
+                    let cx = offset_x + slot.x * img_w;
+                    let cy = offset_y + slot.y * img_h;
+                    let outline = canvas::Path::circle(Point::new(cx, cy), radius + 1.5);
+                    frame.fill(&outline, Color::WHITE);
+                    let fill = canvas::Path::circle(Point::new(cx, cy), radius);
+                    frame.fill(&fill, player_color_to_iced(*player_color));
+                }
             }
-        }
+
+            for city in self.cities.values() {
+                if let (Some(cx), Some(cy)) = (city.x, city.y) {
+                    let px = offset_x + cx * img_w;
+                    let py = offset_y + cy * img_h;
+                    let color = if !city.owners.is_empty() {
+                        Color::from_rgba(0.2, 0.9, 0.2, 0.8)
+                    } else if is_build_phase {
+                        Color::from_rgba(1.0, 1.0, 1.0, 0.7)
+                    } else {
+                        Color::from_rgba(1.0, 1.0, 1.0, 0.35)
+                    };
+                    let circle = canvas::Path::circle(Point::new(px, py), city_radius);
+                    frame.fill(&circle, color);
+                }
+            }
+        });
 
         vec![frame.into_geometry()]
     }
@@ -613,6 +724,8 @@ pub fn game_view<'a>(
     my_id: uuid::Uuid,
     bid_amount: &'a str,
     error: Option<&'a str>,
+    map_zoom: f32,
+    map_pan: Vector,
 ) -> Element<'a, Message> {
     let phase_label = phase_description(&state.phase);
 
@@ -705,6 +818,10 @@ pub fn game_view<'a>(
         .enumerate()
         .filter_map(|(i, pid)| state.player(*pid).map(|p| (i, p.color)))
         .collect();
+    let bg = MapBackground {
+        zoom: map_zoom,
+        pan: map_pan,
+    };
     let overlay = MarketOverlay {
         coal: state.resources.coal,
         oil: state.resources.oil,
@@ -716,16 +833,18 @@ pub fn game_view<'a>(
         cities: &state.map.cities,
         phase: &state.phase,
         my_id,
+        zoom: map_zoom,
+        pan: map_pan,
     };
+    // stack! renders each child after the first in its own layer, so the
+    // overlay canvas (layer 1) draws on top of the background image (layer 0).
     let map_panel = container(stack![
-        iced::widget::image(germany_map_handle())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .content_fit(iced::ContentFit::Contain),
+        canvas(bg).width(Length::Fill).height(Length::Fill),
         canvas(overlay).width(Length::Fill).height(Length::Fill),
     ])
     .width(Length::FillPortion(3))
-    .height(Length::Fill);
+    .height(Length::Fill)
+    .clip(true);
 
     let info_panel = scrollable(
         column![
@@ -773,10 +892,6 @@ fn owned_plants_row(plants: &[powergrid_core::types::PowerPlant]) -> Element<'st
             r.push(iced::widget::image(handle).width(54).height(54))
         })
         .into()
-}
-
-fn germany_map_handle() -> iced::widget::image::Handle {
-    GERMANY_MAP_HANDLE.clone()
 }
 
 fn plant_card_handle(number: u8) -> iced::widget::image::Handle {

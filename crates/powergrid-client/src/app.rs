@@ -1,4 +1,4 @@
-use iced::{futures::channel::mpsc, Element, Subscription};
+use iced::{futures::channel::mpsc, Element, Subscription, Vector};
 use powergrid_core::{
     actions::Action,
     types::{PlayerColor, Resource},
@@ -39,6 +39,17 @@ pub enum Message {
 
     // Bureaucracy
     PowerCities,
+
+    // Map viewport
+    MapZoom {
+        factor: f32,
+        cursor_x: f32,
+        cursor_y: f32,
+    },
+    MapPan {
+        dx: f32,
+        dy: f32,
+    },
 }
 
 pub enum Screen {
@@ -59,6 +70,8 @@ pub struct App {
     bid_amount: String,
     /// Last action error received from the server; cleared on next successful state update.
     error_message: Option<String>,
+    map_zoom: f32,
+    map_pan: Vector,
 }
 
 impl App {
@@ -73,6 +86,8 @@ impl App {
                 pending_join: None,
                 bid_amount: String::new(),
                 error_message: None,
+                map_zoom: 1.0,
+                map_pan: Vector::default(),
             },
             iced::Task::none(),
         )
@@ -185,6 +200,21 @@ impl App {
                     }
                 }
             }
+            Message::MapZoom {
+                factor,
+                cursor_x,
+                cursor_y,
+            } => {
+                let new_zoom = (self.map_zoom * factor).clamp(0.3, 8.0);
+                let ratio = new_zoom / self.map_zoom;
+                self.map_pan.x = cursor_x - (cursor_x - self.map_pan.x) * ratio;
+                self.map_pan.y = cursor_y - (cursor_y - self.map_pan.y) * ratio;
+                self.map_zoom = new_zoom;
+            }
+            Message::MapPan { dx, dy } => {
+                self.map_pan.x += dx;
+                self.map_pan.y += dy;
+            }
         }
         iced::Task::none()
     }
@@ -204,6 +234,8 @@ impl App {
                             my_id,
                             &self.bid_amount,
                             self.error_message.as_deref(),
+                            self.map_zoom,
+                            self.map_pan,
                         )
                     }
                 } else {
