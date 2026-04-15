@@ -1034,6 +1034,7 @@ mod tests {
         Map::from_data(MapData {
             name: "Test".into(),
             regions: vec!["r1".into()],
+            image: None,
             cities: vec![
                 CityData {
                     id: "a".into(),

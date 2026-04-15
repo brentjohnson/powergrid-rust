@@ -1,5 +1,5 @@
 use iced::{
-    widget::{button, canvas, column, container, row, scrollable, stack, text},
+    widget::{button, canvas, column, container, row, scrollable, stack, text, Action},
     Color, ContentFit, Element, Length, Point, Rectangle, Renderer, Size, Theme,
 };
 use powergrid_core::map::MapData;
@@ -644,10 +644,10 @@ impl canvas::Program<Message> for CoordOverlay {
     fn update(
         &self,
         _state: &mut (),
-        event: canvas::Event,
+        event: &canvas::Event,
         bounds: Rectangle,
         cursor: iced::mouse::Cursor,
-    ) -> (canvas::event::Status, Option<Message>) {
+    ) -> Option<Action<Message>> {
         let pct_msg = |make: fn(Point) -> Message| -> Option<Message> {
             cursor.position_in(bounds).and_then(|local| {
                 let (disp_w, disp_h, off_x, off_y) =
@@ -657,14 +657,13 @@ impl canvas::Program<Message> for CoordOverlay {
         };
 
         match event {
-            canvas::Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => (
-                canvas::event::Status::Ignored,
-                pct_msg(Message::CursorMoved),
-            ),
-            canvas::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
-                (canvas::event::Status::Ignored, pct_msg(Message::Clicked))
+            canvas::Event::Mouse(iced::mouse::Event::CursorMoved { .. }) => {
+                pct_msg(Message::CursorMoved).map(Action::publish)
             }
-            _ => (canvas::event::Status::Ignored, None),
+            canvas::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
+                pct_msg(Message::Clicked).map(Action::publish)
+            }
+            _ => None,
         }
     }
 
@@ -708,10 +707,11 @@ impl canvas::Program<Message> for CoordOverlay {
 // ---------------------------------------------------------------------------
 
 pub fn main() -> iced::Result {
-    iced::application("Map Tool", App::update, App::view)
+    iced::application(App::new, App::update, App::view)
+        .title("Map Tool")
         .window(iced::window::Settings {
             size: Size::new(900.0, 900.0),
             ..Default::default()
         })
-        .run_with(App::new)
+        .run()
 }

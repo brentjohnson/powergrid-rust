@@ -6,7 +6,8 @@ use app::App;
 use iced::application;
 
 pub fn main() -> iced::Result {
-    application("Powergrid", App::update, App::view)
+    application(App::new, App::update, App::view)
+        .title("Powergrid")
         .subscription(App::subscription)
-        .run_with(App::new)
+        .run()
 }

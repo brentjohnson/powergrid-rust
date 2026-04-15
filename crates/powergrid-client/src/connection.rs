@@ -1,4 +1,4 @@
-use futures::{SinkExt, StreamExt};
+use futures::{stream, SinkExt, StreamExt};
 use iced::futures::channel::mpsc;
 use powergrid_core::actions::{Action, ServerMessage};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -11,21 +11,26 @@ pub enum WsEvent {
     Disconnected,
 }
 
+// `Subscription::run_with` identifies the subscription by `String` and requires `fn(&String) -> _`.
+#[allow(clippy::ptr_arg)]
+fn ws_stream(url: &String) -> stream::BoxStream<'static, WsEvent> {
+    let url = url.clone();
+    // Wrap in `once(...).flatten()` so the worker is spawned lazily — only
+    // when iced actually starts this subscription instance.  Without this,
+    // the spawn fires on every render (each call to `subscription()`), and
+    // any worker whose receiver was discarded by iced's dedup logic
+    // immediately connects then disconnects (phantom pairs in the log).
+    stream::once(async move {
+        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<WsEvent>();
+        tokio::spawn(ws_worker(url, event_tx));
+        tokio_stream::wrappers::UnboundedReceiverStream::new(event_rx)
+    })
+    .flatten()
+    .boxed()
+}
+
 pub fn connect(url: String) -> iced::Subscription<WsEvent> {
-    iced::Subscription::run_with_id(
-        url.clone(),
-        // Wrap in `once(...).flatten()` so the worker is spawned lazily — only
-        // when iced actually starts this subscription instance.  Without this,
-        // the spawn fires on every render (each call to `subscription()`), and
-        // any worker whose receiver was discarded by iced's dedup logic
-        // immediately connects then disconnects (phantom pairs in the log).
-        futures::stream::once(async move {
-            let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel::<WsEvent>();
-            tokio::spawn(ws_worker(url, event_tx));
-            tokio_stream::wrappers::UnboundedReceiverStream::new(event_rx)
-        })
-        .flatten(),
-    )
+    iced::Subscription::run_with(url, ws_stream)
 }
 
 async fn ws_worker(url: String, event_tx: tokio::sync::mpsc::UnboundedSender<WsEvent>) {

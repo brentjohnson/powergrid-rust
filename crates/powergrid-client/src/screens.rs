@@ -1,6 +1,6 @@
 use crate::app::Message;
 use iced::{
-    widget::{button, canvas, column, container, row, scrollable, stack, text, text_input},
+    widget::{button, canvas, column, container, row, scrollable, stack, text, text_input, Action},
     Color, Element, Length, Point, Rectangle, Renderer, Theme, Vector,
 };
 use powergrid_core::{
@@ -378,28 +378,26 @@ impl canvas::Program<Message> for MarketOverlay<'_> {
     fn update(
         &self,
         state: &mut MapDragState,
-        event: canvas::Event,
+        event: &canvas::Event,
         bounds: Rectangle,
         cursor: iced::mouse::Cursor,
-    ) -> (canvas::event::Status, Option<Message>) {
+    ) -> Option<Action<Message>> {
         match event {
             canvas::Event::Mouse(mouse_event) => match mouse_event {
                 iced::mouse::Event::WheelScrolled { delta } => {
-                    let Some(screen_pos) = cursor.position_in(bounds) else {
-                        return (canvas::event::Status::Ignored, None);
-                    };
+                    let screen_pos = cursor.position_in(bounds)?;
                     let delta_y = match delta {
-                        iced::mouse::ScrollDelta::Lines { y, .. } => y,
-                        iced::mouse::ScrollDelta::Pixels { y, .. } => y / 20.0,
+                        iced::mouse::ScrollDelta::Lines { y, .. } => *y,
+                        iced::mouse::ScrollDelta::Pixels { y, .. } => *y / 20.0,
                     };
                     let factor = 1.15f32.powf(delta_y);
-                    (
-                        canvas::event::Status::Captured,
-                        Some(Message::MapZoom {
+                    Some(
+                        Action::publish(Message::MapZoom {
                             factor,
                             cursor_x: screen_pos.x,
                             cursor_y: screen_pos.y,
-                        }),
+                        })
+                        .and_capture(),
                     )
                 }
                 iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left) => {
@@ -407,9 +405,9 @@ impl canvas::Program<Message> for MarketOverlay<'_> {
                         state.dragging = true;
                         state.last_cursor = pos;
                         state.drag_distance = 0.0;
-                        (canvas::event::Status::Captured, None)
+                        Some(Action::capture())
                     } else {
-                        (canvas::event::Status::Ignored, None)
+                        None
                     }
                 }
                 iced::mouse::Event::CursorMoved { .. } => {
@@ -419,16 +417,13 @@ impl canvas::Program<Message> for MarketOverlay<'_> {
                             let dy = pos.y - state.last_cursor.y;
                             state.drag_distance += (dx * dx + dy * dy).sqrt();
                             state.last_cursor = pos;
-                            (
-                                canvas::event::Status::Captured,
-                                Some(Message::MapPan { dx, dy }),
-                            )
+                            Some(Action::publish(Message::MapPan { dx, dy }).and_capture())
                         } else {
                             state.dragging = false;
-                            (canvas::event::Status::Ignored, None)
+                            None
                         }
                     } else {
-                        (canvas::event::Status::Ignored, None)
+                        None
                     }
                 }
                 iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left) => {
@@ -454,20 +449,20 @@ impl canvas::Program<Message> for MarketOverlay<'_> {
                                     let dx = x_pct - cx;
                                     let dy = y_pct - cy;
                                     if dx * dx + dy * dy <= CITY_HIT_RADIUS * CITY_HIT_RADIUS {
-                                        return (
-                                            canvas::event::Status::Captured,
-                                            Some(Message::BuildCity(city_id.clone())),
+                                        return Some(
+                                            Action::publish(Message::BuildCity(city_id.clone()))
+                                                .and_capture(),
                                         );
                                     }
                                 }
                             }
                         }
                     }
-                    (canvas::event::Status::Captured, None)
+                    Some(Action::capture())
                 }
-                _ => (canvas::event::Status::Ignored, None),
+                _ => None,
             },
-            _ => (canvas::event::Status::Ignored, None),
+            _ => None,
         }
     }
 
