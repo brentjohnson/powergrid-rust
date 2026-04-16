@@ -434,8 +434,11 @@ impl canvas::Program<Message> for MarketOverlay<'_> {
                     let release_pos = state.last_cursor;
                     state.dragging = false;
 
+                    if !was_dragging {
+                        return None;
+                    }
                     // Small movement = treat as a click for city selection.
-                    if was_dragging && drag_dist < 5.0 {
+                    if drag_dist < 5.0 {
                         let is_my_build_turn = matches!(&self.phase, Phase::BuildCities { remaining }
                             if remaining.first() == Some(&self.my_id));
                         if is_my_build_turn {
