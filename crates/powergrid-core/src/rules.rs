@@ -295,7 +295,7 @@ fn handle_pass_auction(state: &mut GameState, actor: PlayerId) -> Result<(), Act
         }
 
         passed.push(actor);
-        advance_auction(state, current_bidder_idx, bought, passed);
+        advance_auction(state, bought, passed);
     }
     Ok(())
 }
@@ -333,22 +333,11 @@ fn award_plant(
 
     bought.push(winner);
 
-    // Find current_bidder_idx for the winner.
-    let current_bidder_idx = state
-        .player_order
-        .iter()
-        .position(|&id| id == winner)
-        .unwrap_or(0);
-    advance_auction(state, current_bidder_idx, bought, passed);
+    advance_auction(state, bought, passed);
     Ok(())
 }
 
-fn advance_auction(
-    state: &mut GameState,
-    current_bidder_idx: usize,
-    bought: Vec<PlayerId>,
-    passed: Vec<PlayerId>,
-) {
+fn advance_auction(state: &mut GameState, bought: Vec<PlayerId>, passed: Vec<PlayerId>) {
     let total = state.player_order.len();
     let all_done: Vec<PlayerId> = bought.iter().chain(passed.iter()).cloned().collect();
 
@@ -360,8 +349,8 @@ fn advance_auction(
         return;
     }
 
-    // Find next player who hasn't bought or passed.
-    let mut next_idx = (current_bidder_idx + 1) % total;
+    // Find the earliest player in turn order who hasn't bought or passed.
+    let mut next_idx = 0;
     let mut iterations = 0;
     while all_done.contains(&state.player_order[next_idx]) {
         next_idx = (next_idx + 1) % total;
