@@ -295,7 +295,7 @@ const SLOT_RADIUS_FRAC: f32 = 0.009;
 const CITY_HIT_RADIUS: f32 = 0.03;
 
 /// Display radius for city markers, as a fraction of image width.
-const CITY_RADIUS_FRAC: f32 = 0.006;
+const CITY_RADIUS_FRAC: f32 = 0.010;
 
 /// Compute the ContentFit::Contain image layout within the given bounds.
 /// Returns (img_w, img_h, offset_x, offset_y).
@@ -366,6 +366,8 @@ struct MarketOverlay<'a> {
     /// (slot_index, player_color) for each player in turn order (index 0 = first place).
     turn_order_players: Vec<(usize, PlayerColor)>,
     cities: &'a HashMap<String, City>,
+    /// Color lookup for each player, used to tint owned-city markers.
+    player_colors: HashMap<PlayerId, PlayerColor>,
     phase: &'a Phase,
     my_id: PlayerId,
     zoom: f32,
@@ -601,17 +603,40 @@ impl canvas::Program<Message> for MarketOverlay<'_> {
                     let px = offset_x + cx * img_w;
                     let py = offset_y + cy * img_h;
                     let is_selected = self.selected_build.contains(&city.id);
-                    let color = if !city.owners.is_empty() {
-                        Color::from_rgba(0.2, 0.9, 0.2, 0.8)
+
+                    if !city.owners.is_empty() {
+                        // Draw one dot per owner, spaced horizontally, each with a white border.
+                        let n = city.owners.len() as f32;
+                        let spacing = city_radius * 2.3;
+                        let total_width = spacing * (n - 1.0);
+                        for (i, owner_id) in city.owners.iter().enumerate() {
+                            let ox = px + (i as f32 * spacing) - total_width / 2.0;
+                            let outline =
+                                canvas::Path::circle(Point::new(ox, py), city_radius + 1.5);
+                            frame.fill(&outline, Color::WHITE);
+                            let dot = canvas::Path::circle(Point::new(ox, py), city_radius);
+                            let color = self
+                                .player_colors
+                                .get(owner_id)
+                                .copied()
+                                .map(player_color_to_iced)
+                                .unwrap_or(Color::from_rgba(0.2, 0.9, 0.2, 0.8));
+                            frame.fill(&dot, color);
+                        }
                     } else if is_selected {
-                        Color::from_rgba(0.1, 0.8, 1.0, 0.95)
-                    } else if is_build_phase {
-                        Color::from_rgba(1.0, 1.0, 1.0, 0.7)
+                        let outline = canvas::Path::circle(Point::new(px, py), city_radius + 1.5);
+                        frame.fill(&outline, Color::WHITE);
+                        let dot = canvas::Path::circle(Point::new(px, py), city_radius);
+                        frame.fill(&dot, Color::from_rgba(0.1, 0.8, 1.0, 0.95));
                     } else {
-                        Color::from_rgba(1.0, 1.0, 1.0, 0.35)
-                    };
-                    let circle = canvas::Path::circle(Point::new(px, py), city_radius);
-                    frame.fill(&circle, color);
+                        let color = if is_build_phase {
+                            Color::from_rgba(1.0, 1.0, 1.0, 0.7)
+                        } else {
+                            Color::from_rgba(1.0, 1.0, 1.0, 0.35)
+                        };
+                        let dot = canvas::Path::circle(Point::new(px, py), city_radius);
+                        frame.fill(&dot, color);
+                    }
                 }
             }
         });
@@ -877,6 +902,11 @@ pub fn game_view<'a>(
         .enumerate()
         .filter_map(|(i, pid)| state.player(*pid).map(|p| (i, p.color)))
         .collect();
+    let player_colors: HashMap<PlayerId, PlayerColor> = state
+        .player_order
+        .iter()
+        .filter_map(|pid| state.player(*pid).map(|p| (*pid, p.color)))
+        .collect();
     let bg = MapBackground {
         zoom: map_zoom,
         pan: map_pan,
@@ -890,6 +920,7 @@ pub fn game_view<'a>(
         turn_order_slots: &state.map.turn_order_slots,
         turn_order_players,
         cities: &state.map.cities,
+        player_colors,
         phase: &state.phase,
         my_id,
         zoom: map_zoom,
