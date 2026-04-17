@@ -6,151 +6,146 @@ regions = ["northwest", "northeast", "west", "east", "southwest", "southeast"]
 id = "flensburg"
 name = "Flensburg"
 region = "northwest"
-x = 0.4071
-y = 0.0341
+x = 0.3981
+y = 0.0433
 
 [[cities]]
 id = "kiel"
 name = "Kiel"
 region = "northwest"
-x = 0.4596
-y = 0.0948
+x = 0.4498
+y = 0.1008
 
 [[cities]]
 id = "hamburg"
 name = "Hamburg"
 region = "northwest"
-x = 0.4532
-y = 0.1864
+x = 0.4466
+y = 0.1952
 
 [[cities]]
 id = "bremen"
 name = "Bremen"
 region = "northwest"
-x = 0.3557
-y = 0.2449
+x = 0.3486
+y = 0.2514
 
 [[cities]]
 id = "hannover"
 name = "Hannover"
 region = "northwest"
-x = 0.4542
-y = 0.3354
+x = 0.4512
+y = 0.3374
 
 [[cities]]
 id = "dortmund"
 name = "Dortmund"
 region = "west"
-x = 0.2403
-y = 0.4489
+x = 0.2338
+y = 0.4538
 
 [[cities]]
 id = "duisburg"
 name = "Duisburg"
 region = "west"
-x = 0.0925
-y = 0.4058
+x = 0.0831
+y = 0.4105
 
 [[cities]]
 id = "essen"
 name = "Essen"
 region = "west"
-x = 0.1529
-y = 0.4220
+x = 0.1444
+y = 0.4253
 
 [[cities]]
 id = "duesseldorf"
 name = "Düsseldorf"
 region = "west"
-x = 0.1081
-y = 0.4781
+x = 0.0989
+y = 0.4816
 
 [[cities]]
 id = "koeln"
 name = "Köln"
-region = "west"
-x = 0.1746
-y = 0.5240
+region = "southwest"
+x = 0.1643
+y = 0.5258
 
 [[cities]]
 id = "aachen"
 name = "Aachen"
-region = "west"
-x = 0.0799
-y = 0.5436
+region = "southwest"
+x = 0.0663
+y = 0.5447
 
 [[cities]]
 id = "muenster"
 name = "Münster"
 region = "west"
-x = 0.2248
-y = 0.3780
+x = 0.2172
+y = 0.3857
 
 [[cities]]
 id = "osnabrueck"
 name = "Osnabrück"
-region = "northwest"
-x = 0.2809
-y = 0.3196
-
-[[cities]]
-id = "bielefeld"
-name = "Bielefeld"
-region = "northwest"
+region = "west"
+x = 0.2735
+y = 0.3285
 
 [[cities]]
 id = "kassel"
 name = "Kassel"
-region = "east"
+region = "west"
 x = 0.4038
 y = 0.4652
 
 [[cities]]
 id = "frankfurt"
 name = "Frankfurt"
-region = "west"
+region = "southwest"
 x = 0.3428
 y = 0.5978
 
 [[cities]]
 id = "wiesbaden"
 name = "Wiesbaden"
-region = "west"
+region = "southwest"
 x = 0.2845
 y = 0.6184
 
 [[cities]]
 id = "trier"
 name = "Trier"
-region = "west"
-x = 0.1187
-y = 0.6543
+region = "southwest"
+x = 0.1071
+y = 0.6544
 
 [[cities]]
 id = "saarbruecken"
 name = "Saarbrücken"
 region = "southwest"
-x = 0.2044
-y = 0.7257
+x = 0.1959
+y = 0.7251
 
 [[cities]]
 id = "mannheim"
 name = "Mannheim"
 region = "southwest"
-x = 0.3359
-y = 0.7078
+x = 0.3247
+y = 0.7091
 
 [[cities]]
 id = "stuttgart"
 name = "Stuttgart"
-region = "southwest"
+region = "southeast"
 x = 0.3641
 y = 0.7834
 
 [[cities]]
 id = "freiburg"
 name = "Freiburg"
-region = "southwest"
+region = "southeast"
 x = 0.2486
 y = 0.8568
 
@@ -192,7 +187,7 @@ y = 0.6913
 [[cities]]
 id = "wuerzburg"
 name = "Würzburg"
-region = "southeast"
+region = "east"
 x = 0.4679
 y = 0.6536
 
@@ -256,71 +251,50 @@ y = 0.1117
 id = "wilhelmshaven"
 name = "Wilhelmshaven"
 region = "northwest"
-x = 0.3267
-y = 0.1937
+x = 0.2632
+y = 0.1971
 
 [[cities]]
 id = "cuxhaven"
 name = "Cuxhaven"
 region = "northwest"
-x = 0.3724
-y = 0.1561
+x = 0.3295
+y = 0.1568
 
 [[cities]]
 id = "luebeck"
 name = "Lübeck"
-region = "northwest"
-x = 0.5395
-y = 0.1531
+region = "northeast"
+x = 0.5260
+y = 0.1399
 
 [[cities]]
 id = "torgelow"
 name = "Torgelow"
 region = "northeast"
-x = 0.8779
-y = 0.2043
-
-[[cities]]
-id = "potsdam"
-name = "Potsdam"
-region = "northeast"
-x = 0.7521
-y = 0.3301
+x = 0.8398
+y = 0.1951
 
 [[cities]]
 id = "frankfurt_oder"
 name = "Frankfurt (Oder)"
 region = "northeast"
-x = 0.8753
-y = 0.3531
+x = 0.8855
+y = 0.3430
 
 [[cities]]
-id = "cottbus"
-name = "Cottbus"
-region = "northeast"
-x = 0.8618
-y = 0.4319
-
-[[cities]]
-id = "gera"
-name = "Gera"
+id = "fulda"
+name = "Fulda"
 region = "east"
-x = 0.6773
-y = 0.5468
+x = 0.4441
+y = 0.5564
 
 [[cities]]
-id = "bonn"
-name = "Bonn"
-region = "southwest"
-x = 0.1804
-y = 0.5489
-
-[[cities]]
-id = "mainz"
-name = "Mainz"
-region = "southwest"
-x = 0.2930
-y = 0.6283
+id = "passau"
+name = "Passau"
+region = "east"
+x = 0.8043
+y = 0.7968
 
 [[connections]]
 from = "flensburg"
@@ -389,11 +363,6 @@ cost = 15
 
 [[connections]]
 from = "hannover"
-to = "bielefeld"
-cost = 19
-
-[[connections]]
-from = "hannover"
 to = "dortmund"
 cost = 18
 
@@ -404,18 +373,8 @@ cost = 15
 
 [[connections]]
 from = "osnabrueck"
-to = "bielefeld"
-cost = 7
-
-[[connections]]
-from = "osnabrueck"
 to = "muenster"
 cost = 7
-
-[[connections]]
-from = "bielefeld"
-to = "dortmund"
-cost = 9
 
 [[connections]]
 from = "muenster"
@@ -678,16 +637,6 @@ to = "schwerin"
 cost = 11
 
 [[connections]]
-from = "potsdam"
-to = "berlin"
-cost = 0
-
-[[connections]]
-from = "potsdam"
-to = "magdeburg"
-cost = 13
-
-[[connections]]
 from = "frankfurt_oder"
 to = "berlin"
 cost = 6
@@ -721,36 +670,6 @@ cost = 8
 from = "gera"
 to = "dresden"
 cost = 19
-
-[[connections]]
-from = "bonn"
-to = "koeln"
-cost = 4
-
-[[connections]]
-from = "bonn"
-to = "aachen"
-cost = 10
-
-[[connections]]
-from = "bonn"
-to = "trier"
-cost = 12
-
-[[connections]]
-from = "mainz"
-to = "frankfurt"
-cost = 0
-
-[[connections]]
-from = "mainz"
-to = "wiesbaden"
-cost = 0
-
-[[connections]]
-from = "mainz"
-to = "mannheim"
-cost = 8
 
 [[resource_slots]]
 resource = "coal"
@@ -1235,53 +1154,53 @@ y = 0.9574
 [[resource_slots]]
 resource = "uranium"
 index = 8
-x = 0.8997
-y = 0.9415
+x = 0.9059
+y = 0.9343
 
 [[resource_slots]]
 resource = "uranium"
 index = 9
-x = 0.9468
-y = 0.9432
+x = 0.9448
+y = 0.9347
 
 [[resource_slots]]
 resource = "uranium"
 index = 10
-x = 0.8918
-y = 0.9767
+x = 0.9049
+y = 0.9704
 
 [[resource_slots]]
 resource = "uranium"
 index = 11
-x = 0.9438
-y = 0.9767
+x = 0.9460
+y = 0.9721
 
 [[turn_order_slots]]
 index = 0
-x = 0.1059
-y = 0.0332
+x = 0.0883
+y = 0.0396
 
 [[turn_order_slots]]
 index = 1
-x = 0.1405
-y = 0.0313
+x = 0.1252
+y = 0.0404
 
 [[turn_order_slots]]
 index = 2
-x = 0.1773
-y = 0.0319
+x = 0.1614
+y = 0.0384
 
 [[turn_order_slots]]
 index = 3
-x = 0.2110
-y = 0.0285
+x = 0.1987
+y = 0.0400
 
 [[turn_order_slots]]
 index = 4
-x = 0.2487
-y = 0.0320
+x = 0.2342
+y = 0.0385
 
 [[turn_order_slots]]
 index = 5
-x = 0.2823
-y = 0.0316
+x = 0.2699
+y = 0.0397

@@ -653,13 +653,19 @@ impl ConnectScreen {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let color_buttons = row![
-            color_button(PlayerColor::Red, self.selected_color),
-            color_button(PlayerColor::Blue, self.selected_color),
-            color_button(PlayerColor::Green, self.selected_color),
-            color_button(PlayerColor::Yellow, self.selected_color),
-            color_button(PlayerColor::Purple, self.selected_color),
-            color_button(PlayerColor::Black, self.selected_color),
+        let color_buttons = column![
+            row![
+                color_button(PlayerColor::Red, self.selected_color),
+                color_button(PlayerColor::Blue, self.selected_color),
+                color_button(PlayerColor::Green, self.selected_color),
+            ]
+            .spacing(8),
+            row![
+                color_button(PlayerColor::Yellow, self.selected_color),
+                color_button(PlayerColor::Purple, self.selected_color),
+                color_button(PlayerColor::Black, self.selected_color),
+            ]
+            .spacing(8),
         ]
         .spacing(8);
 
