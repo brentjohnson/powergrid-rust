@@ -35,6 +35,7 @@ enum SlotKind {
     Resource,
     TurnOrder,
     City,
+    CityTracker,
 }
 
 // ---------------------------------------------------------------------------
@@ -53,6 +54,8 @@ enum Message {
     SelectTurnOrderSlot(usize),
     /// User selected a city slot in the sidebar list.
     SelectCitySlot(usize),
+    /// User selected a city tracker slot in the sidebar list.
+    SelectCityTrackerSlot(usize),
     /// Save coordinates back to the TOML file.
     Save,
 }
@@ -73,12 +76,15 @@ struct App {
     resource_slots: Vec<Slot>,
     turn_order_slots: Vec<Slot>,
     city_slots: Vec<Slot>,
+    city_tracker_slots: Vec<Slot>,
     /// Index into `resource_slots` of the currently selected slot, if any.
     selected_resource: Option<usize>,
     /// Index into `turn_order_slots` of the currently selected slot, if any.
     selected_turn_order: Option<usize>,
     /// Index into `city_slots` of the currently selected slot, if any.
     selected_city: Option<usize>,
+    /// Index into `city_tracker_slots` of the currently selected slot, if any.
+    selected_city_tracker: Option<usize>,
     cursor_pct: Option<(f32, f32)>,
     status_msg: String,
 }
@@ -154,16 +160,29 @@ impl App {
             })
             .collect();
 
+        let mut city_tracker_slots = build_city_tracker_slot_list();
+        for cts in &map_data.city_tracker_slots {
+            if let Some(slot) = city_tracker_slots.iter_mut().find(|s| s.index == cts.index) {
+                slot.pos = Some((cts.x, cts.y));
+            }
+        }
+
         let res_placed = resource_slots.iter().filter(|s| s.pos.is_some()).count();
         let to_placed = turn_order_slots.iter().filter(|s| s.pos.is_some()).count();
         let city_placed = city_slots.iter().filter(|s| s.pos.is_some()).count();
+        let ct_placed = city_tracker_slots
+            .iter()
+            .filter(|s| s.pos.is_some())
+            .count();
         let status_msg = format!(
-            "Resources: {}/{} | Turn order: {}/6 | Cities: {}/{}",
+            "Resources: {}/{} | Turn order: {}/6 | Cities: {}/{} | City Tracker: {}/{}",
             res_placed,
             resource_slots.len(),
             to_placed,
             city_placed,
             city_slots.len(),
+            ct_placed,
+            city_tracker_slots.len(),
         );
 
         (
@@ -180,9 +199,11 @@ impl App {
                 resource_slots,
                 turn_order_slots,
                 city_slots,
+                city_tracker_slots,
                 selected_resource: None,
                 selected_turn_order: None,
                 selected_city: None,
+                selected_city_tracker: None,
                 cursor_pct: None,
                 status_msg,
             },
@@ -211,6 +232,11 @@ impl App {
                     if idx + 1 < self.city_slots.len() {
                         self.selected_city = Some(idx + 1);
                     }
+                } else if let Some(idx) = self.selected_city_tracker {
+                    self.city_tracker_slots[idx].pos = Some((pct.x, pct.y));
+                    if idx + 1 < self.city_tracker_slots.len() {
+                        self.selected_city_tracker = Some(idx + 1);
+                    }
                 }
                 self.refresh_status();
             }
@@ -218,16 +244,25 @@ impl App {
                 self.selected_resource = Some(idx);
                 self.selected_turn_order = None;
                 self.selected_city = None;
+                self.selected_city_tracker = None;
             }
             Message::SelectTurnOrderSlot(idx) => {
                 self.selected_turn_order = Some(idx);
                 self.selected_resource = None;
                 self.selected_city = None;
+                self.selected_city_tracker = None;
             }
             Message::SelectCitySlot(idx) => {
                 self.selected_city = Some(idx);
                 self.selected_resource = None;
                 self.selected_turn_order = None;
+                self.selected_city_tracker = None;
+            }
+            Message::SelectCityTrackerSlot(idx) => {
+                self.selected_city_tracker = Some(idx);
+                self.selected_resource = None;
+                self.selected_turn_order = None;
+                self.selected_city = None;
             }
             Message::Save => match self.save_toml() {
                 Ok(()) => {
@@ -253,13 +288,20 @@ impl App {
             .filter(|s| s.pos.is_some())
             .count();
         let city_placed = self.city_slots.iter().filter(|s| s.pos.is_some()).count();
+        let ct_placed = self
+            .city_tracker_slots
+            .iter()
+            .filter(|s| s.pos.is_some())
+            .count();
         self.status_msg = format!(
-            "Resources: {}/{} | Turn order: {}/6 | Cities: {}/{}",
+            "Resources: {}/{} | Turn order: {}/6 | Cities: {}/{} | City Tracker: {}/{}",
             res_placed,
             self.resource_slots.len(),
             to_placed,
             city_placed,
             self.city_slots.len(),
+            ct_placed,
+            self.city_tracker_slots.len(),
         );
     }
 
@@ -324,6 +366,17 @@ impl App {
             }
         }
 
+        // City tracker slots.
+        for slot in &self.city_tracker_slots {
+            if let Some((x, y)) = slot.pos {
+                out.push('\n');
+                out.push_str("[[city_tracker_slots]]\n");
+                out.push_str(&format!("index = {}\n", slot.index));
+                out.push_str(&format!("x = {x:.4}\n"));
+                out.push_str(&format!("y = {y:.4}\n"));
+            }
+        }
+
         fs::write(&self.toml_path, &out).map_err(|e| e.to_string())
     }
 
@@ -339,13 +392,20 @@ impl App {
             .filter(|s| s.pos.is_some())
             .count();
         let city_placed = self.city_slots.iter().filter(|s| s.pos.is_some()).count();
+        let ct_placed = self
+            .city_tracker_slots
+            .iter()
+            .filter(|s| s.pos.is_some())
+            .count();
         let header = text(format!(
-            "Resources: {}/{}\nTurn order: {}/6\nCities: {}/{}",
+            "Resources: {}/{}\nTurn order: {}/6\nCities: {}/{}\nCity Tracker: {}/{}",
             res_placed,
             self.resource_slots.len(),
             to_placed,
             city_placed,
             self.city_slots.len(),
+            ct_placed,
+            self.city_tracker_slots.len(),
         ))
         .size(13)
         .color(Color::WHITE);
@@ -409,9 +469,31 @@ impl App {
             },
         );
 
-        let slot_list: Element<_> = scrollable(column![res_list, to_list, city_list].spacing(8))
-            .height(Length::Fill)
-            .into();
+        // City tracker slots list
+        let ct_header = text("-- City Tracker --")
+            .size(12)
+            .color(Color::from_rgb(0.7, 0.7, 0.7));
+        let ct_list = self.city_tracker_slots.iter().enumerate().fold(
+            column![ct_header].spacing(2),
+            |col, (i, slot)| {
+                let is_selected = self.selected_city_tracker == Some(i);
+                let label = if slot.pos.is_some() {
+                    format!("✓ count {}", slot.index)
+                } else {
+                    format!("  count {}", slot.index)
+                };
+                col.push(slot_button(
+                    label,
+                    is_selected,
+                    Message::SelectCityTrackerSlot(i),
+                ))
+            },
+        );
+
+        let slot_list: Element<_> =
+            scrollable(column![res_list, to_list, city_list, ct_list].spacing(8))
+                .height(Length::Fill)
+                .into();
 
         let save_btn = button(text("Save").size(14).color(Color::WHITE))
             .on_press(Message::Save)
@@ -469,6 +551,21 @@ impl App {
             s.pos
                 .map(|(x, y)| (x, y, self.selected_city == Some(i), SlotKind::City))
         }));
+        placed_positions.extend(
+            self.city_tracker_slots
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| {
+                    s.pos.map(|(x, y)| {
+                        (
+                            x,
+                            y,
+                            self.selected_city_tracker == Some(i),
+                            SlotKind::CityTracker,
+                        )
+                    })
+                }),
+        );
 
         let overlay = CoordOverlay {
             img_w: self.img_w,
@@ -602,6 +699,16 @@ fn build_turn_order_slot_list() -> Vec<Slot> {
         .collect()
 }
 
+fn build_city_tracker_slot_list() -> Vec<Slot> {
+    (0..22)
+        .map(|i| Slot {
+            resource: "city_tracker".to_string(),
+            index: i,
+            pos: None,
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Coordinate helpers
 // ---------------------------------------------------------------------------
@@ -693,6 +800,7 @@ impl canvas::Program<Message> for CoordOverlay {
                     SlotKind::Resource => Color::from_rgba(0.0, 0.8, 1.0, 0.7),
                     SlotKind::TurnOrder => Color::from_rgba(1.0, 1.0, 1.0, 0.85),
                     SlotKind::City => Color::from_rgba(0.2, 0.9, 0.2, 0.85),
+                    SlotKind::CityTracker => Color::from_rgba(1.0, 0.5, 0.0, 0.85),
                 }
             };
             let circle = canvas::Path::circle(Point::new(cx, cy), radius);

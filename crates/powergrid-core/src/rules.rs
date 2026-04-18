@@ -1188,6 +1188,7 @@ mod tests {
             ],
             resource_slots: vec![],
             turn_order_slots: vec![],
+            city_tracker_slots: vec![],
         })
     }
 

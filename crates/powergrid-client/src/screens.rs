@@ -4,10 +4,10 @@ use iced::{
         button, canvas, column, container, row, scrollable, stack, text, text_input, tooltip,
         Action,
     },
-    Color, Element, Length, Point, Rectangle, Renderer, Theme, Vector,
+    Background, Border, Color, Element, Length, Point, Rectangle, Renderer, Theme, Vector,
 };
 use powergrid_core::{
-    map::{City, ResourceSlot, TurnOrderSlot},
+    map::{City, CityTrackerSlot, ResourceSlot, TurnOrderSlot},
     types::{Phase, PlayerColor, PlayerId, Resource},
     GameState,
 };
@@ -369,6 +369,9 @@ struct MarketOverlay<'a> {
     turn_order_slots: &'a [TurnOrderSlot],
     /// (slot_index, player_color) for each player in turn order (index 0 = first place).
     turn_order_players: Vec<(usize, PlayerColor)>,
+    city_tracker_slots: &'a [CityTrackerSlot],
+    /// (city_count, player_color) for each player.
+    city_tracker_players: Vec<(usize, PlayerColor)>,
     cities: &'a HashMap<String, City>,
     /// Color lookup for each player, used to tint owned-city markers.
     player_colors: HashMap<PlayerId, PlayerColor>,
@@ -566,6 +569,30 @@ impl canvas::Program<Message> for MarketOverlay<'_> {
                 }
             }
 
+            // Draw city tracker markers: group players by city count, offset horizontally if shared.
+            {
+                let mut by_count: HashMap<usize, Vec<PlayerColor>> = HashMap::new();
+                for (count, color) in &self.city_tracker_players {
+                    by_count.entry(*count).or_default().push(*color);
+                }
+                for (count, colors) in &by_count {
+                    if let Some(slot) = self.city_tracker_slots.iter().find(|s| s.index == *count) {
+                        let cx = offset_x + slot.x * img_w;
+                        let cy = offset_y + slot.y * img_h;
+                        let n = colors.len() as f32;
+                        let spacing = radius * 2.3;
+                        let total_w = spacing * (n - 1.0);
+                        for (j, color) in colors.iter().enumerate() {
+                            let dot_x = cx - total_w / 2.0 + j as f32 * spacing;
+                            let outline = canvas::Path::circle(Point::new(dot_x, cy), radius + 1.5);
+                            frame.fill(&outline, Color::WHITE);
+                            let fill = canvas::Path::circle(Point::new(dot_x, cy), radius);
+                            frame.fill(&fill, player_color_to_iced(*color));
+                        }
+                    }
+                }
+            }
+
             // Draw preview route edges before city dots so dots render on top.
             if !self.preview_edges.is_empty() {
                 let edge_color = Color::from_rgba(0.1, 0.8, 1.0, 0.9);
@@ -658,6 +685,135 @@ fn player_color_to_iced(color: PlayerColor) -> Color {
         PlayerColor::Purple => Color::from_rgb(0.6, 0.1, 0.8),
         PlayerColor::Black => Color::from_rgb(0.15, 0.15, 0.15),
     }
+}
+
+fn phase_tracker<'a>(state: &'a GameState) -> Element<'a, Message> {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Dp {
+        Auction,
+        Resource,
+        Build,
+        Bureaucracy,
+    }
+
+    let current = match &state.phase {
+        Phase::Auction { .. } => Some(Dp::Auction),
+        Phase::BuyResources { .. } => Some(Dp::Resource),
+        Phase::BuildCities { .. } => Some(Dp::Build),
+        Phase::Bureaucracy { .. } => Some(Dp::Bureaucracy),
+        _ => None,
+    };
+
+    let phases = [
+        (Dp::Auction, "Auction"),
+        (Dp::Resource, "Resource"),
+        (Dp::Build, "Build"),
+        (Dp::Bureaucracy, "Bureaucracy"),
+    ];
+
+    let mut col = column![].spacing(4);
+
+    for (dp, label) in &phases {
+        let is_current = current == Some(*dp);
+
+        // Auction uses forward player_order; all others use reverse.
+        let player_ids: Vec<PlayerId> = if *dp == Dp::Auction {
+            state.player_order.clone()
+        } else {
+            state.player_order.iter().rev().cloned().collect()
+        };
+
+        // Determine the active nominator for the current phase.
+        // For auction: always the player currently selecting a plant (current_bidder_idx),
+        // not the player currently placing a bid.
+        let phase_active: Option<PlayerId> = if !is_current {
+            None
+        } else {
+            match &state.phase {
+                Phase::Auction {
+                    current_bidder_idx, ..
+                } => state.player_order.get(*current_bidder_idx).copied(),
+                Phase::BuyResources { remaining }
+                | Phase::BuildCities { remaining }
+                | Phase::Bureaucracy { remaining } => remaining.first().copied(),
+                _ => None,
+            }
+        };
+
+        let prefix = if is_current { "▶" } else { " " };
+        let label_col =
+            container(text(format!("{prefix} {label}")).size(13)).width(Length::Fixed(95.0));
+
+        let mut phase_row = row![label_col].spacing(4);
+
+        for pid in &player_ids {
+            // Three states: active (highlighted with ring), not-completed (bright), completed (dim).
+            let is_active = phase_active == Some(*pid);
+            let is_completed = if !is_current {
+                false
+            } else {
+                match &state.phase {
+                    Phase::Auction { bought, passed, .. } => {
+                        bought.contains(pid) || passed.contains(pid)
+                    }
+                    Phase::BuyResources { remaining }
+                    | Phase::BuildCities { remaining }
+                    | Phase::Bureaucracy { remaining } => !remaining.contains(pid),
+                    _ => false,
+                }
+            };
+
+            let base = state
+                .player(*pid)
+                .map(|p| player_color_to_iced(p.color))
+                .unwrap_or(Color::BLACK);
+
+            // Dim completed players; non-current phase rows are also dimmed.
+            let alpha: f32 = if !is_current || is_completed {
+                0.25
+            } else {
+                1.0
+            };
+            let color = Color { a: alpha, ..base };
+
+            // Active player gets a bright white ring to distinguish them.
+            let dot = container(text(""))
+                .width(Length::Fixed(14.0))
+                .height(Length::Fixed(14.0))
+                .style(move |_: &Theme| iced::widget::container::Style {
+                    background: Some(Background::Color(color)),
+                    border: if is_active {
+                        Border {
+                            color: Color::WHITE,
+                            width: 2.0,
+                            radius: 7.0.into(),
+                        }
+                    } else {
+                        Border {
+                            radius: 7.0.into(),
+                            ..Default::default()
+                        }
+                    },
+                    ..Default::default()
+                });
+
+            phase_row = phase_row.push(dot);
+        }
+
+        col = col.push(phase_row);
+    }
+
+    container(col)
+        .padding(8)
+        .style(|_: &Theme| iced::widget::container::Style {
+            border: Border {
+                color: Color::from_rgba(1.0, 1.0, 1.0, 0.25),
+                width: 1.0,
+                radius: 4.0.into(),
+            },
+            ..Default::default()
+        })
+        .into()
 }
 
 // ---------------------------------------------------------------------------
@@ -910,6 +1066,11 @@ pub fn game_view<'a>(
         .enumerate()
         .filter_map(|(i, pid)| state.player(*pid).map(|p| (i, p.color)))
         .collect();
+    let city_tracker_players: Vec<(usize, PlayerColor)> = state
+        .player_order
+        .iter()
+        .filter_map(|pid| state.player(*pid).map(|p| (p.city_count(), p.color)))
+        .collect();
     let player_colors: HashMap<PlayerId, PlayerColor> = state
         .player_order
         .iter()
@@ -927,6 +1088,8 @@ pub fn game_view<'a>(
         slots: &state.map.resource_slots,
         turn_order_slots: &state.map.turn_order_slots,
         turn_order_players,
+        city_tracker_slots: &state.map.city_tracker_slots,
+        city_tracker_players,
         cities: &state.map.cities,
         player_colors,
         phase: &state.phase,
@@ -946,8 +1109,11 @@ pub fn game_view<'a>(
     .height(Length::Fill)
     .clip(true);
 
+    let tracker = phase_tracker(state);
+
     let info_panel = scrollable(
         column![
+            tracker,
             text(format!("Round {} — {}", state.round, phase_label)).size(20),
             player_panel,
             market,
