@@ -1111,9 +1111,32 @@ pub fn game_view<'a>(
 
     let tracker = phase_tracker(state);
 
+    let player_panels = state
+        .player_order
+        .iter()
+        .filter_map(|pid| state.player(*pid))
+        .fold(column![].spacing(4), |col, p| {
+            let panel = container(text(&p.name).size(13))
+                .padding(6)
+                .width(Length::Fill)
+                .style({
+                    let color = player_color_to_iced(p.color);
+                    move |_: &Theme| iced::widget::container::Style {
+                        border: Border {
+                            color,
+                            width: 1.5,
+                            radius: 4.0.into(),
+                        },
+                        ..Default::default()
+                    }
+                });
+            col.push(panel)
+        });
+
     let info_panel = scrollable(
         column![
             tracker,
+            player_panels,
             text(format!("Round {} — {}", state.round, phase_label)).size(20),
             player_panel,
             market,
