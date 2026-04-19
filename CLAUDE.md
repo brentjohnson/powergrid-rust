@@ -70,7 +70,16 @@ Bevy + egui GUI client that connects to the server over WebSocket.
 
 - `main.rs` — Bevy app setup; accepts optional CLI args for auto-connect (`--url`, `--name`, `--color`).
 - `ws.rs` — spawns a background thread with a Tokio runtime; communicates with the Bevy app via `crossbeam-channel`. Reconnects automatically on disconnect.
-- `ui.rs` — egui UI systems: `Connect` screen, `Lobby` screen, and `Game` screen. The Game screen has a central map panel and a right-side `info_panel` with sections (top to bottom): phase/round header, phase tracker, player panels, PLANT MARKET, RESOURCE MARKET, ACTION CONSOLE, YOUR PLANTS, EVENT LOG.
+- `ui/` — egui UI systems split into submodules:
+  - `mod.rs` — `setup_egui_theme`, `ui_system`, `game_screen` dispatch
+  - `connect.rs` — Connect screen (login form, color selector)
+  - `lobby.rs` — Lobby screen (player list, start button)
+  - `top_panel.rs` — round/phase header + resource market
+  - `phase_tracker.rs` — per-player phase progress dots
+  - `left_panel.rs` — player info cards
+  - `action_panel.rs` — phase-specific interactive controls
+  - `right_panel.rs` — plant market, action console, event log
+  - `helpers.rs` — shared widgets and utilities (`section_header`, `neon_button`, `send`, etc.)
 - `state.rs` — `AppState` Bevy resource holding game state, connection status, and screen enum.
 - `map_panel.rs` — renders the map with city overlays.
 - `assets.rs` — loads map and card textures into egui.
