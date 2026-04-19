@@ -1,4 +1,4 @@
-mod assets;
+mod card_painter;
 mod map_panel;
 mod state;
 mod theme;
@@ -45,7 +45,6 @@ fn main() {
             .add_plugins(EguiPlugin)
             .insert_resource(app_state)
             .insert_resource(channels)
-            .add_systems(Startup, assets::setup_assets)
             .add_systems(Startup, ui::setup_egui_theme)
             .add_systems(Update, (ws::process_ws_events, ui::ui_system).chain())
             .run();
@@ -61,7 +60,6 @@ fn main() {
             }))
             .add_plugins(EguiPlugin)
             .insert_resource(app_state)
-            .add_systems(Startup, assets::setup_assets)
             .add_systems(Startup, ui::setup_egui_theme)
             .add_systems(Update, (ws::process_ws_events, ui::ui_system).chain())
             .run();

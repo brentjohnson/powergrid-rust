@@ -253,7 +253,6 @@ impl AppState {
             &state.map.cities,
         );
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -438,4 +437,3 @@ pub fn player_color_to_egui(color: PlayerColor) -> egui::Color32 {
         PlayerColor::Black => egui::Color32::from_rgb(60, 60, 60),
     }
 }
-

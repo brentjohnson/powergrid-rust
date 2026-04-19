@@ -15,7 +15,6 @@ uuid = { workspace = true }
 bevy = { version = "0.15", features = ["default"] }
 bevy_egui = "0.31"
 egui = "0.29"
-image = { version = "0.25", default-features = false, features = ["png"] }
 crossbeam-channel = "0.5"
 tokio-tungstenite = "0.24"
 futures-util = "0.3"

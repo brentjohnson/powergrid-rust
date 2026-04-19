@@ -8,7 +8,7 @@ use powergrid_core::{
 };
 
 use crate::{
-    assets::{EguiCardTextures, EguiMapTexture},
+    card_painter,
     state::{player_color_to_egui, AppState, Screen},
     theme,
     ws::WsChannels,
@@ -30,8 +30,6 @@ pub fn ui_system(
     mut contexts: EguiContexts,
     mut state: ResMut<AppState>,
     channels: Option<Res<WsChannels>>,
-    map_tex: Option<Res<EguiMapTexture>>,
-    card_tex: Option<Res<EguiCardTextures>>,
     mut commands: Commands,
 ) {
     let ctx = contexts.ctx_mut();
@@ -45,13 +43,7 @@ pub fn ui_system(
             connect_screen(ctx, &mut state, &mut commands);
         }
         Screen::Game => {
-            game_screen(
-                ctx,
-                &mut state,
-                &channels,
-                map_tex.as_deref(),
-                card_tex.as_deref(),
-            );
+            game_screen(ctx, &mut state, &channels);
         }
     }
 }
@@ -197,13 +189,7 @@ fn connect_screen(ctx: &egui::Context, state: &mut AppState, commands: &mut Comm
 // Game screen
 // ---------------------------------------------------------------------------
 
-fn game_screen(
-    ctx: &egui::Context,
-    state: &mut AppState,
-    channels: &Option<Res<WsChannels>>,
-    map_tex: Option<&EguiMapTexture>,
-    card_tex: Option<&EguiCardTextures>,
-) {
+fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: &Option<Res<WsChannels>>) {
     let Some(gs) = state.game_state.clone() else {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.centered_and_justified(|ui| {
@@ -238,7 +224,7 @@ fn game_screen(
         .show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add_space(8.0);
-                side_panel_contents(ui, state, channels, &gs, my_id, card_tex);
+                side_panel_contents(ui, state, channels, &gs, my_id);
             });
         });
 
@@ -250,13 +236,7 @@ fn game_screen(
                 .inner_margin(egui::Margin::same(0.0)),
         )
         .show(ctx, |ui| {
-            if let Some(map_tex) = map_tex {
-                crate::map_panel::draw(ui, state, map_tex, &gs, my_id);
-            } else {
-                ui.centered_and_justified(|ui| {
-                    ui.label(RichText::new("Loading map…").color(theme::TEXT_DIM));
-                });
-            }
+            crate::map_panel::draw(ui, state, &gs, my_id);
         });
 }
 
@@ -366,7 +346,6 @@ fn side_panel_contents(
     channels: &Option<Res<WsChannels>>,
     gs: &GameState,
     my_id: PlayerId,
-    card_tex: Option<&EguiCardTextures>,
 ) {
     // ---- Phase / round header ----
     theme::neon_frame_bright().show(ui, |ui| {
@@ -478,24 +457,7 @@ fn side_panel_contents(
                     if !p.plants.is_empty() {
                         ui.horizontal(|ui| {
                             for plant in &p.plants {
-                                if let Some(ct) = card_tex {
-                                    if let Some(&tex_id) =
-                                        ct.0.get(&plant.number).or_else(|| ct.0.get(&0))
-                                    {
-                                        let img = egui::Image::new(egui::load::SizedTexture::new(
-                                            tex_id,
-                                            [44.0, 44.0],
-                                        ));
-                                        ui.add(img);
-                                    }
-                                } else {
-                                    ui.label(
-                                        RichText::new(format!("[{}]", plant.number))
-                                            .color(theme::NEON_CYAN_DIM)
-                                            .small()
-                                            .monospace(),
-                                    );
-                                }
+                                card_painter::draw_plant_card(ui, plant, 44.0);
                             }
                         });
                     }
@@ -518,7 +480,6 @@ fn side_panel_contents(
         plant_row(
             ui,
             &gs.market.actual,
-            card_tex,
             channels,
             &gs.phase,
             my_id,
@@ -534,7 +495,6 @@ fn side_panel_contents(
         plant_row(
             ui,
             &gs.market.future,
-            card_tex,
             channels,
             &gs.phase,
             my_id,
@@ -583,21 +543,7 @@ fn side_panel_contents(
             } else {
                 ui.horizontal_wrapped(|ui| {
                     for plant in &me.plants {
-                        if let Some(ct) = card_tex {
-                            let key = if ct.0.contains_key(&plant.number) { plant.number } else { 0 };
-                            if let Some(&tid) = ct.0.get(&key) {
-                                ui.add(egui::Image::new(egui::load::SizedTexture::new(
-                                    tid,
-                                    [70.0, 70.0],
-                                )));
-                            }
-                        } else {
-                            ui.label(
-                                RichText::new(format!("[{}]", plant.number))
-                                    .color(theme::NEON_CYAN_DIM)
-                                    .monospace(),
-                            );
-                        }
+                        card_painter::draw_plant_card(ui, plant, 70.0);
                     }
                 });
             }
@@ -973,7 +919,6 @@ fn action_panel(
 fn plant_row(
     ui: &mut Ui,
     plants: &[powergrid_core::types::PowerPlant],
-    card_tex: Option<&EguiCardTextures>,
     channels: &Option<Res<WsChannels>>,
     phase: &Phase,
     my_id: PlayerId,
@@ -984,57 +929,24 @@ fn plant_row(
 
     ui.horizontal_wrapped(|ui| {
         for plant in plants {
-            let key = card_tex
-                .map(|ct| {
-                    if ct.0.contains_key(&plant.number) {
-                        plant.number
-                    } else {
-                        0
-                    }
-                })
-                .unwrap_or(plant.number);
-
-            if let Some(ct) = card_tex {
-                if let Some(&tid) = ct.0.get(&key) {
-                    let img = egui::Image::new(egui::load::SizedTexture::new(tid, [70.0, 70.0]));
-                    let resp = ui.add(if is_my_auction_turn {
-                        img.sense(egui::Sense::click())
-                    } else {
-                        img
-                    });
-                    if is_my_auction_turn && resp.clicked() {
-                        send(
-                            Action::SelectPlant {
-                                plant_number: plant.number,
-                            },
-                            channels,
-                        );
-                    }
-                    if resp.hovered() {
-                        egui::show_tooltip_at_pointer(
-                            ui.ctx(),
-                            ui.layer_id(),
-                            egui::Id::new(plant.number),
-                            |ui| {
-                                plant_tooltip(ui, plant);
-                            },
-                        );
-                    }
-                }
-            } else {
-                let btn = egui::Button::new(
-                    RichText::new(format!("[{}]", plant.number))
-                        .color(theme::NEON_CYAN_DIM)
-                        .monospace(),
+            let resp = card_painter::draw_plant_card(ui, plant, 70.0);
+            if is_my_auction_turn && resp.clicked() {
+                send(
+                    Action::SelectPlant {
+                        plant_number: plant.number,
+                    },
+                    channels,
                 );
-                if ui.add_enabled(is_my_auction_turn, btn).clicked() {
-                    send(
-                        Action::SelectPlant {
-                            plant_number: plant.number,
-                        },
-                        channels,
-                    );
-                }
+            }
+            if resp.hovered() {
+                egui::show_tooltip_at_pointer(
+                    ui.ctx(),
+                    ui.layer_id(),
+                    egui::Id::new(plant.number),
+                    |ui| {
+                        plant_tooltip(ui, plant);
+                    },
+                );
             }
         }
     });

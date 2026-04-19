@@ -1,6 +1,6 @@
 /// Renders the Germany map inside an egui panel using the registered Bevy texture,
 /// with zoom/pan and interactive overlays (resource slots, city markers, build edges).
-use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
+use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui};
 use powergrid_core::{
     map::{City, ResourceSlot},
     types::{Phase, PlayerColor, PlayerId},
@@ -8,7 +8,7 @@ use powergrid_core::{
 };
 use std::collections::HashMap;
 
-use crate::{assets::EguiMapTexture, state::AppState, theme};
+use crate::{state::AppState, theme};
 
 /// Original map image dimensions (germany.png is 1869 × 2593).
 const IMG_W: f32 = 1869.0;
@@ -27,13 +27,7 @@ const CITY_R_FRAC: f32 = 0.011;
 
 /// Draws the full map panel and handles zoom/pan/click input.
 /// Returns `true` if a city was clicked (with city_id via `state.toggle_build_city`).
-pub fn draw(
-    ui: &mut Ui,
-    state: &mut AppState,
-    map_tex: &EguiMapTexture,
-    game_state: &GameState,
-    my_id: PlayerId,
-) {
+pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameState, my_id: PlayerId) {
     let available = ui.available_rect_before_wrap();
 
     // Reserve the entire available area for map interaction.
@@ -83,25 +77,6 @@ pub fn draw(
                 }
             }
         }
-    }
-
-    // ---- draw map image ----
-    {
-        let (img_w, img_h, ox, oy) = image_layout(map_rect);
-        let tl = map_rect.min
-            + Vec2::new(
-                state.map_offset.x + ox * state.map_zoom,
-                state.map_offset.y + oy * state.map_zoom,
-            );
-        let size = Vec2::new(img_w * state.map_zoom, img_h * state.map_zoom);
-        let img_rect = Rect::from_min_size(tl, size);
-
-        painter.image(
-            map_tex.0,
-            img_rect,
-            Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-            Color32::WHITE,
-        );
     }
 
     // ---- overlays ----
