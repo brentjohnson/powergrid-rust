@@ -22,7 +22,7 @@ pub enum PlayerColor {
     Green,
     Yellow,
     Purple,
-    Black,
+    White,
 }
 
 /// A power plant card.

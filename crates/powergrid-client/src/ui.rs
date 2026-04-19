@@ -104,7 +104,7 @@ fn connect_screen(ctx: &egui::Context, state: &mut AppState, commands: &mut Comm
                             PlayerColor::Green,
                             PlayerColor::Yellow,
                             PlayerColor::Purple,
-                            PlayerColor::Black,
+                            PlayerColor::White,
                         ] {
                             let egui_color = player_color_to_egui(color);
                             let selected = state.selected_color == color;
@@ -1055,7 +1055,7 @@ fn color_label(c: PlayerColor) -> &'static str {
         PlayerColor::Green => "GREEN",
         PlayerColor::Yellow => "YELLOW",
         PlayerColor::Purple => "PURPLE",
-        PlayerColor::Black => "BLACK",
+        PlayerColor::White => "WHITE",
     }
 }
 

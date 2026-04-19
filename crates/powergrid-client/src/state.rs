@@ -401,7 +401,7 @@ impl CliArgs {
                         "green" => Some(PlayerColor::Green),
                         "yellow" => Some(PlayerColor::Yellow),
                         "purple" => Some(PlayerColor::Purple),
-                        "black" => Some(PlayerColor::Black),
+                        "white" => Some(PlayerColor::White),
                         other => {
                             eprintln!("Unknown color '{other}'");
                             None
@@ -434,6 +434,6 @@ pub fn player_color_to_egui(color: PlayerColor) -> egui::Color32 {
         PlayerColor::Green => egui::Color32::from_rgb(40, 180, 60),
         PlayerColor::Yellow => egui::Color32::from_rgb(240, 200, 20),
         PlayerColor::Purple => egui::Color32::from_rgb(150, 30, 200),
-        PlayerColor::Black => egui::Color32::from_rgb(60, 60, 60),
+        PlayerColor::White => egui::Color32::from_rgb(240, 240, 240),
     }
 }
