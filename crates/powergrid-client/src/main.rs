@@ -6,12 +6,14 @@ mod ui;
 mod ws;
 
 use bevy::prelude::*;
+use bevy::window::{MonitorSelection, WindowMode};
 use bevy_egui::EguiPlugin;
 use state::{AppState, CliArgs};
 
 fn main() {
     let cli = CliArgs::parse();
     let auto_connect = cli.auto_connect;
+    let windowed = cli.windowed;
     let url = cli
         .url
         .clone()
@@ -27,6 +29,12 @@ fn main() {
         None
     };
 
+    let window_mode = if windowed {
+        WindowMode::Windowed
+    } else {
+        WindowMode::BorderlessFullscreen(MonitorSelection::Current)
+    };
+
     let mut app_state = AppState::new(cli);
     // If all three args provided, kick off connection immediately.
     if auto_connect {
@@ -38,6 +46,7 @@ fn main() {
                 primary_window: Some(Window {
                     title: "Power Grid: Reimagined".into(),
                     resolution: (1600.0, 900.0).into(),
+                    mode: window_mode,
                     ..default()
                 }),
                 ..default()
@@ -54,6 +63,7 @@ fn main() {
                 primary_window: Some(Window {
                     title: "Power Grid: Reimagined".into(),
                     resolution: (1600.0, 900.0).into(),
+                    mode: window_mode,
                     ..default()
                 }),
                 ..default()

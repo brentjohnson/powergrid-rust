@@ -382,6 +382,7 @@ pub struct CliArgs {
     pub color: Option<PlayerColor>,
     pub url: Option<String>,
     pub auto_connect: bool,
+    pub windowed: bool,
 }
 
 impl CliArgs {
@@ -390,6 +391,7 @@ impl CliArgs {
         let mut name = None;
         let mut color = None;
         let mut url = None;
+        let mut windowed = false;
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -409,6 +411,7 @@ impl CliArgs {
                     });
                 }
                 "--url" => url = args.next(),
+                "-w" | "--windowed" => windowed = true,
                 other => eprintln!("Unknown argument: {other}"),
             }
         }
@@ -419,6 +422,7 @@ impl CliArgs {
             color,
             url,
             auto_connect,
+            windowed,
         }
     }
 }
