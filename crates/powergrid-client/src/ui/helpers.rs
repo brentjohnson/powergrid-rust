@@ -49,17 +49,6 @@ pub(super) fn dim_color(c: Color32) -> Color32 {
     )
 }
 
-pub(super) fn phase_name(phase: &Phase) -> &'static str {
-    match phase {
-        Phase::Lobby => "LOBBY",
-        Phase::PlayerOrder => "PLAYER ORDER",
-        Phase::Auction { .. } => "AUCTION",
-        Phase::BuyResources { .. } => "BUY RESOURCES",
-        Phase::BuildCities { .. } => "BUILD",
-        Phase::Bureaucracy { .. } => "BUREAUCRACY",
-        Phase::GameOver { .. } => "GAME OVER",
-    }
-}
 
 pub(super) fn is_active_player(gs: &GameState, pid: PlayerId) -> bool {
     match &gs.phase {
