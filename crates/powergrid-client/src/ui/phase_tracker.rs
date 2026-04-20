@@ -111,7 +111,12 @@ pub(super) fn phase_tracker(ui: &mut Ui, gs: &GameState) {
                                     base
                                 };
                                 let square_text = if is_active { "▣" } else { "■" };
-                                ui.label(RichText::new(square_text).color(color).monospace());
+                                ui.label(
+                                    RichText::new(square_text)
+                                        .color(color)
+                                        .monospace()
+                                        .size(20.0),
+                                );
                             }
                         }
                     });
