@@ -49,7 +49,6 @@ pub(super) fn dim_color(c: Color32) -> Color32 {
     )
 }
 
-
 pub(super) fn is_active_player(gs: &GameState, pid: PlayerId) -> bool {
     match &gs.phase {
         Phase::Auction {
