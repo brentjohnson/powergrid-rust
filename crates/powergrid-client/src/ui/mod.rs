@@ -71,7 +71,7 @@ fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: &Option<Res<
 
     // Top panel — phase info and resource market
     egui::TopBottomPanel::top("top_panel")
-        .exact_height(130.0)
+        .exact_height(220.0)
         .frame(
             egui::Frame::NONE
                 .fill(theme::BG_DEEP)
@@ -79,8 +79,7 @@ fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: &Option<Res<
                 .inner_margin(egui::Margin::same(6)),
         )
         .show(ctx, |ui| {
-            let players_info: Vec<_> = gs.players.iter().map(|p| (p.id, p.color)).collect();
-            top_panel::top_panel_contents(ui, gs.clone(), &state.city_history, &players_info);
+            top_panel::top_panel_contents(ui, gs.clone(), &channels, my_id);
         });
 
     // Left panel — player info
@@ -103,7 +102,7 @@ fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: &Option<Res<
     // Right panel — plant market, actions, event log
     egui::SidePanel::right("info_panel")
         .resizable(false)
-        .exact_width(340.0)
+        .exact_width(400.0)
         .frame(
             egui::Frame::NONE
                 .fill(theme::BG_DEEP)
