@@ -26,6 +26,32 @@ jobs:
             binary: powergrid-server
             artifact: powergrid-server-linux-aarch64
 
+          - name: linux-client
+            os: ubuntu-latest
+            package: powergrid-client
+            binary: powergrid-client
+            artifact: powergrid-client-linux-x86_64
+            system_deps: g++ pkg-config libx11-dev libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+          - name: linux-client-arm
+            os: ubuntu-24.04-arm
+            package: powergrid-client
+            binary: powergrid-client
+            artifact: powergrid-client-linux-aarch64
+            system_deps: g++ pkg-config libx11-dev libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+          - name: windows-client
+            os: windows-latest
+            package: powergrid-client
+            binary: powergrid-client.exe
+            artifact: powergrid-client-windows-x86_64.exe
+
+          - name: macos-client-arm
+            os: macos-latest
+            package: powergrid-client
+            binary: powergrid-client
+            artifact: powergrid-client-macos-aarch64
+
     steps:
       - uses: actions/checkout@v4
 
@@ -47,9 +73,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-${{ matrix.package }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-build-${{ matrix.artifact }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-build-${{ matrix.package }}-
+            ${{ runner.os }}-cargo-build-${{ matrix.artifact }}-
+
+      - name: Install system dependencies
+        if: matrix.system_deps != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.system_deps }}
 
       - name: Build
         run: cargo build --release -p ${{ matrix.package }}
@@ -89,6 +119,10 @@ jobs:
           files: |
             powergrid-server-linux-x86_64
             powergrid-server-linux-aarch64
+            powergrid-client-linux-x86_64
+            powergrid-client-linux-aarch64
+            powergrid-client-windows-x86_64.exe
+            powergrid-client-macos-aarch64
 
   docker:
     name: Build and Push Docker Image
