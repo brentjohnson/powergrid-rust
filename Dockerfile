@@ -4,8 +4,6 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
 COPY crates/powergrid-core crates/powergrid-core
 COPY crates/powergrid-server crates/powergrid-server
-RUN mkdir -p crates/map-tool/src && echo 'fn main(){}' > crates/map-tool/src/main.rs
-COPY crates/map-tool/Cargo.toml crates/map-tool/Cargo.toml
 RUN mkdir -p crates/powergrid-client/src && echo 'fn main(){}' > crates/powergrid-client/src/main.rs
 COPY crates/powergrid-client/Cargo.toml crates/powergrid-client/Cargo.toml
 
