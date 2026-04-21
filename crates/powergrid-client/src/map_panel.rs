@@ -95,6 +95,70 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameState, my_id: Pl
         .filter_map(|pid| game_state.player(*pid).map(|p| (*pid, p.color)))
         .collect();
 
+    // Base connection lines (all map edges)
+    {
+        let conn_stroke_w = (city_r * 0.25).max(1.0);
+        let conn_color = Color32::from_rgba_unmultiplied(30, 25, 20, 110);
+        let conn_glow = Color32::from_rgba_unmultiplied(0, 0, 0, 40);
+        let mut drawn = std::collections::HashSet::<(String, String)>::new();
+        for (from_id, neighbors) in &game_state.map.edges {
+            for (to_id, cost) in neighbors {
+                let key = if from_id <= to_id {
+                    (from_id.clone(), to_id.clone())
+                } else {
+                    (to_id.clone(), from_id.clone())
+                };
+                if !drawn.insert(key) {
+                    continue;
+                }
+                let fc = game_state.map.cities.get(from_id);
+                let tc = game_state.map.cities.get(to_id);
+                if let (
+                    Some(City {
+                        x: Some(fx),
+                        y: Some(fy),
+                        ..
+                    }),
+                    Some(City {
+                        x: Some(tx),
+                        y: Some(ty),
+                        ..
+                    }),
+                ) = (fc, tc)
+                {
+                    let fp = to_screen(*fx, *fy);
+                    let tp = to_screen(*tx, *ty);
+                    // Shadow
+                    painter.line_segment([fp, tp], Stroke::new(conn_stroke_w + 2.0, conn_glow));
+                    // Line
+                    painter.line_segment([fp, tp], Stroke::new(conn_stroke_w, conn_color));
+                    // Cost label at midpoint (only when zoomed in enough)
+                    if state.map_zoom >= 1.2 {
+                        let mid = Pos2::new((fp.x + tp.x) / 2.0, (fp.y + tp.y) / 2.0);
+                        let font_size = (city_r * 1.6).clamp(11.0, 22.0);
+                        // Dark outline for legibility
+                        for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+                            painter.text(
+                                Pos2::new(mid.x + dx, mid.y + dy),
+                                egui::Align2::CENTER_CENTER,
+                                cost.to_string(),
+                                egui::FontId::monospace(font_size),
+                                Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+                            );
+                        }
+                        painter.text(
+                            mid,
+                            egui::Align2::CENTER_CENTER,
+                            cost.to_string(),
+                            egui::FontId::monospace(font_size),
+                            Color32::from_rgba_unmultiplied(255, 240, 160, 255),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     // Build preview edges
     if !state.build_preview.edges.is_empty() {
         let stroke_w = (city_r * 0.6).max(2.0);
