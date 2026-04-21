@@ -29,6 +29,17 @@ pub(super) fn action_panel(
             if let Some(bid) = active_bid {
                 let is_my_bid_turn = bid.remaining_bidders.first() == Some(&my_id);
                 if is_my_bid_turn {
+                    let my_money = gs.player(my_id).map(|p| p.money).unwrap_or(0);
+                    let min_bid = bid.amount + 1;
+                    let max_bid = my_money;
+
+                    if state.bid_amount < min_bid {
+                        state.bid_amount = min_bid;
+                    }
+                    if state.bid_amount > max_bid {
+                        state.bid_amount = max_bid;
+                    }
+
                     ui.label(
                         RichText::new(format!(
                             "Bid on plant #{} — current: ${}",
@@ -38,20 +49,41 @@ pub(super) fn action_panel(
                         .monospace(),
                     );
                     ui.horizontal(|ui| {
-                        ui.add(
-                            egui::TextEdit::singleline(&mut state.bid_amount)
-                                .desired_width(80.0)
-                                .hint_text("amount"),
-                        );
-                        let bid_valid = state.bid_amount.trim().parse::<u32>().is_ok();
                         if ui
-                            .add_enabled(bid_valid, neon_button("[ BID ]", theme::NEON_CYAN))
+                            .add_enabled(
+                                state.bid_amount > min_bid,
+                                neon_button("[ - ]", theme::NEON_AMBER),
+                            )
                             .clicked()
                         {
-                            if let Ok(amount) = state.bid_amount.trim().parse::<u32>() {
-                                send(Action::PlaceBid { amount }, channels);
-                                state.bid_amount.clear();
-                            }
+                            state.bid_amount -= 1;
+                        }
+                        ui.label(
+                            RichText::new(format!("${}", state.bid_amount))
+                                .color(theme::TEXT_BRIGHT)
+                                .monospace(),
+                        );
+                        if ui
+                            .add_enabled(
+                                state.bid_amount < max_bid,
+                                neon_button("[ + ]", theme::NEON_AMBER),
+                            )
+                            .clicked()
+                        {
+                            state.bid_amount += 1;
+                        }
+                        let can_bid = min_bid <= max_bid;
+                        if ui
+                            .add_enabled(can_bid, neon_button("[ BID ]", theme::NEON_CYAN))
+                            .clicked()
+                        {
+                            send(
+                                Action::PlaceBid {
+                                    amount: state.bid_amount,
+                                },
+                                channels,
+                            );
+                            state.bid_amount = 0;
                         }
                         if ui.add(neon_button("[ PASS ]", theme::NEON_AMBER)).clicked() {
                             send(Action::PassAuction, channels);

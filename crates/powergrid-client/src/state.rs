@@ -51,7 +51,7 @@ pub struct AppState {
     pub resource_cart_cost: Option<u32>,
 
     // Auction
-    pub bid_amount: String,
+    pub bid_amount: u32,
 }
 
 impl AppState {
@@ -86,7 +86,7 @@ impl AppState {
             build_preview: BuildPreview::default(),
             resource_cart: HashMap::new(),
             resource_cart_cost: None,
-            bid_amount: String::new(),
+            bid_amount: 0,
         }
     }
 
