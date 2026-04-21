@@ -69,7 +69,7 @@ fn city_history_graph(
     end_game_cities: u8,
     gs: &GameState,
 ) {
-    const W: f32 = 120.0;
+    const W: f32 = 360.0;
     const H: f32 = 72.0;
     const PAD_L: f32 = 14.0; // left padding for y-axis label
     const PAD_B: f32 = 10.0; // bottom padding for x-axis label
