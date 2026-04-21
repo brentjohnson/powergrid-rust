@@ -520,7 +520,8 @@ fn apply_single_build(
         .get(city_id)
         .ok_or_else(|| ActionError::CityNotFound(city_id.to_string()))?;
 
-    if city.owners.len() >= 3 {
+    let max_per_city = state.step as usize;
+    if city.owners.len() >= max_per_city {
         return Err(ActionError::CityFull(city_id.to_string()));
     }
     if city.owners.contains(&actor) {
@@ -582,6 +583,23 @@ fn check_end_game_trigger(state: &mut GameState) {
     }
 }
 
+fn check_step2_trigger(state: &mut GameState) {
+    if state.step != 1 {
+        return;
+    }
+    let max_cities = state
+        .players
+        .iter()
+        .map(|p| p.cities.len())
+        .max()
+        .unwrap_or(0);
+    if max_cities >= 7 {
+        state.step = 2;
+        state.market.remove_lowest();
+        state.log("Step 2 begins!".to_string());
+    }
+}
+
 fn handle_build_city(
     state: &mut GameState,
     actor: PlayerId,
@@ -597,6 +615,7 @@ fn handle_build_city(
     }
 
     apply_single_build(state, actor, &city_id)?;
+    check_step2_trigger(state);
     check_end_game_trigger(state);
 
     Ok(())
@@ -636,6 +655,7 @@ fn handle_build_cities(
 
     // All succeeded — commit and advance the phase.
     *state = scratch;
+    check_step2_trigger(state);
     check_end_game_trigger(state);
     advance_build_phase(state, remaining);
 
@@ -776,6 +796,9 @@ fn end_of_round(state: &mut GameState) {
         return;
     }
 
+    // Cycle the highest future-market plant to the bottom of the draw deck (Steps 1 & 2).
+    state.market.cycle_highest_to_bottom();
+
     // Replenish resource market (simplified: add back a fixed amount per resource).
     replenish_resources(state);
 
@@ -825,14 +848,24 @@ fn recalculate_player_order(state: &mut GameState) {
 }
 
 fn replenish_resources(state: &mut GameState) {
-    // Standard replenishment per round per player count (step 1 amounts).
     let n = state.players.len();
-    let (coal, oil, garbage, uranium) = match n {
-        2 => (3, 2, 1, 1),
-        3 => (4, 2, 1, 1),
-        4 => (5, 3, 2, 1),
-        5 => (5, 4, 3, 2),
-        _ => (7, 5, 3, 2),
+    let (coal, oil, garbage, uranium) = if state.step == 1 {
+        match n {
+            2 => (3, 2, 1, 1),
+            3 => (4, 2, 1, 1),
+            4 => (5, 3, 2, 1),
+            5 => (5, 4, 3, 2),
+            _ => (7, 5, 3, 2),
+        }
+    } else {
+        // Step 2 replenishment rates
+        match n {
+            2 => (4, 2, 1, 1),
+            3 => (5, 3, 2, 1),
+            4 => (6, 4, 3, 2),
+            5 => (7, 5, 3, 3),
+            _ => (9, 6, 5, 3),
+        }
     };
     let before = state.resources.clone();
     state.resources.replenish(Resource::Coal, coal);

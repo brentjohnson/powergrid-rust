@@ -12,6 +12,9 @@ pub struct GameState {
     pub resources: ResourceMarket,
     pub map: Map,
     pub round: u32,
+    /// Current game step (1, 2, or 3). Starts at 1; Step 2 begins when any player builds their 7th city.
+    #[serde(default = "default_step")]
+    pub step: u8,
     /// Number of cities needed to trigger end-game (depends on player count).
     pub end_game_cities: u8,
     /// Log of recent events for display.
@@ -19,6 +22,10 @@ pub struct GameState {
     /// Optional RNG seed for deterministic play (used in tests; `None` = entropy).
     #[serde(default)]
     pub rng_seed: Option<u64>,
+}
+
+fn default_step() -> u8 {
+    1
 }
 
 impl GameState {
@@ -47,6 +54,7 @@ impl GameState {
             resources: ResourceMarket::initial(),
             map,
             round: 0,
+            step: 1,
             end_game_cities,
             event_log: Vec::new(),
             rng_seed,

@@ -473,6 +473,15 @@ impl PlantMarket {
         }
     }
 
+    /// Move the highest-numbered plant from the future market to the bottom of the draw deck,
+    /// then refill. Used at end of Bureaucracy in Steps 1 and 2.
+    pub fn cycle_highest_to_bottom(&mut self) {
+        if let Some(plant) = self.future.pop() {
+            self.deck.insert(0, plant);
+            self.refill();
+        }
+    }
+
     /// Shuffle the draw deck, remove plants based on player count,
     /// then place plant 13 on top and the Step 3 card on the bottom.
     /// Called once at game start.

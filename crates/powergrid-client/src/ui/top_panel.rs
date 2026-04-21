@@ -17,11 +17,16 @@ pub(super) fn top_panel_contents(
     players_info: &[(PlayerId, PlayerColor)],
 ) {
     ui.horizontal(|ui| {
-        // Round header
+        // Round / Step header
         ui.vertical(|ui| {
             theme::neon_frame_bright().show(ui, |ui| {
                 ui.label(
                     RichText::new(format!("ROUND {}", gs.round))
+                        .color(theme::NEON_CYAN)
+                        .monospace(),
+                );
+                ui.label(
+                    RichText::new(format!("STEP  {}", gs.step))
                         .color(theme::NEON_CYAN)
                         .monospace(),
                 );
