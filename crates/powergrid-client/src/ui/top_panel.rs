@@ -45,7 +45,7 @@ pub(super) fn top_panel_contents(
             ui.vertical(|ui| {
                 section_header(ui, "CITIES");
                 theme::neon_frame().show(ui, |ui| {
-                    city_history_graph(ui, city_history, players_info);
+                    city_history_graph(ui, city_history, players_info, gs.end_game_cities);
                 });
             });
 
@@ -66,12 +66,14 @@ fn city_history_graph(
     ui: &mut Ui,
     history: &[CitySnapshot],
     players_info: &[(PlayerId, PlayerColor)],
+    end_game_cities: u8,
 ) {
     const W: f32 = 120.0;
     const H: f32 = 72.0;
     const PAD_L: f32 = 14.0; // left padding for y-axis label
     const PAD_B: f32 = 10.0; // bottom padding for x-axis label
     const DOT_R: f32 = 2.0;
+    const STEP2_CITIES: usize = 7;
 
     let total_w = PAD_L + W;
     let total_h = PAD_B + H;
@@ -85,12 +87,13 @@ fn city_history_graph(
     let ox = rect.min.x + PAD_L;
     let oy = rect.min.y;
 
-    // Determine y range
+    // Determine y range — ensure indicator lines are always visible
     let max_cities = history
         .iter()
         .flat_map(|snap| snap.iter().map(|(_, c)| *c))
         .max()
         .unwrap_or(1)
+        .max(end_game_cities as usize)
         .max(1);
 
     let rounds = history.len();
@@ -138,6 +141,48 @@ fn city_history_graph(
             theme::TEXT_DIM,
         );
     }
+
+    // Draw Step 2 indicator line at 7 cities
+    let step2_y = oy + H - (STEP2_CITIES as f32 / max_cities as f32) * H;
+    let step2_color = Color32::from_rgba_unmultiplied(180, 180, 60, 180);
+    let dash_len = 4.0_f32;
+    let gap_len = 3.0_f32;
+    let mut x = ox;
+    while x < ox + W {
+        let x_end = (x + dash_len).min(ox + W);
+        painter.line_segment(
+            [egui::pos2(x, step2_y), egui::pos2(x_end, step2_y)],
+            Stroke::new(1.0, step2_color),
+        );
+        x += dash_len + gap_len;
+    }
+    painter.text(
+        egui::pos2(ox - 2.0, step2_y),
+        Align2::RIGHT_CENTER,
+        "S2",
+        FontId::monospace(6.0),
+        step2_color,
+    );
+
+    // Draw end game indicator line
+    let end_y = oy + H - (end_game_cities as f32 / max_cities as f32) * H;
+    let end_color = Color32::from_rgba_unmultiplied(220, 80, 80, 200);
+    let mut x = ox;
+    while x < ox + W {
+        let x_end = (x + dash_len).min(ox + W);
+        painter.line_segment(
+            [egui::pos2(x, end_y), egui::pos2(x_end, end_y)],
+            Stroke::new(1.0, end_color),
+        );
+        x += dash_len + gap_len;
+    }
+    painter.text(
+        egui::pos2(ox - 2.0, end_y),
+        Align2::RIGHT_CENTER,
+        "E",
+        FontId::monospace(6.0),
+        end_color,
+    );
 
     // Draw one line per player
     for (player_id, player_color) in players_info {
