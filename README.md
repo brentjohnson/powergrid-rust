@@ -10,27 +10,25 @@ Grab the latest binaries from the [Releases](../../releases/latest) page.
 |---|---|---|
 | `powergrid-server-linux-x86_64` | Linux (x86_64) | Server |
 | `powergrid-server-linux-aarch64` | Linux (ARM64) | Server |
+| `powergrid-client-linux-x86_64` | Linux (x86_64) | Client |
 
 ## Quickstart (2+ players on a local network)
 
 ### 1. Start the server
 
-One player hosts the server. Download the map file alongside the binary:
+One player hosts the server. The Germany map is built in — no extra files needed.
 
 ```bash
-# Download the Germany map (or provide your own)
-curl -O https://raw.githubusercontent.com/YOUR_ORG/powergrid-rust/main/maps/germany.toml
-
-# Linux/macOS — make executable, then run
+# Linux — make executable, then run
 chmod +x powergrid-server-linux-x86_64
-MAP_FILE=germany.toml ./powergrid-server-linux-x86_64
+./powergrid-server-linux-x86_64
 ```
 
 The server listens on port `3000`. Find your local IP address (e.g. `192.168.1.10`) — other players will need it to connect.
 
 ### 2. Connect
 
-On the connect screen, fill in:
+Launch the client. On the connect screen, fill in:
 
 | Field | Value |
 |---|---|
@@ -62,18 +60,37 @@ The server is configured via environment variables:
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `3000` | TCP port to listen on |
-| `MAP_FILE` | `maps/germany.toml` | Path to the map TOML file |
+| `MAP_FILE` | _(built-in Germany map)_ | Path to a custom map TOML file |
 | `RUST_LOG` | _(unset)_ | Log level (`info`, `debug`, etc.) |
 
 Example:
 
 ```bash
-PORT=8080 MAP_FILE=germany.toml RUST_LOG=info ./powergrid-server-linux-x86_64
+PORT=8080 MAP_FILE=my_map.toml RUST_LOG=info ./powergrid-server-linux-x86_64
+```
+
+## Client CLI Flags
+
+```
+--url <ws://host:3000/ws>   Server to connect to
+--name <name>               Your player name
+--color <color>             Your player color (auto-connects when all three are set)
+--windowed                  Run in a window instead of borderless fullscreen
 ```
 
 ## Maps
 
-Maps are TOML files that define cities and connections. The included map is **Germany**. You can create your own — add `[[cities]]` entries (id, name, region) and `[[connections]]` entries (from, to, cost), then point `MAP_FILE` at the new file.
+Maps are TOML files that define cities and connections. The included map is **Germany**, embedded at compile time. To use a custom map, set `MAP_FILE=/path/to/map.toml` when starting the server.
+
+A map file contains `[[cities]]` entries (id, name, region) and `[[connections]]` entries (from, to, cost).
+
+## Docker
+
+To run the server in Docker:
+
+```bash
+docker compose up --build
+```
 
 ## Health Check
 
