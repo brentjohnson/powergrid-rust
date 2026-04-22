@@ -97,7 +97,7 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameState, my_id: Pl
 
     // Base connection lines (all map edges)
     {
-        let conn_stroke_w = (city_r * 0.25).max(1.0);
+        let conn_stroke_w = (city_r * 0.12).max(0.8);
         let conn_color = Color32::from_rgba_unmultiplied(90, 80, 65, 180);
         let conn_glow = Color32::from_rgba_unmultiplied(180, 160, 120, 60);
         let mut drawn = std::collections::HashSet::<(String, String)>::new();
@@ -194,43 +194,57 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameState, my_id: Pl
         }
     }
 
-    // City markers
+    // City markers — always show 3 slots (one per game step).
+    // Slot states: filled (owner color), available (outline), locked (faint dot).
     for (city_id, city) in &game_state.map.cities {
         if let (Some(cx), Some(cy)) = (city.x, city.y) {
             let center = to_screen(cx, cy);
             let is_selected = state.selected_build_cities.contains(city_id);
+            let spacing = city_r * 2.3;
+            let total_w = spacing * 2.0; // 3 slots → 2 gaps
 
-            if !city.owners.is_empty() {
-                let n = city.owners.len() as f32;
-                let spacing = city_r * 2.3;
-                let total_w = spacing * (n - 1.0);
-                for (i, owner_id) in city.owners.iter().enumerate() {
-                    let ox2 = center.x + (i as f32 * spacing) - total_w / 2.0;
-                    let c = Pos2::new(ox2, center.y);
-                    painter.circle_filled(c, city_r + 1.5, Color32::WHITE);
+            // Cyan glow behind all slots when this city is selected for building.
+            if is_selected {
+                painter.circle_filled(
+                    center,
+                    total_w / 2.0 + city_r * 2.0,
+                    Color32::from_rgba_unmultiplied(0, 200, 230, 30),
+                );
+            }
+
+            for slot in 0usize..3 {
+                let x = center.x + (slot as f32 * spacing) - total_w / 2.0;
+                let pos = Pos2::new(x, center.y);
+
+                if slot < city.owners.len() {
+                    // Filled: white border ring + player color.
                     let color = player_colors
-                        .get(owner_id)
+                        .get(&city.owners[slot])
                         .copied()
                         .map(player_color_to_egui)
                         .unwrap_or(theme::NEON_GREEN);
-                    painter.circle_filled(c, city_r, color);
+                    painter.circle_filled(pos, city_r + 1.5, Color32::WHITE);
+                    painter.circle_filled(pos, city_r, color);
+                } else if slot < game_state.step as usize {
+                    // Available this step: outline ring, brighter during build turn.
+                    let (r, g, b) = if is_my_build_turn {
+                        (120, 180, 165) // TEXT_MID
+                    } else {
+                        (60, 100, 90) // TEXT_DIM
+                    };
+                    painter.circle_stroke(
+                        pos,
+                        city_r,
+                        Stroke::new(1.2, Color32::from_rgb(r, g, b)),
+                    );
+                } else {
+                    // Locked: tiny faint dot indicating the slot exists.
+                    painter.circle_filled(
+                        pos,
+                        city_r * 0.45,
+                        Color32::from_rgba_unmultiplied(60, 100, 90, 40),
+                    );
                 }
-            } else if is_selected {
-                // Neon cyan glow for selected build target
-                painter.circle_filled(
-                    center,
-                    city_r * 2.0,
-                    Color32::from_rgba_unmultiplied(0, 200, 230, 40),
-                );
-                painter.circle_filled(center, city_r + 1.5, Color32::WHITE);
-                painter.circle_filled(center, city_r, theme::NEON_CYAN);
-            } else {
-                let alpha = if is_my_build_turn { 180 } else { 90 };
-                painter.circle_filled(
-                    center,
-                    city_r,
-                    Color32::from_rgba_unmultiplied(240, 240, 240, alpha),
-                );
             }
         }
     }

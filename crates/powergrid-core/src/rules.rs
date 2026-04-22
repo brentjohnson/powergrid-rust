@@ -297,6 +297,10 @@ fn handle_pass_auction(state: &mut GameState, actor: PlayerId) -> Result<(), Act
             return Err(ActionError::NotYourTurn);
         }
 
+        if state.round == 1 {
+            return Err(ActionError::MustBuyPlantInRoundOne);
+        }
+
         passed.push(actor);
         advance_auction(state, bought, passed);
     }
@@ -1450,10 +1454,12 @@ mod tests {
         let first = state.player_order[0];
         let second = state.player_order[1];
 
-        // First player passes their auction turn.
-        apply_action(&mut state, first, Action::PassAuction).unwrap();
+        // First player selects plant 4; second player passes the active bid so first wins it.
+        // (Round 1 forbids passing a selection turn, but passing an active bid is always allowed.)
+        apply_action(&mut state, first, Action::SelectPlant { plant_number: 4 }).unwrap();
+        apply_action(&mut state, second, Action::PassAuction).unwrap();
 
-        // Now only the second player remains. Selecting a plant should immediately award it.
+        // Now only the second player remains for selection. Selecting a plant auto-awards it at minimum.
         apply_action(&mut state, second, Action::SelectPlant { plant_number: 3 }).unwrap();
 
         // Should have advanced past auction into BuyResources.

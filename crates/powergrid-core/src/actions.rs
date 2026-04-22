@@ -79,6 +79,8 @@ pub enum ActionError {
     PlantNotOwned(u8),
     #[error("unknown player")]
     UnknownPlayer,
+    #[error("you must buy a power plant in the first round")]
+    MustBuyPlantInRoundOne,
 }
 
 /// Messages sent from the server to clients.
