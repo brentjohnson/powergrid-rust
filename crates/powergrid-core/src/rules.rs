@@ -422,6 +422,12 @@ fn handle_buy_resources(
     player.money -= cost;
     player.resources.add(resource, amount);
 
+    let name = state
+        .player(actor)
+        .map(|p| p.name.clone())
+        .unwrap_or_default();
+    state.log(format!("{name} bought {amount} {resource:?} for ${cost}"));
+
     // Don't advance — player may buy more resources.
     Ok(())
 }
@@ -463,6 +469,7 @@ fn handle_buy_resource_batch(
     if !purchases.is_empty() {
         // Validate and apply on a scratch copy for atomicity.
         let mut scratch = state.clone();
+        let mut total_cost = 0u32;
         for (resource, amount) in &purchases {
             let cost = scratch
                 .resources
@@ -483,9 +490,23 @@ fn handle_buy_resource_batch(
                 .ok_or(ActionError::UnknownPlayer)?;
             player.money -= cost;
             player.resources.add(*resource, *amount);
+            total_cost += cost;
         }
         // All succeeded — commit.
         *state = scratch;
+
+        let name = state
+            .player(actor)
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        let summary: Vec<String> = purchases
+            .iter()
+            .map(|(r, a)| format!("{a} {r:?}"))
+            .collect();
+        state.log(format!(
+            "{name} bought {} for ${total_cost}",
+            summary.join(", ")
+        ));
     }
 
     // Advance turn.
