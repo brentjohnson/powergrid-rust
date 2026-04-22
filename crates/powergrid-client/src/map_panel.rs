@@ -98,8 +98,8 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameState, my_id: Pl
     // Base connection lines (all map edges)
     {
         let conn_stroke_w = (city_r * 0.25).max(1.0);
-        let conn_color = Color32::from_rgba_unmultiplied(30, 25, 20, 110);
-        let conn_glow = Color32::from_rgba_unmultiplied(0, 0, 0, 40);
+        let conn_color = Color32::from_rgba_unmultiplied(90, 80, 65, 180);
+        let conn_glow = Color32::from_rgba_unmultiplied(180, 160, 120, 60);
         let mut drawn = std::collections::HashSet::<(String, String)>::new();
         for (from_id, neighbors) in &game_state.map.edges {
             for (to_id, cost) in neighbors {
