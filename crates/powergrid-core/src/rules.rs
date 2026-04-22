@@ -709,51 +709,76 @@ fn handle_power_cities(
         }
     }
 
-    // Calculate cities powered and consume resources.
-    let powered = {
+    // Find the optimal subset of plants to fire and how to consume resources.
+    // With at most 3 plants there are only 8 subsets — enumerate all of them.
+    // For each subset simulate firing using proper mixed-resource logic and keep
+    // the allocation that maximises cities powered.
+    let (powered, best_resources) = {
         let player = state.player(actor).ok_or(ActionError::UnknownPlayer)?;
         let cities_owned = player.city_count() as u8;
-        let mut powered = 0u8;
-        let mut res = player.resources.clone();
+        let n = plant_numbers.len();
+        let mut best_powered = 0u8;
+        let mut best_res = player.resources.clone();
 
-        for &num in &plant_numbers {
-            let plant = player.plants.iter().find(|p| p.number == num).unwrap();
-            if plant.kind.needs_resources() {
-                let r = plant.kind.resources()[0]; // simplified: use first resource type
-                if !res.remove(r, plant.cost) {
-                    // Try second resource for hybrid plants.
-                    if plant.kind == PlantKind::CoalOrOil {
-                        let r2 = Resource::Oil;
-                        if !res.remove(r2, plant.cost) {
-                            continue; // can't fire
-                        }
-                    } else {
-                        continue; // can't fire
-                    }
+        // Try every non-empty subset (bit mask over plant_numbers indices).
+        for mask in 1u8..(1u8 << n) {
+            let mut coal = player.resources.coal;
+            let mut oil = player.resources.oil;
+            let mut garbage = player.resources.garbage;
+            let mut uranium = player.resources.uranium;
+            let mut powered = 0u8;
+            let mut ok = true;
+
+            for (i, &num) in plant_numbers.iter().enumerate() {
+                if mask & (1 << i) == 0 {
+                    continue;
                 }
+                let plant = player.plants.iter().find(|p| p.number == num).unwrap();
+                let can_fire = match plant.kind {
+                    PlantKind::Coal => coal >= plant.cost,
+                    PlantKind::Oil => oil >= plant.cost,
+                    PlantKind::CoalOrOil => coal + oil >= plant.cost,
+                    PlantKind::Garbage => garbage >= plant.cost,
+                    PlantKind::Uranium => uranium >= plant.cost,
+                    PlantKind::Wind | PlantKind::Fusion => true,
+                };
+                if !can_fire {
+                    ok = false;
+                    break;
+                }
+                match plant.kind {
+                    PlantKind::Coal => coal -= plant.cost,
+                    PlantKind::Oil => oil -= plant.cost,
+                    PlantKind::CoalOrOil => {
+                        let from_coal = plant.cost.min(coal);
+                        coal -= from_coal;
+                        oil -= plant.cost - from_coal;
+                    }
+                    PlantKind::Garbage => garbage -= plant.cost,
+                    PlantKind::Uranium => uranium -= plant.cost,
+                    PlantKind::Wind | PlantKind::Fusion => {}
+                }
+                powered += plant.cities;
             }
-            powered += plant.cities;
+
+            if ok && powered > best_powered {
+                best_powered = powered;
+                best_res = PlayerResources {
+                    coal,
+                    oil,
+                    garbage,
+                    uranium,
+                };
+            }
         }
-        powered.min(cities_owned)
+
+        (best_powered.min(cities_owned), best_res)
     };
 
-    // Apply resource consumption (simplified — consume in declared order).
+    // Apply the resource state from the best allocation.
     {
         let player = state.player_mut(actor).ok_or(ActionError::UnknownPlayer)?;
-        for &num in &plant_numbers {
-            let plant = player
-                .plants
-                .iter()
-                .find(|p| p.number == num)
-                .unwrap()
-                .clone();
-            if plant.kind.needs_resources() {
-                let r = plant.kind.resources()[0];
-                if !player.resources.remove(r, plant.cost) && plant.kind == PlantKind::CoalOrOil {
-                    player.resources.remove(Resource::Oil, plant.cost);
-                }
-            }
-        }
+        player.resources = best_resources;
     }
 
     let income = income_for(powered);
@@ -1846,5 +1871,77 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, ActionError::OverCapacity), "got {err:?}");
+    }
+
+    /// Reproduce the reported bug: player owns plants 8 (Coal/3/2), 10 (Coal/2/2), and
+    /// 21 (CoalOrOil/2/4) with only 2 coal.  The optimal firing is plant 21 alone (2 coal →
+    /// 4 cities).  Without the fix the greedy pass consumed coal on plant 10 first and
+    /// plant 21 could not fire, yielding only 2 cities.
+    #[test]
+    fn test_bureaucracy_optimal_coalor_oil_plant() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        // Force bureaucracy phase with p1 acting first.
+        state.phase = Phase::Bureaucracy {
+            remaining: vec![p1],
+        };
+
+        let player = state.player_mut(p1).unwrap();
+        // Give 4 cities.
+        player.cities = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+        // Plants: 8 (Coal, cost 3, 2 cities), 10 (Coal, cost 2, 2 cities), 21 (CoalOrOil, cost 2, 4 cities).
+        player.plants = vec![
+            PowerPlant {
+                number: 8,
+                kind: PlantKind::Coal,
+                cost: 3,
+                cities: 2,
+            },
+            PowerPlant {
+                number: 10,
+                kind: PlantKind::Coal,
+                cost: 2,
+                cities: 2,
+            },
+            PowerPlant {
+                number: 21,
+                kind: PlantKind::CoalOrOil,
+                cost: 2,
+                cities: 4,
+            },
+        ];
+        // Only 2 coal — enough for plant 21 alone, not for both 10 and 21.
+        player.resources = PlayerResources {
+            coal: 2,
+            oil: 0,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        apply_action(
+            &mut state,
+            p1,
+            Action::PowerCities {
+                plant_numbers: vec![8, 10, 21],
+            },
+        )
+        .unwrap();
+
+        // Plant 21 should have fired: 4 cities powered.
+        let found = state
+            .event_log
+            .iter()
+            .any(|e| e.contains("powered 4 cities"));
+        assert!(
+            found,
+            "expected a log entry with 'powered 4 cities'; log: {:?}",
+            state.event_log
+        );
+        // Resources: plant 21 consumed 2 coal.
+        let player = state.player(p1).unwrap();
+        assert_eq!(player.resources.coal, 0, "2 coal should have been consumed");
     }
 }
