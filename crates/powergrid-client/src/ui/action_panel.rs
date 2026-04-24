@@ -7,7 +7,7 @@ use powergrid_core::{
     GameState,
 };
 
-use crate::{state::AppState, theme, ws::WsChannels};
+use crate::{card_painter, state::player_color_to_egui, state::AppState, theme, ws::WsChannels};
 
 use super::helpers::{neon_button, resource_name, send};
 
@@ -22,11 +22,47 @@ pub(super) fn action_panel(
         Phase::Auction {
             current_bidder_idx,
             active_bid,
-            ..
+            bought,
+            passed,
         } => {
             let my_nominate_turn = gs.player_order.get(*current_bidder_idx) == Some(&my_id);
 
             if let Some(bid) = active_bid {
+                // Target plant card
+                let target_plant = gs
+                    .market
+                    .actual
+                    .iter()
+                    .chain(gs.market.future.iter())
+                    .find(|p| p.number == bid.plant_number);
+                if let Some(plant) = target_plant {
+                    card_painter::draw_plant_card(ui, plant);
+                    ui.add_space(4.0);
+                }
+
+                // Leading bid info
+                if let Some(leader) = gs.player(bid.highest_bidder) {
+                    let color = player_color_to_egui(leader.color);
+                    ui.label(
+                        RichText::new(format!("Leading bid: ${} by {}", bid.amount, leader.name))
+                            .color(color)
+                            .monospace(),
+                    );
+                }
+
+                // Remaining bidders
+                let remaining_names: Vec<&str> = bid
+                    .remaining_bidders
+                    .iter()
+                    .filter_map(|id| gs.player(*id).map(|p| p.name.as_str()))
+                    .collect();
+                ui.label(
+                    RichText::new(format!("Still bidding: {}", remaining_names.join(", ")))
+                        .color(theme::TEXT_DIM)
+                        .monospace(),
+                );
+                ui.separator();
+
                 let is_my_bid_turn = bid.remaining_bidders.first() == Some(&my_id);
                 if is_my_bid_turn {
                     let my_money = gs.player(my_id).map(|p| p.money).unwrap_or(0);
@@ -41,12 +77,9 @@ pub(super) fn action_panel(
                     }
 
                     ui.label(
-                        RichText::new(format!(
-                            "Bid on plant #{} — current: ${}",
-                            bid.plant_number, bid.amount
-                        ))
-                        .color(theme::TEXT_BRIGHT)
-                        .monospace(),
+                        RichText::new("Your turn to bid:")
+                            .color(theme::TEXT_BRIGHT)
+                            .monospace(),
                     );
                     ui.horizontal(|ui| {
                         if ui
@@ -90,8 +123,14 @@ pub(super) fn action_panel(
                         }
                     });
                 } else {
+                    let next_bidder = bid
+                        .remaining_bidders
+                        .first()
+                        .and_then(|id| gs.player(*id))
+                        .map(|p| p.name.as_str())
+                        .unwrap_or("???");
                     ui.label(
-                        RichText::new(format!("● Bidding on #{} — waiting…", bid.plant_number))
+                        RichText::new(format!("● Waiting for {} to bid…", next_bidder))
                             .color(theme::TEXT_DIM)
                             .monospace(),
                     );
@@ -106,11 +145,47 @@ pub(super) fn action_panel(
                     send(Action::PassAuction, channels);
                 }
             } else {
+                let nominator_name = gs
+                    .player_order
+                    .get(*current_bidder_idx)
+                    .and_then(|id| gs.player(*id))
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("???");
                 ui.label(
-                    RichText::new("● Waiting for other operators…")
-                        .color(theme::TEXT_DIM)
-                        .monospace(),
+                    RichText::new(format!(
+                        "● Waiting for {} to select a plant…",
+                        nominator_name
+                    ))
+                    .color(theme::TEXT_DIM)
+                    .monospace(),
                 );
+            }
+
+            // Bought / passed summary
+            if !bought.is_empty() || !passed.is_empty() {
+                ui.add_space(4.0);
+                if !bought.is_empty() {
+                    let names: Vec<&str> = bought
+                        .iter()
+                        .filter_map(|id| gs.player(*id).map(|p| p.name.as_str()))
+                        .collect();
+                    ui.label(
+                        RichText::new(format!("Bought: {}", names.join(", ")))
+                            .color(theme::TEXT_DIM)
+                            .monospace(),
+                    );
+                }
+                if !passed.is_empty() {
+                    let names: Vec<&str> = passed
+                        .iter()
+                        .filter_map(|id| gs.player(*id).map(|p| p.name.as_str()))
+                        .collect();
+                    ui.label(
+                        RichText::new(format!("Passed: {}", names.join(", ")))
+                            .color(theme::TEXT_DIM)
+                            .monospace(),
+                    );
+                }
             }
         }
 
