@@ -623,6 +623,7 @@ fn apply_single_build(
 fn advance_build_phase(state: &mut GameState, mut remaining: Vec<PlayerId>) {
     remaining.remove(0);
     if remaining.is_empty() {
+        check_step2_trigger(state);
         begin_bureaucracy(state);
     } else {
         state.phase = Phase::BuildCities { remaining };
@@ -673,7 +674,6 @@ fn handle_build_city(
     }
 
     apply_single_build(state, actor, &city_id)?;
-    check_step2_trigger(state);
     check_end_game_trigger(state);
 
     Ok(())
@@ -713,7 +713,6 @@ fn handle_build_cities(
 
     // All succeeded — commit and advance the phase.
     *state = scratch;
-    check_step2_trigger(state);
     check_end_game_trigger(state);
     advance_build_phase(state, remaining);
 

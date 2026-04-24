@@ -6,7 +6,7 @@
   * ~~NOTE: I got rid of an Oil plant and bought a coal.  The new coal is what wasn't working (even though it showed)~~
   * ~~NOTE: The cause of this was the invalid resource after losing a plant (two bugs, one prompt)~~
 * ~~BUG: When losing a powerplant, check for invalid resources~~
-* BUG: Step 2 started too soon (during city building)
+* ~~BUG: Step 2 started too soon (during city building)~~
 * BUG: Step 3.  Is the card in there?  Does it work?  Will power plant market adjust?
 * BUG: Choose which plant to discard
 * BUG: Player should be able to choose resource to lose when discarding plant
@@ -24,5 +24,5 @@
 * IMPROVEMENT: Show replanishment on resource market
 * IMPROVEMENT: Add "capacity" to player card (how many you could power)
 * IMPROVEMENT: Show remaining money when doing resources or cities?
-* FUTURE: Random maps? or use Google maps? 
 * IMPROVEMENT: Exit game besides ALT-F4 (ESC menu: what other menu things?)
+* FUTURE: Random maps? or use Google maps? 
