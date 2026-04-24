@@ -331,6 +331,36 @@ fn award_plant(
     player.plants.push(plant.clone());
     player.plants.sort_by_key(|p| p.number);
 
+    // Clamp resources to new capacity — the discarded plant may have held resources
+    // that no longer fit. Return excess to the market (Power Grid rules).
+    let excesses: Vec<(Resource, u8)> = {
+        let player = state.player_mut(winner).ok_or(ActionError::UnknownPlayer)?;
+        [
+            Resource::Coal,
+            Resource::Oil,
+            Resource::Garbage,
+            Resource::Uranium,
+        ]
+        .into_iter()
+        .filter_map(|r| {
+            let cap = player.resource_capacity(r);
+            let held = player.resources.get(r);
+            if held > cap {
+                Some((r, held - cap))
+            } else {
+                None
+            }
+        })
+        .collect()
+    };
+    for (resource, excess) in excesses {
+        {
+            let player = state.player_mut(winner).ok_or(ActionError::UnknownPlayer)?;
+            player.resources.remove(resource, excess);
+        }
+        state.resources.replenish(resource, excess);
+    }
+
     state.log(format!(
         "{} bought plant {} for {}",
         state.player(winner).map(|p| p.name.as_str()).unwrap_or("?"),
@@ -2100,6 +2130,94 @@ mod tests {
         assert!(
             !matches!(state.phase, Phase::Bureaucracy { .. }),
             "expected phase to advance after both players submitted"
+        );
+    }
+
+    /// Regression: buying a 4th plant (which discards the lowest) must not leave orphaned
+    /// resources from the discarded plant blocking future purchases.
+    ///
+    /// Setup: player has 3 plants — a CoalOrOil hybrid (cost 2, cap 4) with 4 oil stored,
+    /// a Coal plant (cost 2, cap 4), and a Coal plant (cost 3, cap 6).
+    /// They then win a Coal plant (cost 4, cap 8) as their 4th plant.
+    /// The lowest-numbered plant (the hybrid) is discarded; its 4 oil must be returned to
+    /// the market so that `can_add_resource(Coal, 1)` succeeds on the remaining plants.
+    #[test]
+    fn test_fourth_plant_orphaned_resources_returned_to_market() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        // Give the player 3 plants. Plant 5 (hybrid, lowest number) holds 4 oil.
+        let player = state.player_mut(p1).unwrap();
+        player.money = 1000;
+        player.plants = vec![
+            PowerPlant {
+                number: 5,
+                kind: PlantKind::CoalOrOil,
+                cost: 2,
+                cities: 1,
+            }, // cap 4
+            PowerPlant {
+                number: 10,
+                kind: PlantKind::Coal,
+                cost: 2,
+                cities: 1,
+            }, // cap 4
+            PowerPlant {
+                number: 14,
+                kind: PlantKind::Coal,
+                cost: 3,
+                cities: 2,
+            }, // cap 6
+        ];
+        player.resources = PlayerResources {
+            coal: 0,
+            oil: 4,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        // Add a coal plant to the actual market (plant 24 doesn't normally appear in round 1,
+        // so inject it directly).
+        let new_plant = PowerPlant {
+            number: 24,
+            kind: PlantKind::Coal,
+            cost: 4,
+            cities: 3,
+        };
+        state.market.actual.push(new_plant);
+
+        let oil_before = state.resources.oil;
+
+        // Award the 4th plant — this triggers the discard of plant 5 (lowest).
+        award_plant(&mut state, p1, 24, 24, vec![], vec![]).unwrap();
+
+        let player = state.player(p1).unwrap();
+
+        // Plant 5 (hybrid) should have been discarded; player should now have plants 10, 14, 24.
+        let plant_numbers: Vec<u8> = player.plants.iter().map(|p| p.number).collect();
+        assert_eq!(
+            plant_numbers,
+            vec![10, 14, 24],
+            "plant 5 should have been discarded"
+        );
+
+        // The 4 oil that lived on the hybrid must have been returned to the market.
+        assert_eq!(
+            state.resources.oil,
+            oil_before + 4,
+            "orphaned oil should be returned to market"
+        );
+        assert_eq!(
+            player.resources.oil, 0,
+            "player should hold no oil after discard"
+        );
+
+        // Critical: player must be able to add coal to their remaining coal plants.
+        assert!(
+            player.can_add_resource(Resource::Coal, 1),
+            "can_add_resource(Coal) must succeed after hybrid plant is discarded"
         );
     }
 }
