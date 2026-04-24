@@ -820,6 +820,7 @@ fn handle_power_cities(
 
     let income = income_for(powered);
     let player = state.player_mut(actor).ok_or(ActionError::UnknownPlayer)?;
+    player.last_cities_powered = powered;
     player.money += income;
 
     state.log(format!(
@@ -884,12 +885,11 @@ fn determine_winner(state: &GameState) -> Option<PlayerId> {
         return None;
     }
 
-    // Winner: player who can power the most cities.
-    // Tie: most money.
+    // Winner: most cities actually powered; tie: most money; tie: most cities in network.
     state
         .players
         .iter()
-        .max_by_key(|p| (p.cities_powerable(), p.money))
+        .max_by_key(|p| (p.last_cities_powered, p.money, p.city_count()))
         .map(|p| p.id)
 }
 

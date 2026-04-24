@@ -228,6 +228,7 @@ pub struct Player {
     pub plants: Vec<PowerPlant>,
     pub resources: PlayerResources,
     pub passed_auction: bool,
+    pub last_cities_powered: u8,
 }
 
 impl Player {
@@ -241,6 +242,7 @@ impl Player {
             plants: Vec::new(),
             resources: PlayerResources::default(),
             passed_auction: false,
+            last_cities_powered: 0,
         }
     }
 
