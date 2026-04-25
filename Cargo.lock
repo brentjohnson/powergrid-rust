@@ -4488,6 +4488,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "powergrid-bot"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "powergrid-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "powergrid-client"
 version = "0.1.0"
 dependencies = [

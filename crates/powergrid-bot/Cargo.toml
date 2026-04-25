@@ -1,0 +1,15 @@
+[package]
+name = "powergrid-bot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+powergrid-core = { path = "../powergrid-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"

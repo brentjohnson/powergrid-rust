@@ -5,6 +5,8 @@
 * BUG: I owned PP 31, but it wouldn't let me buy coal?  It showed 0/6?
   * NOTE: I got rid of an Oil plant and bought a coal.  The new coal is what wasn't working (even though it showed)
   * NOTE: The cause of this was the invalid resource after losing a plant (two bugs, one prompt)
+* IMPROVEMENT: Not obvious which plant is up for bid
+* IMPROVEMENT: Bidding should happen in action panel.
 * BUG: When losing a powerplant, check for invalid resources
 * BUG: Step 2 started too soon (during city building)
 * BUG: Step 3.  Is the card in there?  Does it work?  Will power plant market adjust?
@@ -17,14 +19,19 @@
 * CHECK: Does it discard the 3 when third city built?
 * IMPROVEMENT: Make connection string easier (just the host, not the rest - default to onyxoryx)
 
+# v0.3.1
+
+* FUTURE: Computer controlled player!
+
+
 
 # To do...
 
+* CHECK: Are all cities properly assigned to regions?
 * BUG: Player should be able to choose resources for powering (hybrid!)
 * BUG: Player should be able to choose resource to lose when discarding plant
 * BUG: Two people pick same color, can't start game
-* IMPROVEMENT: Bidding should happen in action panel.  Show the powerplant and each players status/bid. In correct order.
-  * IMPROVEMENT: Not obvious which plant is up for bid
+* IMPROVEMENT: Auction mode... List each player in a column and show status/bids.
 * COMPLAINT: Less reading for Nick
 * IMPROVEMENT: Randomize initial order
 * IMPROVEMENT: Do not reorder players on left (that should remain bidding order) DEBATABLE!?
@@ -36,5 +43,4 @@
 * DEBUG: log more info
 * DEBUG: dump state for diagnostics
 * DEBUG: view hidden info (deck)
-* FUTURE: Computer controlled player!
 * FUTURE: Random maps? or use Google maps? 
