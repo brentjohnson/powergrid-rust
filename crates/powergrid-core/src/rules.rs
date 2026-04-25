@@ -83,6 +83,21 @@ fn handle_start(state: &mut GameState, actor: PlayerId) -> Result<(), ActionErro
     state.player_order.shuffle(&mut rng);
 
     let player_count = state.players.len();
+
+    // Select active regions based on player count.
+    let region_count = match player_count {
+        2 | 3 => 3,
+        4 => 4,
+        _ => 5, // 5 or 6 players
+    };
+    let mut all_regions = state.map.regions.clone();
+    all_regions.shuffle(&mut rng);
+    state.active_regions = all_regions.into_iter().take(region_count).collect();
+    state.log(format!(
+        "Active regions: {}",
+        state.active_regions.join(", ")
+    ));
+
     state.market.setup_deck(&mut rng, player_count);
 
     begin_auction(state);
@@ -582,6 +597,10 @@ fn apply_single_build(
         .cities
         .get(city_id)
         .ok_or_else(|| ActionError::CityNotFound(city_id.to_string()))?;
+
+    if !state.is_city_active(city_id) {
+        return Err(ActionError::CityRegionInactive(city_id.to_string()));
+    }
 
     let max_per_city = state.step as usize;
     if city.owners.len() >= max_per_city {
@@ -2266,6 +2285,207 @@ mod tests {
         assert!(
             player.can_add_resource(Resource::Coal, 1),
             "can_add_resource(Coal) must succeed after hybrid plant is discarded"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Region selection tests
+    // -----------------------------------------------------------------------
+
+    /// Build a map with multiple regions where cities connect across region boundaries.
+    fn multi_region_map() -> Map {
+        Map::from_data(MapData {
+            name: "MultiRegion".into(),
+            regions: vec![
+                "r1".into(),
+                "r2".into(),
+                "r3".into(),
+                "r4".into(),
+                "r5".into(),
+                "r6".into(),
+            ],
+            image: None,
+            cities: vec![
+                CityData {
+                    id: "a".into(),
+                    name: "A".into(),
+                    region: "r1".into(),
+                    x: None,
+                    y: None,
+                },
+                CityData {
+                    id: "b".into(),
+                    name: "B".into(),
+                    region: "r2".into(),
+                    x: None,
+                    y: None,
+                },
+                CityData {
+                    id: "c".into(),
+                    name: "C".into(),
+                    region: "r3".into(),
+                    x: None,
+                    y: None,
+                },
+                CityData {
+                    id: "d".into(),
+                    name: "D".into(),
+                    region: "r4".into(),
+                    x: None,
+                    y: None,
+                },
+                CityData {
+                    id: "e".into(),
+                    name: "E".into(),
+                    region: "r5".into(),
+                    x: None,
+                    y: None,
+                },
+                CityData {
+                    id: "f".into(),
+                    name: "F".into(),
+                    region: "r6".into(),
+                    x: None,
+                    y: None,
+                },
+            ],
+            connections: vec![
+                ConnectionData {
+                    from: "a".into(),
+                    to: "b".into(),
+                    cost: 5,
+                },
+                ConnectionData {
+                    from: "b".into(),
+                    to: "c".into(),
+                    cost: 3,
+                },
+                ConnectionData {
+                    from: "c".into(),
+                    to: "d".into(),
+                    cost: 4,
+                },
+                ConnectionData {
+                    from: "d".into(),
+                    to: "e".into(),
+                    cost: 2,
+                },
+                ConnectionData {
+                    from: "e".into(),
+                    to: "f".into(),
+                    cost: 6,
+                },
+            ],
+        })
+    }
+
+    fn start_multi_region_game(player_count: usize, seed: u64) -> (GameState, Vec<PlayerId>) {
+        let colors = [
+            PlayerColor::Red,
+            PlayerColor::Blue,
+            PlayerColor::Yellow,
+            PlayerColor::Green,
+            PlayerColor::Purple,
+            PlayerColor::White,
+        ];
+        let names = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank"];
+        let mut state = GameState::new_with_seed(multi_region_map(), player_count, seed);
+        let mut ids = Vec::new();
+        for i in 0..player_count {
+            let id = uuid::Uuid::new_v4();
+            ids.push(id);
+            apply_action(
+                &mut state,
+                id,
+                Action::JoinGame {
+                    name: names[i].into(),
+                    color: colors[i],
+                },
+            )
+            .unwrap();
+        }
+        apply_action(&mut state, ids[0], Action::StartGame).unwrap();
+        (state, ids)
+    }
+
+    #[test]
+    fn test_region_count_by_player_count() {
+        let cases = [(2, 3), (3, 3), (4, 4), (5, 5), (6, 5)];
+        for (player_count, expected_regions) in cases {
+            let (state, _) = start_multi_region_game(player_count, 42);
+            assert_eq!(
+                state.active_regions.len(),
+                expected_regions,
+                "expected {} active regions for {} players",
+                expected_regions,
+                player_count
+            );
+        }
+    }
+
+    #[test]
+    fn test_region_selection_deterministic_with_seed() {
+        let (state1, _) = start_multi_region_game(4, 99);
+        let (state2, _) = start_multi_region_game(4, 99);
+        assert_eq!(
+            state1.active_regions, state2.active_regions,
+            "same seed should produce same active regions"
+        );
+    }
+
+    #[test]
+    fn test_build_in_inactive_region_rejected() {
+        let (mut state, _ids) = start_multi_region_game(2, 42);
+        // Find a city in an inactive region.
+        let inactive_city = state
+            .map
+            .cities
+            .values()
+            .find(|c| !state.active_regions.contains(&c.region))
+            .map(|c| c.id.clone())
+            .expect("there should be inactive cities with 2 players (3 of 6 regions inactive)");
+
+        // Give the player money and force into BuildCities.
+        for player in &mut state.players {
+            player.money = 500;
+        }
+        let build_order: Vec<PlayerId> = state.player_order.iter().rev().cloned().collect();
+        state.phase = Phase::BuildCities {
+            remaining: build_order,
+        };
+        let actor = match &state.phase {
+            Phase::BuildCities { remaining } => remaining[0],
+            _ => unreachable!(),
+        };
+
+        let result = apply_action(
+            &mut state,
+            actor,
+            Action::BuildCities {
+                city_ids: vec![inactive_city.clone()],
+            },
+        );
+        assert!(
+            matches!(result, Err(ActionError::CityRegionInactive(_))),
+            "building in inactive region should return CityRegionInactive, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_routing_through_inactive_region_still_works() {
+        // Map: a(r1) --5-- b(r2) --3-- c(r3)
+        // If r2 is inactive, routing from a to c should still cost 8 (through b).
+        let mut state = GameState::new_with_seed(multi_region_map(), 2, 1);
+        // Force active_regions to r1 and r3 only (making r2 inactive).
+        state.active_regions = vec!["r1".into(), "r3".into(), "r4".into()];
+
+        // Cost from "a" (r1) to "c" (r3) should traverse through "b" (r2, inactive).
+        let cost = state.map.connection_cost_to(&["a".to_string()], "c");
+        assert_eq!(
+            cost,
+            Some(8),
+            "routing cost through inactive city should still be computed (a->b=5, b->c=3)"
         );
     }
 }

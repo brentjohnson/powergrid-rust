@@ -8,10 +8,10 @@
 * ~~BUG: When losing a powerplant, check for invalid resources~~
 * ~~BUG: Step 2 started too soon (during city building)~~
 * ~~BUG: Step 3.  Is the card in there?  Does it work?  Will power plant market adjust?~~
+* ~~BUG: Limit the number of regions~~
 * BUG: Choose which plant to discard
 * BUG: Player should be able to choose resource to lose when discarding plant
 * BUG: Player should be able to choose resources for powering (hybrid!)
-* BUG: Limit the number of regions
 * BUG: Two people pick same color, can't start game
 * BUG: My bid was excessively high... did it remember my old bid or something?
 * IMPROVEMENT: Bidding should happen in action panel.  Show the powerplant and each players status/bid. In correct order.

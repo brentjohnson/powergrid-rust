@@ -75,6 +75,8 @@ pub enum ActionError {
     EmptyBuildList,
     #[error("duplicate city in build list")]
     DuplicateCityInBuild,
+    #[error("city {0} is in an inactive region")]
+    CityRegionInactive(String),
     #[error("you do not own plant {0}")]
     PlantNotOwned(u8),
     #[error("unknown player")]

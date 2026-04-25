@@ -22,6 +22,10 @@ pub struct GameState {
     /// Optional RNG seed for deterministic play (used in tests; `None` = entropy).
     #[serde(default)]
     pub rng_seed: Option<u64>,
+    /// Regions active for this game (subset of map.regions, chosen at game start).
+    /// Empty during Lobby (before region selection).
+    #[serde(default)]
+    pub active_regions: Vec<String>,
 }
 
 fn default_step() -> u8 {
@@ -58,6 +62,7 @@ impl GameState {
             end_game_cities,
             event_log: Vec::new(),
             rng_seed,
+            active_regions: Vec::new(),
         }
     }
 
@@ -67,6 +72,18 @@ impl GameState {
 
     pub fn player_mut(&mut self, id: PlayerId) -> Option<&mut Player> {
         self.players.iter_mut().find(|p| p.id == id)
+    }
+
+    /// Returns true if the city's region is active (or if no regions have been selected yet).
+    pub fn is_city_active(&self, city_id: &str) -> bool {
+        if self.active_regions.is_empty() {
+            return true;
+        }
+        self.map
+            .cities
+            .get(city_id)
+            .map(|c| self.active_regions.contains(&c.region))
+            .unwrap_or(false)
     }
 
     pub fn host_id(&self) -> Option<PlayerId> {

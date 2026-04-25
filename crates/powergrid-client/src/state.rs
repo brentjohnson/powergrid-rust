@@ -227,6 +227,9 @@ impl AppState {
         };
         let Some(my_id) = self.my_id else { return };
 
+        if !state.is_city_active(&city_id) {
+            return;
+        }
         if let Some(city) = state.map.cities.get(&city_id) {
             if city.owners.contains(&my_id) || city.owners.len() >= 3 {
                 return;

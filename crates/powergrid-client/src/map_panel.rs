@@ -65,6 +65,9 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameState, my_id: Pl
             let yp = (ly - oy) / img_h;
 
             for (city_id, city) in &game_state.map.cities {
+                if !game_state.is_city_active(city_id) {
+                    continue;
+                }
                 if let (Some(cx), Some(cy)) = (city.x, city.y) {
                     let dx = xp - cx;
                     let dy = yp - cy;
@@ -196,9 +199,21 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameState, my_id: Pl
 
     // City markers — always show 3 slots (one per game step).
     // Slot states: filled (owner color), available (outline), locked (faint dot).
+    // Inactive region cities render as a single dim dot with no slots.
     for (city_id, city) in &game_state.map.cities {
         if let (Some(cx), Some(cy)) = (city.x, city.y) {
             let center = to_screen(cx, cy);
+
+            // Inactive region: single dim dot, no interaction.
+            if !game_state.is_city_active(city_id) {
+                painter.circle_filled(
+                    center,
+                    city_r * 0.5,
+                    Color32::from_rgba_unmultiplied(60, 60, 60, 100),
+                );
+                continue;
+            }
+
             let is_selected = state.selected_build_cities.contains(city_id);
             let spacing = city_r * 2.3;
             let total_w = spacing * 2.0; // 3 slots → 2 gaps
