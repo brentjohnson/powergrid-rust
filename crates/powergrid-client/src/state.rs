@@ -55,6 +55,7 @@ pub struct AppState {
 
     // Auction
     pub bid_amount: u32,
+    pub bid_plant_number: Option<u8>,
 
     // City count history: one CitySnapshot per round recorded so far.
     pub city_history: Vec<CitySnapshot>,
@@ -94,6 +95,7 @@ impl AppState {
             resource_cart: HashMap::new(),
             resource_cart_cost: None,
             bid_amount: 0,
+            bid_plant_number: None,
             city_history: Vec::new(),
             last_recorded_round: 0,
         }

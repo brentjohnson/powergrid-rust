@@ -12,10 +12,11 @@
 * ~~BUG: Choose which plant to discard~~
 * ~~BUG: Step 3, power plant market not reloaded (cards not put on bottom of deck?)~~
 * ~~BUG: Owned 20,29,42. 15 cities. 5 coal, 2 oil.  It only powered 11 cities???~~
+* ~~BUG: My bid was excessively high... did it remember my old bid or something?~~
+* CHECK: Does it discard the 3 when third city built?
 * BUG: Player should be able to choose resource to lose when discarding plant
 * BUG: Player should be able to choose resources for powering (hybrid!)
 * BUG: Two people pick same color, can't start game
-* BUG: My bid was excessively high... did it remember my old bid or something?
 * IMPROVEMENT: Bidding should happen in action panel.  Show the powerplant and each players status/bid. In correct order.
   * IMPROVEMENT: Not obvious which plant is up for bid
 * IMPROVEMENT: Make connection string easier (just the host, not the rest - default to onyxoryx)

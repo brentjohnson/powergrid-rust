@@ -69,6 +69,10 @@ pub(super) fn action_panel(
                     let min_bid = bid.amount + 1;
                     let max_bid = my_money;
 
+                    if state.bid_plant_number != Some(bid.plant_number) {
+                        state.bid_plant_number = Some(bid.plant_number);
+                        state.bid_amount = min_bid;
+                    }
                     if state.bid_amount < min_bid {
                         state.bid_amount = min_bid;
                     }
