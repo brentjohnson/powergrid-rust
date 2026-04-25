@@ -758,7 +758,10 @@ fn check_step3_trigger(state: &mut GameState) {
         state.market.actual.remove(0);
     }
 
-    // Shuffle remaining deck.
+    // Move the below-step3 pile into the main deck and shuffle it.
+    if let Some(below) = state.market.below_step3.take() {
+        state.market.deck = below;
+    }
     let mut rng = match state.rng_seed {
         Some(seed) => rand::rngs::SmallRng::seed_from_u64(seed),
         None => rand::rngs::SmallRng::from_entropy(),
@@ -1389,7 +1392,7 @@ pub fn build_plant_deck() -> PlantMarket {
         future,
         deck,
         plant_13,
-        step3_deck_position: None,
+        below_step3: None,
         step3_triggered: false,
         in_step3: false,
     }

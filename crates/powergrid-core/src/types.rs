@@ -448,10 +448,12 @@ pub struct PlantMarket {
     /// Plant 13, held aside until placed on top of the deck at game start.
     #[serde(default)]
     pub plant_13: Option<PowerPlant>,
-    /// Index in `deck` where the Step 3 card sits (deck[0] = bottom). Each time a plant
-    /// is cycled to the bottom, this shifts up by 1. `None` once Step 3 has triggered.
+    /// Cards cycled below the Step 3 card during Steps 1/2. `Some` means the Step 3
+    /// card is in play (between `deck` and this pile). When the main deck is exhausted
+    /// and a draw is attempted, the Step 3 card is "drawn" — these cards are then
+    /// shuffled to form the Step 3 draw deck. `None` before setup or after Step 3 triggers.
     #[serde(default)]
-    pub step3_deck_position: Option<usize>,
+    pub below_step3: Option<Vec<PowerPlant>>,
     /// Set to true by `refill()` when the Step 3 card is drawn. Cleared by rules.rs
     /// after the Step 3 transition is applied.
     #[serde(default)]
@@ -477,26 +479,21 @@ impl PlantMarket {
     /// Draw from deck into market until full.
     /// Steps 1/2: fill to 8, split 4 actual / 4 future.
     /// Step 3: fill to 6, all in actual, future empty.
-    /// Sets `step3_triggered` if the Step 3 card is reached (deck empties and
-    /// `step3_at_bottom` was true). Caller must handle the transition.
+    /// Sets `step3_triggered` if the Step 3 card is drawn (i.e. a draw is attempted
+    /// while `deck` is empty and `below_step3` is `Some`). Caller must handle the
+    /// transition.
     pub fn refill(&mut self) {
         let target = if self.in_step3 { 6 } else { 8 };
         let mut all: Vec<PowerPlant> = self.actual.drain(..).chain(self.future.drain(..)).collect();
         while all.len() < target {
-            // Stop drawing when we reach the Step 3 card's position; remaining cards
-            // (below it) are the cycled plants that form the Step 3 draw deck.
-            if let Some(pos) = self.step3_deck_position {
-                if self.deck.len() == pos {
+            if self.deck.is_empty() {
+                // Deck exhausted. If the Step 3 card is in play, we just "drew" it.
+                if self.below_step3.is_some() {
                     self.step3_triggered = true;
-                    self.step3_deck_position = None;
-                    break;
                 }
-            }
-            if let Some(card) = self.deck.pop() {
-                all.push(card);
-            } else {
                 break;
             }
+            all.push(self.deck.pop().unwrap());
         }
         all.sort_by_key(|p| p.number);
         if self.in_step3 {
@@ -516,14 +513,15 @@ impl PlantMarket {
         }
     }
 
-    /// Move the highest-numbered plant from the future market to the bottom of the draw deck,
+    /// Move the highest-numbered plant from the future market to below the Step 3 card,
     /// then refill. Used at end of Bureaucracy in Steps 1 and 2.
     pub fn cycle_highest_to_bottom(&mut self) {
         if let Some(plant) = self.future.pop() {
-            self.deck.insert(0, plant);
-            // Plant goes below the Step 3 card, so shift its position up.
-            if let Some(pos) = self.step3_deck_position.as_mut() {
-                *pos += 1;
+            if let Some(below) = self.below_step3.as_mut() {
+                below.push(plant);
+            } else {
+                // Step 3 already triggered or not in play; put in main deck.
+                self.deck.insert(0, plant);
             }
             self.refill();
         }
@@ -560,7 +558,7 @@ impl PlantMarket {
             self.deck.push(plant_13);
         }
 
-        // 4. Step 3 card goes on the bottom (index 0, drawn last).
-        self.step3_deck_position = Some(0);
+        // 4. Step 3 card sits between the main deck and the below-step3 pile.
+        self.below_step3 = Some(Vec::new());
     }
 }
