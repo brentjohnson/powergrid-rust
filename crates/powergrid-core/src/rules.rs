@@ -895,48 +895,17 @@ fn handle_power_cities(
 
         // Try every non-empty subset (bit mask over plant_numbers indices).
         for mask in 1u8..(1u8 << n) {
-            let mut coal = player.resources.coal;
-            let mut oil = player.resources.oil;
-            let mut garbage = player.resources.garbage;
-            let mut uranium = player.resources.uranium;
-            let mut powered = 0u8;
-            let mut ok = true;
+            let subset: Vec<&PowerPlant> = plant_numbers
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| mask & (1 << i) != 0)
+                .map(|(_, &num)| player.plants.iter().find(|p| p.number == num).unwrap())
+                .collect();
 
-            for (i, &num) in plant_numbers.iter().enumerate() {
-                if mask & (1 << i) == 0 {
-                    continue;
-                }
-                let plant = player.plants.iter().find(|p| p.number == num).unwrap();
-                let can_fire = match plant.kind {
-                    PlantKind::Coal => coal >= plant.cost,
-                    PlantKind::Oil => oil >= plant.cost,
-                    PlantKind::CoalOrOil => coal + oil >= plant.cost,
-                    PlantKind::Garbage => garbage >= plant.cost,
-                    PlantKind::Uranium => uranium >= plant.cost,
-                    PlantKind::Wind | PlantKind::Fusion => true,
-                };
-                if !can_fire {
-                    ok = false;
-                    break;
-                }
-                match plant.kind {
-                    PlantKind::Coal => coal -= plant.cost,
-                    PlantKind::Oil => oil -= plant.cost,
-                    PlantKind::CoalOrOil => {
-                        let from_coal = plant.cost.min(coal);
-                        coal -= from_coal;
-                        oil -= plant.cost - from_coal;
-                    }
-                    PlantKind::Garbage => garbage -= plant.cost,
-                    PlantKind::Uranium => uranium -= plant.cost,
-                    PlantKind::Wind | PlantKind::Fusion => {}
-                }
-                powered += plant.cities;
-            }
-
-            if ok {
+            if let Some((powered, res)) = check_plant_feasibility(&subset, &player.resources) {
                 let capped = powered.min(cities_owned);
-                let remaining = coal as u16 + oil as u16 + garbage as u16 + uranium as u16;
+                let remaining =
+                    res.coal as u16 + res.oil as u16 + res.garbage as u16 + res.uranium as u16;
                 let best_remaining = best_res.coal as u16
                     + best_res.oil as u16
                     + best_res.garbage as u16
@@ -944,12 +913,7 @@ fn handle_power_cities(
                 // Prefer more cities powered; break ties by fewer resources consumed.
                 if capped > best_powered || (capped == best_powered && remaining > best_remaining) {
                     best_powered = capped;
-                    best_res = PlayerResources {
-                        coal,
-                        oil,
-                        garbage,
-                        uranium,
-                    };
+                    best_res = res;
                 }
             }
         }
@@ -2752,5 +2716,132 @@ mod tests {
             Some(8),
             "routing cost through inactive city should still be computed (a->b=5, b->c=3)"
         );
+    }
+
+    /// A CoalOrOil hybrid plant must not steal coal from a downstream pure-Coal
+    /// plant.  With plants 20 (Coal/3/5), 29 (CoalOrOil/1/4), 42 (Coal/2/6)
+    /// and resources 5 coal + 2 oil, all three should fire (15 cities).
+    #[test]
+    fn test_hybrid_plant_does_not_starve_pure_coal() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        state.phase = Phase::Bureaucracy {
+            remaining: vec![p1],
+        };
+
+        let player = state.player_mut(p1).unwrap();
+        // Push 15 arbitrary city IDs — city_count() just checks len().
+        player.cities = (0..15).map(|i| format!("city{i}")).collect();
+        player.plants = vec![
+            PowerPlant {
+                number: 20,
+                kind: PlantKind::Coal,
+                cost: 3,
+                cities: 5,
+            },
+            PowerPlant {
+                number: 29,
+                kind: PlantKind::CoalOrOil,
+                cost: 1,
+                cities: 4,
+            },
+            PowerPlant {
+                number: 42,
+                kind: PlantKind::Coal,
+                cost: 2,
+                cities: 6,
+            },
+        ];
+        player.resources = PlayerResources {
+            coal: 5,
+            oil: 2,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        apply_action(
+            &mut state,
+            p1,
+            Action::PowerCities {
+                plant_numbers: vec![20, 29, 42],
+            },
+        )
+        .unwrap();
+
+        let player = state.player(p1).unwrap();
+        assert_eq!(
+            player.last_cities_powered, 15,
+            "all 15 cities should be powered; got {}",
+            player.last_cities_powered
+        );
+        // Plant 20 (3 coal) + Plant 42 (2 coal) + Plant 29 (1 oil): 0 coal, 1 oil left.
+        assert_eq!(player.resources.coal, 0, "expected 0 coal remaining");
+        assert_eq!(player.resources.oil, 1, "expected 1 oil remaining");
+    }
+
+    /// Hybrids should prefer oil over coal so that coal is preserved for
+    /// pure-Coal plants when resources are tight.
+    #[test]
+    fn test_hybrid_prefers_oil_to_conserve_coal() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        state.phase = Phase::Bureaucracy {
+            remaining: vec![p1],
+        };
+
+        let player = state.player_mut(p1).unwrap();
+        player.cities = (0..6).map(|i| format!("c{i}")).collect();
+        // Hybrid (cost 2, 2 cities) + Hybrid (cost 1, 2 cities) + Coal (cost 2, 2 cities).
+        // Resources: 3 coal + 2 oil.  Pure coal needs 2, leaving 1 coal + 2 oil for hybrids (need 3).
+        player.plants = vec![
+            PowerPlant {
+                number: 5,
+                kind: PlantKind::CoalOrOil,
+                cost: 2,
+                cities: 2,
+            },
+            PowerPlant {
+                number: 8,
+                kind: PlantKind::CoalOrOil,
+                cost: 1,
+                cities: 2,
+            },
+            PowerPlant {
+                number: 10,
+                kind: PlantKind::Coal,
+                cost: 2,
+                cities: 2,
+            },
+        ];
+        player.resources = PlayerResources {
+            coal: 3,
+            oil: 2,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        apply_action(
+            &mut state,
+            p1,
+            Action::PowerCities {
+                plant_numbers: vec![5, 8, 10],
+            },
+        )
+        .unwrap();
+
+        let player = state.player(p1).unwrap();
+        assert_eq!(
+            player.last_cities_powered, 6,
+            "all 6 cities should be powered; got {}",
+            player.last_cities_powered
+        );
+        assert_eq!(player.resources.coal, 0, "expected 0 coal remaining");
+        assert_eq!(player.resources.oil, 0, "expected 0 oil remaining");
     }
 }

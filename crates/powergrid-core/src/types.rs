@@ -313,39 +313,92 @@ impl Player {
 
     /// Number of cities this player can power given their plants and stored resources.
     pub fn cities_powerable(&self) -> u8 {
-        let mut coal = self.resources.coal;
-        let mut oil = self.resources.oil;
-        let mut garbage = self.resources.garbage;
-        let mut uranium = self.resources.uranium;
-        let mut powered = 0u8;
-
-        for plant in &self.plants {
-            let can_fire = match plant.kind {
-                PlantKind::Coal => coal >= plant.cost,
-                PlantKind::Oil => oil >= plant.cost,
-                PlantKind::CoalOrOil => coal + oil >= plant.cost,
-                PlantKind::Garbage => garbage >= plant.cost,
-                PlantKind::Uranium => uranium >= plant.cost,
-                PlantKind::Wind | PlantKind::Fusion => true,
-            };
-            if can_fire {
-                match plant.kind {
-                    PlantKind::Coal => coal -= plant.cost,
-                    PlantKind::Oil => oil -= plant.cost,
-                    PlantKind::CoalOrOil => {
-                        let from_coal = plant.cost.min(coal);
-                        coal -= from_coal;
-                        oil -= plant.cost - from_coal;
-                    }
-                    PlantKind::Garbage => garbage -= plant.cost,
-                    PlantKind::Uranium => uranium -= plant.cost,
-                    PlantKind::Wind | PlantKind::Fusion => {}
+        let n = self.plants.len();
+        let mut best = 0u8;
+        for mask in 0u8..(1u8 << n) {
+            let subset: Vec<&PowerPlant> = self
+                .plants
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| mask & (1 << i) != 0)
+                .map(|(_, p)| p)
+                .collect();
+            if let Some((powered, _)) = check_plant_feasibility(&subset, &self.resources) {
+                if powered > best {
+                    best = powered;
                 }
-                powered += plant.cities;
             }
         }
-        powered
+        best
     }
+}
+
+/// Check whether a set of plants can fire with the given resources using a
+/// two-pass allocation: pure-fuel plants are satisfied first, then CoalOrOil
+/// hybrids consume whatever coal+oil remains.  Hybrids prefer oil when
+/// possible to conserve coal for future pure-Coal plants.
+///
+/// Returns `Some((cities_powered, remaining_resources))` if feasible, or
+/// `None` if the resources are insufficient.
+pub fn check_plant_feasibility(
+    plants: &[&PowerPlant],
+    resources: &PlayerResources,
+) -> Option<(u8, PlayerResources)> {
+    let mut coal = resources.coal;
+    let mut oil = resources.oil;
+    let mut garbage = resources.garbage;
+    let mut uranium = resources.uranium;
+    let mut powered = 0u8;
+    let mut pure_coal_cost: u8 = 0;
+    let mut pure_oil_cost: u8 = 0;
+    let mut hybrid_cost: u8 = 0;
+
+    for plant in plants {
+        match plant.kind {
+            PlantKind::Coal => pure_coal_cost += plant.cost,
+            PlantKind::Oil => pure_oil_cost += plant.cost,
+            PlantKind::CoalOrOil => hybrid_cost += plant.cost,
+            PlantKind::Garbage => {
+                if garbage < plant.cost {
+                    return None;
+                }
+                garbage -= plant.cost;
+            }
+            PlantKind::Uranium => {
+                if uranium < plant.cost {
+                    return None;
+                }
+                uranium -= plant.cost;
+            }
+            PlantKind::Wind | PlantKind::Fusion => {}
+        }
+        powered += plant.cities;
+    }
+
+    // Satisfy pure plants first.
+    if pure_coal_cost > coal || pure_oil_cost > oil {
+        return None;
+    }
+    coal -= pure_coal_cost;
+    oil -= pure_oil_cost;
+
+    // Satisfy hybrids with remaining coal+oil pool; prefer oil to preserve coal.
+    if hybrid_cost > coal + oil {
+        return None;
+    }
+    let from_oil = hybrid_cost.min(oil);
+    oil -= from_oil;
+    coal -= hybrid_cost - from_oil;
+
+    Some((
+        powered,
+        PlayerResources {
+            coal,
+            oil,
+            garbage,
+            uranium,
+        },
+    ))
 }
 
 /// Income table: indexed by number of cities powered.
