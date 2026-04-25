@@ -1389,7 +1389,7 @@ pub fn build_plant_deck() -> PlantMarket {
         future,
         deck,
         plant_13,
-        step3_at_bottom: false,
+        step3_deck_position: None,
         step3_triggered: false,
         in_step3: false,
     }

@@ -448,9 +448,10 @@ pub struct PlantMarket {
     /// Plant 13, held aside until placed on top of the deck at game start.
     #[serde(default)]
     pub plant_13: Option<PowerPlant>,
-    /// Whether the Step 3 trigger card is at the bottom of the deck.
+    /// Index in `deck` where the Step 3 card sits (deck[0] = bottom). Each time a plant
+    /// is cycled to the bottom, this shifts up by 1. `None` once Step 3 has triggered.
     #[serde(default)]
-    pub step3_at_bottom: bool,
+    pub step3_deck_position: Option<usize>,
     /// Set to true by `refill()` when the Step 3 card is drawn. Cleared by rules.rs
     /// after the Step 3 transition is applied.
     #[serde(default)]
@@ -482,16 +483,20 @@ impl PlantMarket {
         let target = if self.in_step3 { 6 } else { 8 };
         let mut all: Vec<PowerPlant> = self.actual.drain(..).chain(self.future.drain(..)).collect();
         while all.len() < target {
+            // Stop drawing when we reach the Step 3 card's position; remaining cards
+            // (below it) are the cycled plants that form the Step 3 draw deck.
+            if let Some(pos) = self.step3_deck_position {
+                if self.deck.len() == pos {
+                    self.step3_triggered = true;
+                    self.step3_deck_position = None;
+                    break;
+                }
+            }
             if let Some(card) = self.deck.pop() {
                 all.push(card);
             } else {
                 break;
             }
-        }
-        // If we drained the deck and the Step 3 card was at the bottom, flag it.
-        if self.deck.is_empty() && self.step3_at_bottom {
-            self.step3_triggered = true;
-            self.step3_at_bottom = false;
         }
         all.sort_by_key(|p| p.number);
         if self.in_step3 {
@@ -516,6 +521,10 @@ impl PlantMarket {
     pub fn cycle_highest_to_bottom(&mut self) {
         if let Some(plant) = self.future.pop() {
             self.deck.insert(0, plant);
+            // Plant goes below the Step 3 card, so shift its position up.
+            if let Some(pos) = self.step3_deck_position.as_mut() {
+                *pos += 1;
+            }
             self.refill();
         }
     }
@@ -552,6 +561,6 @@ impl PlantMarket {
         }
 
         // 4. Step 3 card goes on the bottom (index 0, drawn last).
-        self.step3_at_bottom = true;
+        self.step3_deck_position = Some(0);
     }
 }
