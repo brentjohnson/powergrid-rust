@@ -7,9 +7,7 @@ use powergrid_core::{
 };
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    connect_async,
-    tungstenite::Message as WsMessage,
-    MaybeTlsStream, WebSocketStream,
+    connect_async, tungstenite::Message as WsMessage, MaybeTlsStream, WebSocketStream,
 };
 use tracing::{error, info, warn};
 

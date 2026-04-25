@@ -1,9 +1,7 @@
 use powergrid_core::{
     actions::Action,
     state::GameState,
-    types::{
-        connection_cost, income_for, PlantKind, PlayerId, PowerPlant, Resource,
-    },
+    types::{connection_cost, income_for, PlantKind, Player, PlayerId, PowerPlant, Resource},
 };
 use tracing::{debug, info};
 
@@ -78,14 +76,61 @@ fn plant_score(plant: &PowerPlant) -> i32 {
     city_value + fuel_bonus + efficiency
 }
 
+/// How much a plant is intrinsically worth, based on its listed price + city capacity.
+fn plant_value_ceiling(plant: &PowerPlant) -> u32 {
+    let base = plant.number as u32;
+    let city_premium = plant.cities as u32 * 4;
+    let no_fuel_bonus = if matches!(plant.kind, PlantKind::Wind | PlantKind::Fusion) {
+        5
+    } else {
+        0
+    };
+    base + city_premium + no_fuel_bonus
+}
+
+/// How much cash to keep after winning an auction: fuel for all owned plants
+/// (including the new one) plus enough for at least one city build.
+fn auction_reserve(plant: &PowerPlant, player: &Player) -> u32 {
+    let mut reserve = 0u32;
+    for p in &player.plants {
+        if p.kind.needs_resources() {
+            reserve += p.cost as u32 * 4;
+        }
+    }
+    if plant.kind.needs_resources() {
+        reserve += plant.cost as u32 * 4;
+    }
+    reserve += 15; // at least one city build
+    reserve += 5; // safety buffer
+    reserve
+}
+
+/// True when acquiring a new plant would give little or no benefit.
+///
+/// Two cases: (1) we already have excess generation capacity relative to the
+/// cities we own, or (2) we have a full rack (3 plants) and the candidate is
+/// not a meaningful upgrade over our worst plant.
+fn should_skip_auction(player: &Player, candidate: &PowerPlant) -> bool {
+    let powerable: u8 = player.plants.iter().map(|p| p.cities).sum();
+    let owned = player.cities.len() as u8;
+    if powerable > owned.saturating_add(2) {
+        return true;
+    }
+    if player.plants.len() >= 3 {
+        if let Some(worst) = player.plants.iter().min_by_key(|p| plant_score(p)) {
+            if plant_score(candidate) - plant_score(worst) < 10 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Max we are willing to pay for a plant (bid ceiling).
-fn max_bid(plant: &PowerPlant, my_money: u32) -> u32 {
-    let score = plant_score(plant) as u32;
-    // Translate score to a money equivalent, capped at what we can afford while
-    // keeping a reserve for resources and city-building.
-    let reserve = 25u32;
-    let ceiling = (score * 2).min(my_money.saturating_sub(reserve));
-    ceiling.max(plant.number as u32) // never bid less than minimum
+fn max_bid(plant: &PowerPlant, player: &Player) -> u32 {
+    let value = plant_value_ceiling(plant);
+    let affordable = player.money.saturating_sub(auction_reserve(plant, player));
+    value.min(affordable).max(plant.number as u32)
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +160,7 @@ fn decide_auction(
             .iter()
             .find(|p| p.number == bid.plant_number)?;
 
-        let ceiling = max_bid(plant, my_player.money);
+        let ceiling = max_bid(plant, my_player);
         if bid.amount < ceiling {
             let raise = bid.amount + 1;
             info!(
@@ -161,8 +206,9 @@ fn decide_auction(
     match best {
         Some(plant) => {
             let score = plant_score(plant);
-            // In round 1 we must buy; otherwise only buy if score is reasonable.
-            if is_round_one || score >= 20 {
+            // In round 1 we must buy; otherwise only buy if the plant is worth it
+            // and we actually need more generation capacity.
+            if is_round_one || (score >= 20 && !should_skip_auction(my_player, plant)) {
                 info!(
                     "Selecting plant {} (kind={:?}, cities={}, score={})",
                     plant.number, plant.kind, plant.cities, score
@@ -227,6 +273,17 @@ fn decide_discard(state: &GameState, me: PlayerId, new_plant: &PowerPlant) -> Op
 // Buy resources phase
 // ---------------------------------------------------------------------------
 
+/// Reserve enough for ~1-2 city builds so the bot can expand after buying fuel.
+fn city_build_reserve(state: &GameState, me: PlayerId) -> u32 {
+    let Some(player) = state.player(me) else {
+        return 15;
+    };
+    let powerable = player.plants.iter().map(|p| p.cities).sum::<u8>() as usize;
+    let owned = player.cities.len();
+    let want = powerable.saturating_sub(owned).min(2) as u32;
+    (want * 15).max(15)
+}
+
 fn decide_buy_resources(state: &GameState, me: PlayerId) -> Option<Action> {
     let player = state.player(me)?;
     let market = &state.resources;
@@ -234,7 +291,8 @@ fn decide_buy_resources(state: &GameState, me: PlayerId) -> Option<Action> {
     // Build a purchase list: for each plant, how much fuel do we still need?
     let mut purchases: Vec<(Resource, u8)> = Vec::new();
     let mut simulated_market = market.clone();
-    let mut budget = player.money;
+    let city_reserve = city_build_reserve(state, me);
+    let mut budget = player.money.saturating_sub(city_reserve);
 
     // Process plants ordered by most cities powered first (fill the best plants first).
     let mut plants_sorted = player.plants.clone();
@@ -357,9 +415,7 @@ fn decide_build_cities(state: &GameState, me: PlayerId) -> Option<Action> {
     // How many cities do we already have?
     let current_cities = player.cities.len();
 
-    // Budget: keep a reserve for buying resources next round.
-    let resource_reserve = estimate_resource_reserve(state, me);
-    let mut budget = player.money.saturating_sub(resource_reserve);
+    let mut budget = player.money;
 
     // Enumerate all cities in active regions that we could build in.
     let mut candidates: Vec<(String, u32)> = state
@@ -423,22 +479,6 @@ fn decide_build_cities(state: &GameState, me: PlayerId) -> Option<Action> {
         );
         Some(Action::BuildCities { city_ids })
     }
-}
-
-/// Estimate how much money we should keep in reserve for buying resources next round.
-fn estimate_resource_reserve(state: &GameState, me: PlayerId) -> u32 {
-    let Some(player) = state.player(me) else {
-        return 20;
-    };
-    let mut estimate = 0u32;
-    for plant in &player.plants {
-        if !plant.kind.needs_resources() {
-            continue;
-        }
-        // Assume buying at average price ~4/unit.
-        estimate += plant.cost as u32 * 4;
-    }
-    estimate.max(10)
 }
 
 // ---------------------------------------------------------------------------

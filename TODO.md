@@ -44,3 +44,4 @@
 * DEBUG: dump state for diagnostics
 * DEBUG: view hidden info (deck)
 * FUTURE: Random maps? or use Google maps? 
+* FUTURE: AI training of bots (pettingzoo?)
