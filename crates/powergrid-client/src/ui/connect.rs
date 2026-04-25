@@ -41,9 +41,9 @@ pub(super) fn connect_screen(ctx: &egui::Context, state: &mut AppState, commands
                     ui.set_width(420.0);
                     ui.spacing_mut().item_spacing.y = 10.0;
 
-                    // Server URL
-                    ui.label(RichText::new("SERVER URL").color(theme::TEXT_DIM).small());
-                    ui.text_edit_singleline(&mut state.connect_url);
+                    // Server name
+                    ui.label(RichText::new("SERVER NAME").color(theme::TEXT_DIM).small());
+                    ui.text_edit_singleline(&mut state.server_name);
 
                     // Player name
                     ui.label(RichText::new("CALLSIGN").color(theme::TEXT_DIM).small());
@@ -123,7 +123,7 @@ pub(super) fn connect_screen(ctx: &egui::Context, state: &mut AppState, commands
                     ));
 
                     if ui.add_enabled(can_connect, connect_btn).clicked() {
-                        let url = state.connect_url.clone();
+                        let url = state.ws_url();
                         let name = state.player_name.trim().to_string();
                         let color = state.selected_color;
                         state.pending_join = Some((name, color));

@@ -25,7 +25,7 @@ fn main() {
 
     let app_state = AppState::new(cli);
 
-    let channels = auto_connect.then(|| ws::spawn_ws(app_state.connect_url.clone()));
+    let channels = auto_connect.then(|| ws::spawn_ws(app_state.ws_url()));
 
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {

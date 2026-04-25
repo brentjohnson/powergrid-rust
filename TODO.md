@@ -1,26 +1,30 @@
 
 # v0.3.0
 
-* ~~BUG: Said Nick won. Brand and Nick powered 13, but Brad had more money.~~
-* ~~BUG: I owned PP 31, but it wouldn't let me buy coal?  It showed 0/6?~~
-  * ~~NOTE: I got rid of an Oil plant and bought a coal.  The new coal is what wasn't working (even though it showed)~~
-  * ~~NOTE: The cause of this was the invalid resource after losing a plant (two bugs, one prompt)~~
-* ~~BUG: When losing a powerplant, check for invalid resources~~
-* ~~BUG: Step 2 started too soon (during city building)~~
-* ~~BUG: Step 3.  Is the card in there?  Does it work?  Will power plant market adjust?~~
-* ~~BUG: Limit the number of regions~~
-* ~~BUG: Choose which plant to discard~~
-* ~~BUG: Step 3, power plant market not reloaded (cards not put on bottom of deck?)~~
-* ~~BUG: Owned 20,29,42. 15 cities. 5 coal, 2 oil.  It only powered 11 cities???~~
-* ~~BUG: My bid was excessively high... did it remember my old bid or something?~~
-* ~~BUG: Lowest power plant is discarded after each auction round.~~
-* ~~CHECK: Does it discard the 3 when third city built?~~
-* BUG: Player should be able to choose resource to lose when discarding plant
+* BUG: Said Nick won. Brand and Nick powered 13, but Brad had more money.
+* BUG: I owned PP 31, but it wouldn't let me buy coal?  It showed 0/6?
+  * NOTE: I got rid of an Oil plant and bought a coal.  The new coal is what wasn't working (even though it showed)
+  * NOTE: The cause of this was the invalid resource after losing a plant (two bugs, one prompt)
+* BUG: When losing a powerplant, check for invalid resources
+* BUG: Step 2 started too soon (during city building)
+* BUG: Step 3.  Is the card in there?  Does it work?  Will power plant market adjust?
+* BUG: Limit the number of regions
+* BUG: Choose which plant to discard
+* BUG: Step 3, power plant market not reloaded (cards not put on bottom of deck?)
+* BUG: Owned 20,29,42. 15 cities. 5 coal, 2 oil.  It only powered 11 cities???
+* BUG: My bid was excessively high... did it remember my old bid or something?
+* BUG: Lowest power plant is discarded after each auction round.
+* CHECK: Does it discard the 3 when third city built?
+* IMPROVEMENT: Make connection string easier (just the host, not the rest - default to onyxoryx)
+
+
+# To do...
+
 * BUG: Player should be able to choose resources for powering (hybrid!)
+* BUG: Player should be able to choose resource to lose when discarding plant
 * BUG: Two people pick same color, can't start game
 * IMPROVEMENT: Bidding should happen in action panel.  Show the powerplant and each players status/bid. In correct order.
   * IMPROVEMENT: Not obvious which plant is up for bid
-* IMPROVEMENT: Make connection string easier (just the host, not the rest - default to onyxoryx)
 * COMPLAINT: Less reading for Nick
 * IMPROVEMENT: Randomize initial order
 * IMPROVEMENT: Do not reorder players on left (that should remain bidding order) DEBATABLE!?

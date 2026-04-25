@@ -27,7 +27,8 @@ pub struct AppState {
     pub screen: Screen,
 
     // Connect fields
-    pub connect_url: String,
+    pub server_name: String,
+    pub port: u16,
     pub player_name: String,
     pub selected_color: PlayerColor,
 
@@ -64,15 +65,16 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(cli: CliArgs) -> Self {
-        let connect_url = cli
-            .url
-            .unwrap_or_else(|| "ws://localhost:3000/ws".to_string());
+        let server_name = cli
+            .server
+            .unwrap_or_else(|| "powergrid.onyxoryx.net".to_string());
+        let port = cli.port.unwrap_or(3000);
         let player_name = cli.name.unwrap_or_default();
         let selected_color = cli.color.unwrap_or(PlayerColor::Red);
 
         // Auto-connect when all three args provided.
         let (screen, pending_join) =
-            if !player_name.is_empty() && cli.color.is_some() && !connect_url.is_empty() {
+            if !player_name.is_empty() && cli.color.is_some() && !server_name.is_empty() {
                 (Screen::Connect, Some((player_name.clone(), selected_color)))
             } else {
                 (Screen::Connect, None)
@@ -80,7 +82,8 @@ impl AppState {
 
         Self {
             screen,
-            connect_url,
+            server_name,
+            port,
             player_name,
             selected_color,
             connected: false,
@@ -99,6 +102,10 @@ impl AppState {
             city_history: Vec::new(),
             last_recorded_round: 0,
         }
+    }
+
+    pub fn ws_url(&self) -> String {
+        format!("ws://{}:{}/ws", self.server_name, self.port)
     }
 
     /// Called every time a StateUpdate arrives.
@@ -402,7 +409,8 @@ fn heap_permutations<T: Clone>(arr: &mut Vec<T>, k: usize, cb: &mut impl FnMut(&
 pub struct CliArgs {
     pub name: Option<String>,
     pub color: Option<PlayerColor>,
-    pub url: Option<String>,
+    pub server: Option<String>,
+    pub port: Option<u16>,
     pub auto_connect: bool,
     pub windowed: bool,
 }
@@ -412,7 +420,8 @@ impl CliArgs {
         let mut args = std::env::args().skip(1);
         let mut name = None;
         let mut color = None;
-        let mut url = None;
+        let mut server = None;
+        let mut port = None;
         let mut windowed = false;
 
         while let Some(arg) = args.next() {
@@ -432,17 +441,26 @@ impl CliArgs {
                         }
                     });
                 }
-                "--url" => url = args.next(),
+                "--server" => server = args.next(),
+                "--port" => {
+                    port = args.next().and_then(|s| {
+                        s.parse::<u16>().ok().or_else(|| {
+                            eprintln!("Invalid port '{s}'");
+                            None
+                        })
+                    });
+                }
                 "-w" | "--windowed" => windowed = true,
                 other => eprintln!("Unknown argument: {other}"),
             }
         }
 
-        let auto_connect = name.is_some() && color.is_some() && url.is_some();
+        let auto_connect = name.is_some() && color.is_some() && server.is_some();
         Self {
             name,
             color,
-            url,
+            server,
+            port,
             auto_connect,
             windowed,
         }
