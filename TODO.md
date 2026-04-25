@@ -14,7 +14,7 @@
 * ~~BUG: Owned 20,29,42. 15 cities. 5 coal, 2 oil.  It only powered 11 cities???~~
 * ~~BUG: My bid was excessively high... did it remember my old bid or something?~~
 * ~~BUG: Lowest power plant is discarded after each auction round.~~
-* CHECK: Does it discard the 3 when third city built?
+* ~~CHECK: Does it discard the 3 when third city built?~~
 * BUG: Player should be able to choose resource to lose when discarding plant
 * BUG: Player should be able to choose resources for powering (hybrid!)
 * BUG: Two people pick same color, can't start game

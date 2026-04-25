@@ -566,6 +566,21 @@ impl PlantMarket {
         }
     }
 
+    /// Remove all plants from the actual market whose number is ≤ `max_cities`.
+    /// Used after city building to clear obsolete plants.
+    pub fn remove_obsolete(&mut self, max_cities: usize) {
+        loop {
+            if let Some(lowest) = self.actual.first() {
+                if (lowest.number as usize) <= max_cities {
+                    self.actual.remove(0);
+                    self.refill();
+                    continue;
+                }
+            }
+            break;
+        }
+    }
+
     /// Move the highest-numbered plant from the future market to below the Step 3 card,
     /// then refill. Used at end of Bureaucracy in Steps 1 and 2.
     pub fn cycle_highest_to_bottom(&mut self) {

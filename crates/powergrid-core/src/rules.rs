@@ -834,6 +834,14 @@ fn handle_build_cities(
     // All succeeded — commit and advance the phase.
     *state = scratch;
     check_end_game_trigger(state);
+    let max_cities = state
+        .players
+        .iter()
+        .map(|p| p.cities.len())
+        .max()
+        .unwrap_or(0);
+    state.market.remove_obsolete(max_cities);
+    check_step3_trigger(state);
     advance_build_phase(state, remaining);
 
     Ok(())
