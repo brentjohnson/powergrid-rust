@@ -27,11 +27,12 @@
 * TECH DEBT: Optimize selecting discard resources. Seems like lots of code for the two times its used.
 * CHECK: Are all cities properly assigned to regions?
 * BUG: Number of end game cities is not right.
+* IMPROVEMENT: Exit game besides ALT-F4 (ESC menu: what other menu things?)
+* BUG: Client just closes at end of game. No time to review results.
 
 
 # To do...
 
-* BUG: Client just closes at end of game. No time to review results.
 * BUG: Two people pick same color, can't start game
 * IMPROVEMENT: Auction mode... List each player in a column and show status/bids.
 * COMPLAINT: Less reading for Nick
@@ -41,7 +42,6 @@
 * IMPROVEMENT: Show replanishment on resource market
 * IMPROVEMENT: Add "capacity" to player card (how many you could power)
 * IMPROVEMENT: Show remaining money when doing resources or cities?
-* IMPROVEMENT: Exit game besides ALT-F4 (ESC menu: what other menu things?)
 * IMPROVEMENT: Implement dependabot on the repo
 * DEBUG: log more info
 * DEBUG: dump state for diagnostics
