@@ -32,6 +32,15 @@ pub fn decide(state: &GameState, me: PlayerId) -> Option<Action> {
             decide_discard(state, me, new_plant)
         }
 
+        Phase::DiscardResource {
+            player, drop_total, ..
+        } => {
+            if *player != me {
+                return None;
+            }
+            decide_discard_resource(state, me, *drop_total)
+        }
+
         Phase::BuyResources { remaining } => {
             if remaining.first() != Some(&me) {
                 return None;
@@ -267,6 +276,22 @@ fn decide_discard(state: &GameState, me: PlayerId, new_plant: &PowerPlant) -> Op
     Some(Action::DiscardPlant {
         plant_number: worst.number,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Resource-discard phase
+// ---------------------------------------------------------------------------
+
+fn decide_discard_resource(state: &GameState, me: PlayerId, drop_total: u8) -> Option<Action> {
+    let player = state.player(me)?;
+    // Drop coal first to preserve oil for hybrid plants (mirrors resources_needed heuristic).
+    let coal = drop_total.min(player.resources.coal);
+    let oil = drop_total - coal;
+    info!(
+        "DiscardResource: dropping {} coal and {} oil (drop_total={})",
+        coal, oil, drop_total
+    );
+    Some(Action::DiscardResource { coal, oil })
 }
 
 // ---------------------------------------------------------------------------

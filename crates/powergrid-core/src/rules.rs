@@ -29,6 +29,7 @@ pub fn apply_action(
         Action::DoneBuilding => handle_done_building(state, actor),
         Action::PowerCities { plant_numbers } => handle_power_cities(state, actor, plant_numbers),
         Action::DiscardPlant { plant_number } => handle_discard_plant(state, actor, plant_number),
+        Action::DiscardResource { coal, oil } => handle_discard_resource(state, actor, coal, oil),
     }
 }
 
@@ -413,7 +414,8 @@ fn handle_discard_plant(
     player.plants.push(new_plant);
     player.plants.sort_by_key(|p| p.number);
 
-    // Clamp resources — the discarded plant may have held resources that no longer fit.
+    // Per-resource clamp: drop any resource that exceeds its individual cap (always
+    // unambiguous — only one resource type can be responsible for each overflow).
     let excesses: Vec<(Resource, u8)> = {
         let player = state.player_mut(actor).ok_or(ActionError::UnknownPlayer)?;
         [
@@ -442,10 +444,103 @@ fn handle_discard_plant(
         state.resources.replenish(resource, excess);
     }
 
+    // Shared-slot check: coal+oil may jointly exceed hybrid capacity even though
+    // neither overflows its individual cap (only possible when both coal and oil
+    // are nonzero after the per-resource clamp above).
+    let drop_total = state
+        .player(actor)
+        .ok_or(ActionError::UnknownPlayer)?
+        .shared_slot_overflow();
+
+    if drop_total > 0 {
+        // Ambiguous: pause and ask the player to choose the coal/oil split.
+        // After per-resource clamping it is guaranteed that both coal > 0 and oil > 0
+        // here; otherwise per-resource overflow would already have been resolved above.
+        state.log(format!(
+            "{} discarded plant {} — choose which fuel to discard",
+            state.player(actor).map(|p| p.name.as_str()).unwrap_or("?"),
+            plant_number
+        ));
+        state.phase = Phase::DiscardResource {
+            player: actor,
+            drop_total,
+            bought,
+            passed,
+        };
+        return Ok(());
+    }
+
     state.log(format!(
         "{} discarded plant {}",
         state.player(actor).map(|p| p.name.as_str()).unwrap_or("?"),
         plant_number
+    ));
+
+    advance_auction(state, bought, passed);
+    Ok(())
+}
+
+fn handle_discard_resource(
+    state: &mut GameState,
+    actor: PlayerId,
+    coal: u8,
+    oil: u8,
+) -> Result<(), ActionError> {
+    let (player_id, drop_total, bought, passed) = match &state.phase {
+        Phase::DiscardResource {
+            player,
+            drop_total,
+            bought,
+            passed,
+        } => (*player, *drop_total, bought.clone(), passed.clone()),
+        _ => return Err(ActionError::WrongPhase),
+    };
+
+    if actor != player_id {
+        return Err(ActionError::NotYourTurn);
+    }
+
+    let player = state.player(actor).ok_or(ActionError::UnknownPlayer)?;
+
+    // Validate the split: sum must match, neither may exceed held.
+    if coal + oil != drop_total || coal > player.resources.coal || oil > player.resources.oil {
+        return Err(ActionError::InvalidDiscardSplit);
+    }
+
+    // Validate that this split actually resolves the overflow (no over-dropping).
+    // After removing coal and oil, shared_slot_overflow must be 0.
+    {
+        let mut sim = player.clone();
+        sim.resources.remove(Resource::Coal, coal);
+        sim.resources.remove(Resource::Oil, oil);
+        if sim.shared_slot_overflow() != 0 {
+            return Err(ActionError::InvalidDiscardSplit);
+        }
+    }
+
+    // Apply the drops.
+    if coal > 0 {
+        state
+            .player_mut(actor)
+            .ok_or(ActionError::UnknownPlayer)?
+            .resources
+            .remove(Resource::Coal, coal);
+        state.resources.replenish(Resource::Coal, coal);
+    }
+    if oil > 0 {
+        state
+            .player_mut(actor)
+            .ok_or(ActionError::UnknownPlayer)?
+            .resources
+            .remove(Resource::Oil, oil);
+        state.resources.replenish(Resource::Oil, oil);
+    }
+
+    state.log(format!(
+        "{} discarded {} coal and {} oil",
+        state.player(actor).map(|p| p.name.as_str()).unwrap_or("?"),
+        coal,
+        oil,
     ));
 
     advance_auction(state, bought, passed);
@@ -2855,5 +2950,349 @@ mod tests {
         );
         assert_eq!(player.resources.coal, 0, "expected 0 coal remaining");
         assert_eq!(player.resources.oil, 0, "expected 0 oil remaining");
+    }
+
+    // -----------------------------------------------------------------------
+    // DiscardResource phase tests
+    // -----------------------------------------------------------------------
+
+    /// Discarding a pure-coal plant while two hybrids remain triggers Phase::DiscardResource
+    /// when the player holds both coal and oil that jointly overflow the hybrid slots.
+    ///
+    /// Setup: hybrid #5 (cap 4) + pure-coal #3 (cap 4) + hybrid #7 (cap 6).
+    /// Held: 6 coal + 8 oil (total 14, fits: 4 in pure-coal, 10 in hybrid).
+    /// Win Garbage #24 (adds no coal/oil cap).  Discard pure-coal #3.
+    /// After: plants #5, #7, #24.  coal_only=0, oil_only=0, hybrid=10.
+    /// Per-resource OK (6≤10, 8≤10) but shared: 6+8=14 > 10.  drop_total = 4.
+    #[test]
+    fn test_discard_plant_triggers_resource_prompt_on_shared_slot_overflow() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        let player = state.player_mut(p1).unwrap();
+        player.money = 1000;
+        player.plants = vec![
+            PowerPlant {
+                number: 3,
+                kind: PlantKind::Coal,
+                cost: 2,
+                cities: 1,
+            }, // pure-coal cap 4
+            PowerPlant {
+                number: 5,
+                kind: PlantKind::CoalOrOil,
+                cost: 2,
+                cities: 1,
+            }, // hybrid cap 4
+            PowerPlant {
+                number: 7,
+                kind: PlantKind::CoalOrOil,
+                cost: 3,
+                cities: 2,
+            }, // hybrid cap 6
+        ];
+        player.resources = PlayerResources {
+            coal: 6,
+            oil: 8,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        // Use a Garbage plant so no coal/oil capacity is added — overflow stays ambiguous.
+        let new_plant = PowerPlant {
+            number: 24,
+            kind: PlantKind::Garbage,
+            cost: 4,
+            cities: 3,
+        };
+        state.market.actual.push(new_plant);
+
+        award_plant(&mut state, p1, 24, 24, vec![], vec![]).unwrap();
+        assert!(
+            matches!(state.phase, Phase::DiscardPlant { player, .. } if player == p1),
+            "should be in DiscardPlant phase"
+        );
+
+        // Discard the pure-coal plant — triggers shared-slot overflow.
+        apply_action(&mut state, p1, Action::DiscardPlant { plant_number: 3 }).unwrap();
+
+        assert!(
+            matches!(state.phase, Phase::DiscardResource { player, drop_total, .. } if player == p1 && drop_total == 4),
+            "expected Phase::DiscardResource with drop_total=4, got {:?}",
+            state.phase
+        );
+
+        // Resources must be untouched at this point.
+        let player = state.player(p1).unwrap();
+        assert_eq!(player.resources.coal, 6);
+        assert_eq!(player.resources.oil, 8);
+    }
+
+    /// After Phase::DiscardResource is set, a valid split is accepted and the phase advances.
+    #[test]
+    fn test_discard_resource_applies_split() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        let player = state.player_mut(p1).unwrap();
+        player.money = 1000;
+        player.plants = vec![
+            PowerPlant {
+                number: 3,
+                kind: PlantKind::Coal,
+                cost: 2,
+                cities: 1,
+            },
+            PowerPlant {
+                number: 5,
+                kind: PlantKind::CoalOrOil,
+                cost: 2,
+                cities: 1,
+            },
+            PowerPlant {
+                number: 7,
+                kind: PlantKind::CoalOrOil,
+                cost: 3,
+                cities: 2,
+            },
+        ];
+        player.resources = PlayerResources {
+            coal: 6,
+            oil: 8,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        let new_plant = PowerPlant {
+            number: 24,
+            kind: PlantKind::Garbage,
+            cost: 4,
+            cities: 3,
+        };
+        state.market.actual.push(new_plant);
+
+        // Pre-deplete market so replenish has room to add resources.
+        state.resources.coal = 20;
+        state.resources.oil = 14;
+
+        award_plant(&mut state, p1, 24, 24, vec![], vec![]).unwrap();
+        apply_action(&mut state, p1, Action::DiscardPlant { plant_number: 3 }).unwrap();
+
+        assert!(matches!(state.phase, Phase::DiscardResource { .. }));
+
+        let coal_market_before = state.resources.coal;
+        let oil_market_before = state.resources.oil;
+
+        // Drop 2 coal + 2 oil (sum = drop_total 4).
+        apply_action(
+            &mut state,
+            p1,
+            Action::DiscardResource { coal: 2, oil: 2 },
+        )
+        .unwrap();
+
+        // Phase must have advanced out of DiscardResource.
+        assert!(
+            !matches!(state.phase, Phase::DiscardResource { .. }),
+            "phase should have advanced; got {:?}",
+            state.phase
+        );
+
+        let player = state.player(p1).unwrap();
+        assert_eq!(player.resources.coal, 4, "expected 4 coal remaining");
+        assert_eq!(player.resources.oil, 6, "expected 6 oil remaining");
+        assert_eq!(state.resources.coal, coal_market_before + 2);
+        assert_eq!(state.resources.oil, oil_market_before + 2);
+    }
+
+    /// Sending an incorrect sum is rejected with InvalidDiscardSplit.
+    #[test]
+    fn test_discard_resource_rejects_wrong_total() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        let player = state.player_mut(p1).unwrap();
+        player.money = 1000;
+        player.plants = vec![
+            PowerPlant {
+                number: 3,
+                kind: PlantKind::Coal,
+                cost: 2,
+                cities: 1,
+            },
+            PowerPlant {
+                number: 5,
+                kind: PlantKind::CoalOrOil,
+                cost: 2,
+                cities: 1,
+            },
+            PowerPlant {
+                number: 7,
+                kind: PlantKind::CoalOrOil,
+                cost: 3,
+                cities: 2,
+            },
+        ];
+        player.resources = PlayerResources {
+            coal: 6,
+            oil: 8,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        let new_plant = PowerPlant {
+            number: 24,
+            kind: PlantKind::Garbage,
+            cost: 4,
+            cities: 3,
+        };
+        state.market.actual.push(new_plant);
+        award_plant(&mut state, p1, 24, 24, vec![], vec![]).unwrap();
+        apply_action(&mut state, p1, Action::DiscardPlant { plant_number: 3 }).unwrap();
+        assert!(matches!(state.phase, Phase::DiscardResource { .. }));
+
+        // coal(1) + oil(2) = 3, but drop_total == 4 → rejected.
+        let result = apply_action(
+            &mut state,
+            p1,
+            Action::DiscardResource { coal: 1, oil: 2 },
+        );
+        assert!(
+            matches!(result, Err(ActionError::InvalidDiscardSplit)),
+            "expected InvalidDiscardSplit"
+        );
+        // Phase and resources unchanged.
+        assert!(matches!(state.phase, Phase::DiscardResource { .. }));
+        assert_eq!(state.player(p1).unwrap().resources.coal, 6);
+    }
+
+    /// Trying to drop more of a resource than the player holds is rejected.
+    #[test]
+    fn test_discard_resource_rejects_more_than_held() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        let player = state.player_mut(p1).unwrap();
+        player.money = 1000;
+        player.plants = vec![
+            PowerPlant {
+                number: 3,
+                kind: PlantKind::Coal,
+                cost: 2,
+                cities: 1,
+            },
+            PowerPlant {
+                number: 5,
+                kind: PlantKind::CoalOrOil,
+                cost: 2,
+                cities: 1,
+            },
+            PowerPlant {
+                number: 7,
+                kind: PlantKind::CoalOrOil,
+                cost: 3,
+                cities: 2,
+            },
+        ];
+        player.resources = PlayerResources {
+            coal: 6,
+            oil: 8,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        let new_plant = PowerPlant {
+            number: 24,
+            kind: PlantKind::Garbage,
+            cost: 4,
+            cities: 3,
+        };
+        state.market.actual.push(new_plant);
+        award_plant(&mut state, p1, 24, 24, vec![], vec![]).unwrap();
+        apply_action(&mut state, p1, Action::DiscardPlant { plant_number: 3 }).unwrap();
+        assert!(matches!(state.phase, Phase::DiscardResource { .. }));
+
+        // Asking for 7 coal but only holds 6 — rejected even though sum == 4 (7 > 6).
+        let result = apply_action(
+            &mut state,
+            p1,
+            Action::DiscardResource { coal: 7, oil: 0 },
+        );
+        assert!(matches!(result, Err(ActionError::InvalidDiscardSplit)));
+    }
+
+    /// When discarding a plant leaves only one type of fuel over capacity, the per-resource
+    /// clamp handles it automatically without entering Phase::DiscardResource.
+    ///
+    /// Setup: Oil #3 (cap 6) + hybrid #5 (cap 4) + hybrid #7 (cap 6). Hold 0 coal + 12 oil.
+    /// Win Garbage #24. Discard Oil #3.
+    /// After: plants #5, #7, #24. oil_cap = 10. Per-resource: drop 2 oil.
+    /// Shared-slot: coal=0, oil=10, overflow=0. Phase advances directly.
+    #[test]
+    fn test_discard_plant_per_resource_overflow_auto_clamped() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        let player = state.player_mut(p1).unwrap();
+        player.money = 1000;
+        player.plants = vec![
+            PowerPlant {
+                number: 3,
+                kind: PlantKind::Oil,
+                cost: 3,
+                cities: 1,
+            }, // pure-oil cap 6
+            PowerPlant {
+                number: 5,
+                kind: PlantKind::CoalOrOil,
+                cost: 2,
+                cities: 1,
+            }, // hybrid cap 4
+            PowerPlant {
+                number: 7,
+                kind: PlantKind::CoalOrOil,
+                cost: 3,
+                cities: 2,
+            }, // hybrid cap 6
+        ];
+        // 12 oil, 0 coal. Fits: oil_only=6, hybrid=10, oil_cap=16. Shared: 0+6=6 ≤ 10 ✓.
+        player.resources = PlayerResources {
+            coal: 0,
+            oil: 12,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        let new_plant = PowerPlant {
+            number: 24,
+            kind: PlantKind::Garbage,
+            cost: 4,
+            cities: 3,
+        };
+        state.market.actual.push(new_plant);
+        award_plant(&mut state, p1, 24, 24, vec![], vec![]).unwrap();
+        apply_action(&mut state, p1, Action::DiscardPlant { plant_number: 3 }).unwrap();
+
+        // Per-resource clamp drops 2 oil (oil_cap=10). No shared-slot overflow remains.
+        // Phase should advance without pausing in DiscardResource.
+        assert!(
+            !matches!(state.phase, Phase::DiscardResource { .. }),
+            "expected phase to advance without DiscardResource prompt; got {:?}",
+            state.phase
+        );
+
+        let player = state.player(p1).unwrap();
+        assert_eq!(player.resources.oil, 10, "expected 10 oil after per-resource clamp");
+        assert_eq!(player.resources.coal, 0);
     }
 }

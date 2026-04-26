@@ -36,6 +36,9 @@ pub enum Action {
     },
     /// During discard phase: choose which existing plant to discard after winning a 4th.
     DiscardPlant { plant_number: u8 },
+    /// During resource-discard phase: choose how many coal and oil to drop to resolve
+    /// hybrid shared-slot overflow.  `coal + oil` must equal `Phase::DiscardResource::drop_total`.
+    DiscardResource { coal: u8, oil: u8 },
 }
 
 /// Errors returned when an action is invalid.
@@ -87,6 +90,8 @@ pub enum ActionError {
     MustBuyPlantInRoundOne,
     #[error("cannot discard the plant you just acquired")]
     CannotDiscardNewPlant,
+    #[error("coal + oil must equal the required drop total, and neither may exceed what you hold")]
+    InvalidDiscardSplit,
 }
 
 /// Messages sent from the server to clients.

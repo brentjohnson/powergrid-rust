@@ -21,15 +21,15 @@
 
 # v0.3.1
 
-* FUTURE: Computer controlled player!
+* IMPROVEMENT: Computer controlled player!
+* BUG: Player should be able to choose resources for powering (hybrid!)
+* BUG: Player should be able to choose resource to lose when discarding plant
 
 
 
 # To do...
 
 * CHECK: Are all cities properly assigned to regions?
-* BUG: Player should be able to choose resources for powering (hybrid!)
-* BUG: Player should be able to choose resource to lose when discarding plant
 * BUG: Two people pick same color, can't start game
 * IMPROVEMENT: Auction mode... List each player in a column and show status/bids.
 * COMPLAINT: Less reading for Nick

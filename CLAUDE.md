@@ -86,6 +86,26 @@ Bevy + egui GUI client that connects to the server over WebSocket.
 
 Run with `cargo run -p powergrid-client` or `cargo run -p powergrid-client --features dev` for fast incremental rebuilds.
 
+### powergrid-bot
+
+Headless bot that connects to the server over WebSocket and plays autonomously. Run multiple instances with different `--color` values to fill a game.
+
+- `main.rs` — CLI arg parsing (`--name`, `--color`, `--server`, `--port`); WebSocket connect loop with auto-reconnect; dispatches incoming `ServerMessage` to strategy.
+- `strategy.rs` — `decide(state, me) -> Option<Action>` — pure function with one `decide_*` helper per phase:
+  - `decide_auction` — scores plants via `plant_score`, bids up to `max_bid`, passes when at ceiling or capacity is sufficient.
+  - `decide_discard` — discards the lowest-scored existing plant when a new plant requires a slot.
+  - `decide_buy_resources` — greedily fills each plant's fuel capacity, prioritising highest-city plants, subject to a cash reserve for city builds.
+  - `decide_build_cities` — greedily builds cheapest reachable cities using simulated routing to account for batch cost.
+  - `decide_power_cities` — fires all plants that have enough stored fuel.
+
+Run with:
+```bash
+cargo run -p powergrid-bot -- --name BotA --color red
+cargo run -p powergrid-bot -- --name BotB --color blue --server localhost --port 3000
+```
+
+> **Important:** Whenever `Action`, `ServerMessage`, or any phase/state type in `powergrid-core` changes, update `strategy.rs` in `powergrid-bot` to match. The bot mirrors the full client/server protocol and will silently produce wrong decisions or fail to compile if it falls out of sync.
+
 ### Protocol
 
 JSON over WebSocket. `Action` (tagged by `"type"` field) client→server, `ServerMessage` server→client. Full `GameState` broadcast after every valid action.

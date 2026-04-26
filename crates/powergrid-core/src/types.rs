@@ -311,6 +311,38 @@ impl Player {
         }
     }
 
+    /// How many coal+oil units violate the hybrid shared-slot constraint.
+    ///
+    /// Returns 0 when the current coal/oil storage is within capacity.  A nonzero
+    /// value means the player must drop that many total units of coal or oil (or a
+    /// combination), and the split is only unambiguous if they hold zero of one of
+    /// the two resources.
+    pub fn shared_slot_overflow(&self) -> u8 {
+        let coal_only: u8 = self
+            .plants
+            .iter()
+            .filter(|p| p.kind == PlantKind::Coal)
+            .map(|p| p.cost * 2)
+            .sum();
+        let oil_only: u8 = self
+            .plants
+            .iter()
+            .filter(|p| p.kind == PlantKind::Oil)
+            .map(|p| p.cost * 2)
+            .sum();
+        let hybrid: u8 = self
+            .plants
+            .iter()
+            .filter(|p| p.kind == PlantKind::CoalOrOil)
+            .map(|p| p.cost * 2)
+            .sum();
+        let coal = self.resources.coal;
+        let oil = self.resources.oil;
+        let coal_into_hybrid = coal.saturating_sub(coal_only);
+        let oil_into_hybrid = oil.saturating_sub(oil_only);
+        (coal_into_hybrid + oil_into_hybrid).saturating_sub(hybrid)
+    }
+
     /// Number of cities this player can power given their plants and stored resources.
     pub fn cities_powerable(&self) -> u8 {
         let n = self.plants.len();
@@ -461,6 +493,19 @@ pub enum Phase {
         player: PlayerId,
         /// The newly-won plant (not yet in player's hand).
         new_plant: PowerPlant,
+        /// Auction bought list (to resume after discard).
+        bought: Vec<PlayerId>,
+        /// Auction passed list (to resume after discard).
+        passed: Vec<PlayerId>,
+    },
+    /// Waiting for a player to choose which coal/oil to discard when hybrid-slot overflow is
+    /// ambiguous (i.e. neither resource alone exceeds its per-resource cap, but they jointly
+    /// exceed the available shared slots on CoalOrOil plants).
+    DiscardResource {
+        /// The player who must choose.
+        player: PlayerId,
+        /// Total units of coal+oil the player must drop.
+        drop_total: u8,
         /// Auction bought list (to resume after discard).
         bought: Vec<PlayerId>,
         /// Auction passed list (to resume after discard).

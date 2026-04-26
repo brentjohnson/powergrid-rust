@@ -240,6 +240,119 @@ pub(super) fn action_panel(
             }
         }
 
+        Phase::DiscardResource {
+            player, drop_total, ..
+        } => {
+            if *player == my_id {
+                let drop_total = *drop_total;
+                let (coal_held, oil_held) = gs
+                    .player(my_id)
+                    .map(|p| (p.resources.coal, p.resources.oil))
+                    .unwrap_or((0, 0));
+                let selected = state.discard_coal + state.discard_oil;
+
+                ui.label(
+                    RichText::new(format!(
+                        "Hybrid plants can't hold all your fuel — discard {} total:",
+                        drop_total
+                    ))
+                    .color(theme::NEON_AMBER)
+                    .monospace(),
+                );
+                ui.add_space(4.0);
+
+                // Coal row
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!("    COAL: {:>2}", state.discard_coal))
+                            .color(theme::TEXT_BRIGHT)
+                            .monospace(),
+                    );
+                    let can_remove = state.discard_coal > 0;
+                    if ui
+                        .add_enabled(can_remove, neon_button("[-]", theme::NEON_AMBER))
+                        .clicked()
+                    {
+                        state.discard_coal -= 1;
+                    }
+                    let can_add = state.discard_coal < coal_held && selected < drop_total;
+                    if ui
+                        .add_enabled(can_add, neon_button("[+]", theme::NEON_GREEN))
+                        .clicked()
+                    {
+                        state.discard_coal += 1;
+                    }
+                    ui.label(
+                        RichText::new(format!("held: {}", coal_held))
+                            .color(theme::TEXT_DIM)
+                            .monospace(),
+                    );
+                });
+
+                // Oil row
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!("     OIL: {:>2}", state.discard_oil))
+                            .color(theme::TEXT_BRIGHT)
+                            .monospace(),
+                    );
+                    let can_remove = state.discard_oil > 0;
+                    if ui
+                        .add_enabled(can_remove, neon_button("[-]", theme::NEON_AMBER))
+                        .clicked()
+                    {
+                        state.discard_oil -= 1;
+                    }
+                    let can_add = state.discard_oil < oil_held && selected < drop_total;
+                    if ui
+                        .add_enabled(can_add, neon_button("[+]", theme::NEON_GREEN))
+                        .clicked()
+                    {
+                        state.discard_oil += 1;
+                    }
+                    ui.label(
+                        RichText::new(format!("held: {}", oil_held))
+                            .color(theme::TEXT_DIM)
+                            .monospace(),
+                    );
+                });
+
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new(format!("{} / {} selected", selected, drop_total))
+                        .color(if selected == drop_total {
+                            theme::NEON_GREEN
+                        } else {
+                            theme::TEXT_DIM
+                        })
+                        .monospace(),
+                );
+
+                if ui
+                    .add_enabled(
+                        selected == drop_total,
+                        neon_button("[ CONFIRM ]", theme::NEON_CYAN),
+                    )
+                    .clicked()
+                {
+                    send(
+                        Action::DiscardResource {
+                            coal: state.discard_coal,
+                            oil: state.discard_oil,
+                        },
+                        channels,
+                    );
+                }
+            } else {
+                let name = gs.player(*player).map(|p| p.name.as_str()).unwrap_or("???");
+                ui.label(
+                    RichText::new(format!("● Waiting for {} to discard fuel…", name))
+                        .color(theme::TEXT_DIM)
+                        .monospace(),
+                );
+            }
+        }
+
         Phase::BuyResources { remaining } => {
             if remaining.first() == Some(&my_id) {
                 let my_money = gs.player(my_id).map(|p| p.money).unwrap_or(0);

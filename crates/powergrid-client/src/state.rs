@@ -58,6 +58,10 @@ pub struct AppState {
     pub bid_amount: u32,
     pub bid_plant_number: Option<u8>,
 
+    // Resource-discard phase (hybrid shared-slot overflow)
+    pub discard_coal: u8,
+    pub discard_oil: u8,
+
     // City count history: one CitySnapshot per round recorded so far.
     pub city_history: Vec<CitySnapshot>,
     last_recorded_round: u32,
@@ -99,6 +103,8 @@ impl AppState {
             resource_cart_cost: None,
             bid_amount: 0,
             bid_plant_number: None,
+            discard_coal: 0,
+            discard_oil: 0,
             city_history: Vec::new(),
             last_recorded_round: 0,
         }
@@ -134,6 +140,16 @@ impl AppState {
         if !still_my_buy {
             self.resource_cart.clear();
             self.resource_cart_cost = None;
+        }
+
+        // Clear discard-resource counters once we leave that phase.
+        let still_my_discard = self
+            .my_id
+            .map(|id| matches!(&gs.phase, Phase::DiscardResource { player, .. } if *player == id))
+            .unwrap_or(false);
+        if !still_my_discard {
+            self.discard_coal = 0;
+            self.discard_oil = 0;
         }
 
         // Record city counts when the round number advances (or on first state).
