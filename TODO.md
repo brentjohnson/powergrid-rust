@@ -24,6 +24,7 @@
 * IMPROVEMENT: Computer controlled player!
 * BUG: Player should be able to choose resources for powering (hybrid!)
 * BUG: Player should be able to choose resource to lose when discarding plant
+* TECH DEBT: Optimize selecting discard resources. Seems like lots of code for the two times its used.
 * CHECK: Are all cities properly assigned to regions?
 * BUG: Number of end game cities is not right.
 
@@ -41,7 +42,7 @@
 * IMPROVEMENT: Add "capacity" to player card (how many you could power)
 * IMPROVEMENT: Show remaining money when doing resources or cities?
 * IMPROVEMENT: Exit game besides ALT-F4 (ESC menu: what other menu things?)
-* TECH DEBT: Optimize selecting discard resources. Seems like lots of code for the two times its used.  Maybe shared code?
+* IMPROVEMENT: Implement dependabot on the repo
 * DEBUG: log more info
 * DEBUG: dump state for diagnostics
 * DEBUG: view hidden info (deck)

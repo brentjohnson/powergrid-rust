@@ -7,6 +7,7 @@ mod phase_tracker;
 mod right_panel;
 mod top_panel;
 
+use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use egui::{Color32, RichText};
@@ -27,12 +28,17 @@ pub fn ui_system(
     mut state: ResMut<AppState>,
     channels: Option<Res<WsChannels>>,
     mut commands: Commands,
+    mut exit_writer: EventWriter<AppExit>,
 ) {
     let ctx = contexts.ctx_mut();
 
     // Re-apply theme every frame so settings survive window resize etc.
     // (cheap — just copies a struct)
     theme::apply(ctx);
+
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        state.menu_open = !state.menu_open;
+    }
 
     match state.screen {
         Screen::Connect => {
@@ -41,6 +47,24 @@ pub fn ui_system(
         Screen::Game => {
             game_screen(ctx, &mut state, &channels);
         }
+    }
+
+    if state.menu_open {
+        egui::Window::new("MENU")
+            .collapsible(false)
+            .resizable(false)
+            .movable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.add_space(8.0);
+                if ui
+                    .add(helpers::neon_button("[ EXIT ]", theme::NEON_RED))
+                    .clicked()
+                {
+                    exit_writer.write(AppExit::Success);
+                }
+                ui.add_space(4.0);
+            });
     }
 }
 

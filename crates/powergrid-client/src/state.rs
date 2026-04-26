@@ -68,6 +68,9 @@ pub struct AppState {
     // City count history: one CitySnapshot per round recorded so far.
     pub city_history: Vec<CitySnapshot>,
     last_recorded_round: u32,
+
+    // ESC menu overlay
+    pub menu_open: bool,
 }
 
 impl AppState {
@@ -111,6 +114,7 @@ impl AppState {
             power_fuel_coal: 0,
             city_history: Vec::new(),
             last_recorded_round: 0,
+            menu_open: false,
         }
     }
 
