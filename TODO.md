@@ -33,6 +33,10 @@
 # v0.3.2
 
 * TECH DEBT: Upgrade to Bevy 0.17
+* TECH DEBT: Upgrade to Bevy 0.18
+
+# v0.3.3
+
 
 # To do...
 
