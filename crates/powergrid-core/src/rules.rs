@@ -87,6 +87,14 @@ fn handle_start(state: &mut GameState, actor: PlayerId) -> Result<(), ActionErro
 
     let player_count = state.players.len();
 
+    state.end_game_cities = match player_count {
+        2 => 21,
+        3 => 17,
+        4 => 17,
+        5 => 15,
+        _ => 14, // 6 players
+    };
+
     // Select active regions based on player count.
     let region_count = match player_count {
         2 | 3 => 3,

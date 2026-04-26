@@ -24,12 +24,13 @@
 * IMPROVEMENT: Computer controlled player!
 * BUG: Player should be able to choose resources for powering (hybrid!)
 * BUG: Player should be able to choose resource to lose when discarding plant
-
+* CHECK: Are all cities properly assigned to regions?
+* BUG: Number of end game cities is not right.
 
 
 # To do...
 
-* CHECK: Are all cities properly assigned to regions?
+* BUG: Client just closes at end of game. No time to review results.
 * BUG: Two people pick same color, can't start game
 * IMPROVEMENT: Auction mode... List each player in a column and show status/bids.
 * COMPLAINT: Less reading for Nick
