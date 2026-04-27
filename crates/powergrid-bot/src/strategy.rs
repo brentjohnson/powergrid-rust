@@ -409,13 +409,21 @@ fn buy_for_plant(
             if want == 0 {
                 return;
             }
-            // Oil first to conserve coal for pure-coal plants.
-            try_buy(Resource::Oil, want, market, player, budget, purchases);
-            // Re-check shortfall after oil purchase — oil may have been exhausted.
+            // Coal and oil share a price table, so the cheaper one at the margin
+            // is whichever has more units left in the market.  Tie-break to oil
+            // to keep coal available for any pure-coal plants we own.
+            let prefer_oil = market.available(Resource::Oil) >= market.available(Resource::Coal);
+            let (first, second) = if prefer_oil {
+                (Resource::Oil, Resource::Coal)
+            } else {
+                (Resource::Coal, Resource::Oil)
+            };
+            try_buy(first, want, market, player, budget, purchases);
+            // Cover any remaining shortfall with the other fuel.
             let combined = player.resources.coal.saturating_add(player.resources.oil);
             let remaining = target.saturating_sub(combined);
             if remaining > 0 {
-                try_buy(Resource::Coal, remaining, market, player, budget, purchases);
+                try_buy(second, remaining, market, player, budget, purchases);
             }
         }
         PlantKind::Garbage => {
@@ -741,6 +749,54 @@ mod tests {
             .sum();
         assert!(coal_bought > 0, "expected some coal to be bought, got none");
         assert!(coal_bought <= 5, "spent more than budget allows");
+    }
+
+    #[test]
+    fn hybrid_buys_cheaper_fuel_first() {
+        // Oil scarce (6 units, cheapest slot price 6) vs coal plentiful (24 units,
+        // cheapest slot price 1). Hybrid should buy coal, not oil.
+        let plant = hybrid_plant(10, 3, 2);
+        let mut player = bot_with_money(50);
+        player.plants.push(plant.clone());
+
+        let mut market = ResourceMarket::initial();
+        market.oil = 6;
+        market.coal = 24;
+
+        let mut purchases = vec![];
+        let mut budget = player.money;
+
+        buy_for_plant(
+            &plant,
+            plant.cost,
+            &mut market,
+            &mut player,
+            &mut budget,
+            &mut purchases,
+        );
+
+        let coal_bought: u8 = purchases
+            .iter()
+            .filter(|(r, _)| *r == Resource::Coal)
+            .map(|(_, n)| n)
+            .sum();
+        let oil_bought: u8 = purchases
+            .iter()
+            .filter(|(r, _)| *r == Resource::Oil)
+            .map(|(_, n)| n)
+            .sum();
+        assert!(
+            coal_bought >= plant.cost,
+            "expected to buy >= {} coal (cheaper), got {} coal and {} oil",
+            plant.cost,
+            coal_bought,
+            oil_bought
+        );
+        assert_eq!(
+            oil_bought, 0,
+            "should not buy oil when coal is cheaper (got {} oil)",
+            oil_bought
+        );
     }
 
     #[test]
