@@ -9,7 +9,10 @@ use powergrid_core::{
 
 use crate::{card_painter, state::player_color_to_egui, state::AppState, theme, ws::WsChannels};
 
-use super::helpers::{neon_button, resource_counter_row, resource_name, send};
+use super::helpers::{
+    dim_color, is_active_player, neon_button, resource_counter_row, resource_name, section_header,
+    send,
+};
 
 pub(super) fn action_panel(
     ui: &mut Ui,
@@ -27,8 +30,15 @@ pub(super) fn action_panel(
         } => {
             let my_nominate_turn = gs.player_order.get(*current_bidder_idx) == Some(&my_id);
 
+            // Section header
             if let Some(bid) = active_bid {
-                // Target plant card
+                section_header(ui, &format!("─ AUCTION: Plant #{} ─", bid.plant_number));
+            } else {
+                section_header(ui, "─ AUCTION ─");
+            }
+
+            // Plant card (only when bidding is active)
+            if let Some(bid) = active_bid {
                 let target_plant = gs
                     .market
                     .actual
@@ -39,30 +49,60 @@ pub(super) fn action_panel(
                     card_painter::draw_plant_card(ui, plant);
                     ui.add_space(4.0);
                 }
+            }
 
-                // Leading bid info
-                if let Some(leader) = gs.player(bid.highest_bidder) {
-                    let color = player_color_to_egui(leader.color);
-                    ui.label(
-                        RichText::new(format!("Leading bid: ${} by {}", bid.amount, leader.name))
-                            .color(color)
-                            .monospace(),
-                    );
+            // Per-player status column in turn order
+            for pid in &gs.player_order {
+                if let Some(p) = gs.player(*pid) {
+                    let is_me = p.id == my_id;
+                    let active = is_active_player(gs, p.id);
+                    let player_color = player_color_to_egui(p.color);
+                    let swatch_color = if active {
+                        player_color
+                    } else {
+                        dim_color(player_color)
+                    };
+                    let name_color = if active {
+                        player_color
+                    } else {
+                        dim_color(player_color)
+                    };
+
+                    let (status_text, status_color) = if bought.contains(&p.id) {
+                        ("PURCHASED".to_string(), theme::NEON_GREEN)
+                    } else if passed.contains(&p.id) {
+                        ("PASSED".to_string(), theme::TEXT_DIM)
+                    } else if let Some(bid) = active_bid {
+                        if bid.highest_bidder == p.id {
+                            (format!("BID ${}  ◀ leading", bid.amount), theme::NEON_AMBER)
+                        } else if bid.remaining_bidders.first() == Some(&p.id) {
+                            ("▶ to bid".to_string(), theme::NEON_CYAN)
+                        } else if bid.remaining_bidders.contains(&p.id) {
+                            ("in".to_string(), theme::TEXT_MID)
+                        } else {
+                            ("passed bid".to_string(), theme::TEXT_DIM)
+                        }
+                    } else if gs.player_order.get(*current_bidder_idx) == Some(&p.id) {
+                        ("▶ to nominate".to_string(), theme::NEON_CYAN)
+                    } else {
+                        ("—".to_string(), theme::TEXT_DIM)
+                    };
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("■").color(swatch_color).monospace());
+                        ui.label(RichText::new(&p.name).color(name_color).monospace());
+                        if is_me {
+                            ui.label(RichText::new("(you)").color(theme::TEXT_DIM).small());
+                        }
+                        ui.label(RichText::new(status_text).color(status_color).monospace());
+                    });
                 }
+            }
 
-                // Remaining bidders
-                let remaining_names: Vec<&str> = bid
-                    .remaining_bidders
-                    .iter()
-                    .filter_map(|id| gs.player(*id).map(|p| p.name.as_str()))
-                    .collect();
-                ui.label(
-                    RichText::new(format!("Still bidding: {}", remaining_names.join(", ")))
-                        .color(theme::TEXT_DIM)
-                        .monospace(),
-                );
-                ui.separator();
+            ui.add_space(4.0);
 
+            // Bid / nominate controls
+            if let Some(bid) = active_bid {
                 let is_my_bid_turn = bid.remaining_bidders.first() == Some(&my_id);
                 if is_my_bid_turn {
                     let my_money = gs.player(my_id).map(|p| p.money).unwrap_or(0);
@@ -126,18 +166,6 @@ pub(super) fn action_panel(
                             send(Action::PassAuction, channels);
                         }
                     });
-                } else {
-                    let next_bidder = bid
-                        .remaining_bidders
-                        .first()
-                        .and_then(|id| gs.player(*id))
-                        .map(|p| p.name.as_str())
-                        .unwrap_or("???");
-                    ui.label(
-                        RichText::new(format!("● Waiting for {} to bid…", next_bidder))
-                            .color(theme::TEXT_DIM)
-                            .monospace(),
-                    );
                 }
             } else if my_nominate_turn {
                 ui.label(
@@ -147,48 +175,6 @@ pub(super) fn action_panel(
                 );
                 if ui.add(neon_button("[ PASS ]", theme::NEON_AMBER)).clicked() {
                     send(Action::PassAuction, channels);
-                }
-            } else {
-                let nominator_name = gs
-                    .player_order
-                    .get(*current_bidder_idx)
-                    .and_then(|id| gs.player(*id))
-                    .map(|p| p.name.as_str())
-                    .unwrap_or("???");
-                ui.label(
-                    RichText::new(format!(
-                        "● Waiting for {} to select a plant…",
-                        nominator_name
-                    ))
-                    .color(theme::TEXT_DIM)
-                    .monospace(),
-                );
-            }
-
-            // Bought / passed summary
-            if !bought.is_empty() || !passed.is_empty() {
-                ui.add_space(4.0);
-                if !bought.is_empty() {
-                    let names: Vec<&str> = bought
-                        .iter()
-                        .filter_map(|id| gs.player(*id).map(|p| p.name.as_str()))
-                        .collect();
-                    ui.label(
-                        RichText::new(format!("Bought: {}", names.join(", ")))
-                            .color(theme::TEXT_DIM)
-                            .monospace(),
-                    );
-                }
-                if !passed.is_empty() {
-                    let names: Vec<&str> = passed
-                        .iter()
-                        .filter_map(|id| gs.player(*id).map(|p| p.name.as_str()))
-                        .collect();
-                    ui.label(
-                        RichText::new(format!("Passed: {}", names.join(", ")))
-                            .color(theme::TEXT_DIM)
-                            .monospace(),
-                    );
                 }
             }
         }

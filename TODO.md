@@ -37,11 +37,16 @@
 
 # v0.3.3
 
+* BUG: Fix container build
+
+# v0.3.4
+
+* IMPROVEMENT: Auction mode... List each player in a column and show status/bids.
+
 
 # To do...
 
 * BUG: Two people pick same color, can't start game
-* IMPROVEMENT: Auction mode... List each player in a column and show status/bids.
 * COMPLAINT: Less reading for Nick
 * IMPROVEMENT: Randomize initial order
 * IMPROVEMENT: Do not reorder players on left (that should remain bidding order) DEBATABLE!?
