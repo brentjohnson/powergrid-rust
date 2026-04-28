@@ -47,6 +47,8 @@
 # v0.3.5
 
 * IMPROVEMENT: House shape rather than circles for cities.
+* IMPROVEMENT: Smarter bots (don't buy so many resources)
+* IMPROVEMENT: Show replenishment on resource market
 
 
 
@@ -58,7 +60,6 @@
 * IMPROVEMENT: Randomize initial order
 * IMPROVEMENT: Do not reorder players on left (that should remain bidding order) DEBATABLE!?
 * IMPROVEMENT: Ding on your turn
-* IMPROVEMENT: Show replenishment on resource market
 * IMPROVEMENT: Add "capacity" to player card (how many you could power)
 * IMPROVEMENT: Show remaining money when doing resources or cities?
 * IMPROVEMENT: Implement dependabot on the repo

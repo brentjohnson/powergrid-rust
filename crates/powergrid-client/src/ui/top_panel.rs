@@ -33,11 +33,8 @@ pub(super) fn top_panel_contents(
                         .color(theme::NEON_CYAN)
                         .monospace(),
                 );
-                ui.label(
-                    RichText::new(format!("STEP  {}", gs.step))
-                        .color(theme::NEON_CYAN)
-                        .monospace(),
-                );
+                ui.label(RichText::new("STEP").color(theme::NEON_CYAN).monospace());
+                step_replenish_columns(ui, gs.step, gs.players.len());
             });
         });
 
@@ -175,6 +172,105 @@ fn plant_tooltip(ui: &mut Ui, plant: &powergrid_core::types::PowerPlant) {
         .monospace()
         .color(theme::TEXT_BRIGHT),
     );
+}
+
+fn replenish_rates(step: u8, n: usize) -> (u8, u8, u8, u8) {
+    match step {
+        1 => match n {
+            2 => (3, 2, 1, 1),
+            3 => (4, 2, 1, 1),
+            4 => (5, 3, 2, 1),
+            5 => (5, 4, 3, 2),
+            _ => (7, 5, 3, 2),
+        },
+        2 => match n {
+            2 => (4, 2, 1, 1),
+            3 => (5, 3, 2, 1),
+            4 => (6, 4, 3, 2),
+            5 => (7, 5, 3, 3),
+            _ => (9, 6, 5, 3),
+        },
+        _ => match n {
+            2 => (3, 4, 3, 1),
+            3 => (3, 4, 3, 1),
+            4 => (4, 5, 4, 2),
+            5 => (5, 6, 5, 3),
+            _ => (7, 7, 6, 3),
+        },
+    }
+}
+
+fn step_replenish_columns(ui: &mut Ui, current_step: u8, n_players: usize) {
+    let coal_color = Color32::from_rgb(150, 100, 55);
+    let oil_color = Color32::from_rgb(110, 110, 140);
+    let garb_color = Color32::from_rgb(200, 170, 20);
+    let uran_color = Color32::from_rgb(200, 30, 30);
+
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        for step in 1u8..=3 {
+            let (coal, oil, garb, uran) = replenish_rates(step, n_players);
+            let active = step == current_step;
+            let hdr = if active {
+                theme::NEON_CYAN
+            } else {
+                theme::TEXT_DIM
+            };
+            let c_col = if active {
+                coal_color
+            } else {
+                dim_color(coal_color)
+            };
+            let o_col = if active {
+                oil_color
+            } else {
+                dim_color(oil_color)
+            };
+            let g_col = if active {
+                garb_color
+            } else {
+                dim_color(garb_color)
+            };
+            let u_col = if active {
+                uran_color
+            } else {
+                dim_color(uran_color)
+            };
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.label(
+                    RichText::new(format!("{step}"))
+                        .color(hdr)
+                        .monospace()
+                        .small(),
+                );
+                ui.label(
+                    RichText::new(format!("{coal}"))
+                        .color(c_col)
+                        .monospace()
+                        .small(),
+                );
+                ui.label(
+                    RichText::new(format!("{oil}"))
+                        .color(o_col)
+                        .monospace()
+                        .small(),
+                );
+                ui.label(
+                    RichText::new(format!("{garb}"))
+                        .color(g_col)
+                        .monospace()
+                        .small(),
+                );
+                ui.label(
+                    RichText::new(format!("{uran}"))
+                        .color(u_col)
+                        .monospace()
+                        .small(),
+                );
+            });
+        }
+    });
 }
 
 fn resource_market_grid(ui: &mut Ui, market: &ResourceMarket) {
