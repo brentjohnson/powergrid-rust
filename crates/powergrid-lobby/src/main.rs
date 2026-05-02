@@ -53,8 +53,6 @@ Options:
         )
         .init();
 
-    const DEFAULT_MAP: &str = include_str!("../../powergrid-server/maps/germany.toml");
-
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
     let bot_delay_ms: u64 = std::env::var("BOT_DELAY_MS")
         .ok()
@@ -63,13 +61,13 @@ Options:
     let database_url =
         std::env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
 
-    let map_str = if let Ok(path) = std::env::var("MAP_FILE") {
-        std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("Failed to read map file {path}: {e}"))
+    let map = if let Ok(path) = std::env::var("MAP_FILE") {
+        let s = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Failed to read map file {path}: {e}"));
+        Map::load(&s).unwrap_or_else(|e| panic!("Failed to parse map: {e}"))
     } else {
-        DEFAULT_MAP.to_string()
+        powergrid_core::default_map()
     };
-    let map = Map::load(&map_str).unwrap_or_else(|e| panic!("Failed to parse map: {e}"));
     info!("Loaded map: {}", map.name);
 
     let db = Db::connect(&database_url)

@@ -14,8 +14,7 @@ pub async fn handle_lobby_action(
     match action {
         LobbyAction::ListRooms => {
             let rooms = manager.list().await;
-            let msg = ServerMessage::RoomList { rooms };
-            conn.send_msg(&msg);
+            conn.send_msg(&ServerMessage::RoomList { rooms });
         }
 
         LobbyAction::CreateRoom { name } => {
@@ -26,9 +25,9 @@ pub async fn handle_lobby_action(
                 Ok(room_arc) => {
                     conn.current_room = Some(name.to_lowercase());
                     let mut room = room_arc.lock().await;
-                    room.humans.push((conn.user_id, conn.tx.clone()));
+                    room.add_human(conn.user_id, conn.tx.clone());
                     let state_json = serde_json::to_string(&ServerMessage::StateUpdate(Box::new(
-                        room.game.clone(),
+                        room.session.game.clone(),
                     )))
                     .unwrap();
                     drop(room);
@@ -64,12 +63,13 @@ pub async fn handle_lobby_action(
             let mut room = room_arc.lock().await;
 
             // Reconnect: if the user already has a seat, replace their sender.
-            if let Some(idx) = room.humans.iter().position(|(id, _)| *id == conn.user_id) {
-                room.humans[idx] = (conn.user_id, conn.tx.clone());
+            if room.humans.iter().any(|(id, _)| *id == conn.user_id) {
+                room.replace_human(conn.user_id, conn.tx.clone());
                 conn.current_room = Some(name.to_lowercase());
-                let state_json =
-                    serde_json::to_string(&ServerMessage::StateUpdate(Box::new(room.game.clone())))
-                        .unwrap();
+                let state_json = serde_json::to_string(&ServerMessage::StateUpdate(Box::new(
+                    room.session.game.clone(),
+                )))
+                .unwrap();
                 drop(room);
                 conn.send_msg(&ServerMessage::RoomJoined {
                     room: name.clone(),
@@ -83,11 +83,12 @@ pub async fn handle_lobby_action(
                 return;
             }
 
-            room.humans.push((conn.user_id, conn.tx.clone()));
+            room.add_human(conn.user_id, conn.tx.clone());
             conn.current_room = Some(name.to_lowercase());
-            let state_json =
-                serde_json::to_string(&ServerMessage::StateUpdate(Box::new(room.game.clone())))
-                    .unwrap();
+            let state_json = serde_json::to_string(&ServerMessage::StateUpdate(Box::new(
+                room.session.game.clone(),
+            )))
+            .unwrap();
             drop(room);
             conn.send_msg(&ServerMessage::RoomJoined {
                 room: name.clone(),
@@ -130,7 +131,7 @@ pub async fn handle_lobby_action(
                 });
                 return;
             }
-            if !matches!(room.game.phase, Phase::Lobby) {
+            if !matches!(room.session.game.phase, Phase::Lobby) {
                 conn.send_msg(&ServerMessage::LobbyError {
                     message: "cannot add bots after game has started".to_string(),
                 });
@@ -141,7 +142,7 @@ pub async fn handle_lobby_action(
                     conn.send_msg(&ServerMessage::LobbyError { message: e });
                 }
                 Ok(_) => {
-                    let msg = ServerMessage::StateUpdate(Box::new(room.game.clone()));
+                    let msg = ServerMessage::StateUpdate(Box::new(room.session.game.clone()));
                     room.broadcast_msg(&msg);
                 }
             }
@@ -178,7 +179,7 @@ pub async fn handle_lobby_action(
                     conn.send_msg(&ServerMessage::LobbyError { message: e });
                 }
                 Ok(()) => {
-                    let msg = ServerMessage::StateUpdate(Box::new(room.game.clone()));
+                    let msg = ServerMessage::StateUpdate(Box::new(room.session.game.clone()));
                     room.broadcast_msg(&msg);
                 }
             }
@@ -186,9 +187,7 @@ pub async fn handle_lobby_action(
     }
 }
 
-/// Remove a user from their current room. If the game is in `Phase::Lobby`,
-/// also remove their player record so their slot is freed.
-/// Outside lobby, keep the record so they can reconnect.
+/// Remove a user from their current room.
 pub async fn leave_room(conn: &mut ConnState, manager: &Arc<RoomManager>) {
     let room_name = match conn.current_room.take() {
         None => return,
@@ -203,12 +202,11 @@ pub async fn leave_room(conn: &mut ConnState, manager: &Arc<RoomManager>) {
 
     room.humans.retain(|(id, _)| *id != user_id);
 
-    if matches!(room.game.phase, Phase::Lobby) {
-        room.game.players.retain(|p| p.id != user_id);
-        room.game.player_order.retain(|id| *id != user_id);
+    if matches!(room.session.game.phase, Phase::Lobby) {
+        room.session.game.players.retain(|p| p.id != user_id);
+        room.session.game.player_order.retain(|id| *id != user_id);
     }
 
-    // If the creator left, assign a new host (first remaining human).
     if room.creator_user_id == user_id {
         if let Some((new_host, _)) = room.humans.first() {
             room.creator_user_id = *new_host;
@@ -222,7 +220,7 @@ pub async fn leave_room(conn: &mut ConnState, manager: &Arc<RoomManager>) {
     conn.send_raw(&left_msg);
 
     if !room.humans.is_empty() {
-        let msg = ServerMessage::StateUpdate(Box::new(room.game.clone()));
+        let msg = ServerMessage::StateUpdate(Box::new(room.session.game.clone()));
         room.broadcast_msg(&msg);
     }
 

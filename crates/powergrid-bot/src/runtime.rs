@@ -9,7 +9,7 @@ use tokio_tungstenite::{
 };
 use tracing::{error, info, warn};
 
-use crate::strategy;
+use powergrid_bot_strategy::strategy;
 
 pub async fn run_bot(url: String, name: String, color: PlayerColor) {
     loop {

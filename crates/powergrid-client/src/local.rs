@@ -1,8 +1,16 @@
 use bevy::prelude::*;
-use powergrid_core::{map::Map, types::PlayerColor};
-use tokio::sync::oneshot;
+use crossbeam_channel::Sender;
+use powergrid_core::{
+    actions::{Action, ClientMessage, ServerMessage},
+    types::PlayerColor,
+};
+use powergrid_session::{run_bot_pump, Session, Subscriber, MAX_PLAYERS};
+use std::{sync::Arc, time::Duration};
+use tokio::sync::{oneshot, Mutex};
+use tracing::info;
+use uuid::Uuid;
 
-use crate::ws::{spawn_ws, WsChannels, WsMode};
+use crate::ws::{WsChannels, WsEvent};
 
 pub struct LocalConfig {
     pub human_name: String,
@@ -10,15 +18,16 @@ pub struct LocalConfig {
     pub bot_count: u8,
 }
 
+/// Holds the background runtime thread for a local play session.
+/// Dropping this resource blocks until the runtime fully shuts down.
+/// Shutdown is triggered by dropping `WsChannels` (which holds the oneshot sender).
 #[derive(Resource)]
 pub struct LocalHandle {
-    shutdown: Option<oneshot::Sender<()>>,
     runtime_thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Drop for LocalHandle {
     fn drop(&mut self) {
-        drop(self.shutdown.take());
         if let Some(t) = self.runtime_thread.take() {
             t.join().ok();
         }
@@ -26,11 +35,11 @@ impl Drop for LocalHandle {
 }
 
 pub fn start_local_session(cfg: LocalConfig) -> (WsChannels, LocalHandle) {
-    const DEFAULT_MAP: &str = include_str!("../../powergrid-server/maps/germany.toml");
-    let map = Map::load(DEFAULT_MAP).expect("embedded map must be valid");
+    let map = powergrid_core::default_map();
 
-    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-    let (addr_tx, addr_rx) = std::sync::mpsc::channel::<std::net::SocketAddr>();
+    let human_id = Uuid::new_v4();
+    let human_name = cfg.human_name.clone();
+    let human_color = cfg.human_color;
 
     let all_colors = [
         PlayerColor::Red,
@@ -43,53 +52,156 @@ pub fn start_local_session(cfg: LocalConfig) -> (WsChannels, LocalHandle) {
     let bot_colors: Vec<PlayerColor> = all_colors
         .iter()
         .copied()
-        .filter(|&c| c != cfg.human_color)
+        .filter(|&c| c != human_color)
         .take(cfg.bot_count as usize)
         .collect();
 
-    let runtime_thread = std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("tokio runtime");
+    let (event_tx, event_rx) = crossbeam_channel::unbounded::<WsEvent>();
+    let (action_tx, action_rx) = crossbeam_channel::unbounded::<ClientMessage>();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-        rt.block_on(async move {
-            let (addr, server_fut) = powergrid_server::serve_embedded(map, "127.0.0.1:0")
-                .await
-                .expect("bind local server");
+    // Build the session synchronously before spawning so errors surface early.
+    let (state_tx, state_rx) = crossbeam_channel::unbounded::<ServerMessage>();
+    let session = {
+        let mut s = Session::new(map, MAX_PLAYERS);
+        s.add_subscriber(Subscriber::Local(state_tx));
+        s.apply(
+            human_id,
+            Action::JoinGame {
+                name: human_name.clone(),
+                color: human_color,
+            },
+        )
+        .expect("human JoinGame must succeed");
+        for (i, color) in bot_colors.into_iter().enumerate() {
+            s.add_bot(format!("Bot {}", i + 1), color)
+                .expect("add_bot must succeed in Lobby");
+        }
+        s.apply(human_id, Action::StartGame)
+            .expect("StartGame must succeed with enough players");
+        s
+    };
 
-            tokio::spawn(server_fut);
-            addr_tx.send(addr).ok();
+    // Drain all initial StateUpdates from session setup.
+    let initial_msgs: Vec<ServerMessage> = state_rx.try_iter().collect();
 
-            // Give the human's WS thread time to connect and join before bots do,
-            // so the human becomes host (players.first()) and can start the game.
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    // Pre-queue the full connection + auth + room handshake so the client
+    // sees them all on the first Bevy frame and lands on the Game screen.
+    let _ = event_tx.send(WsEvent::Connected);
+    let _ = event_tx.send(WsEvent::MessageReceived(ServerMessage::Authenticated {
+        user_id: human_id,
+        username: human_name.clone(),
+    }));
+    let _ = event_tx.send(WsEvent::MessageReceived(ServerMessage::RoomJoined {
+        room: "local".to_string(),
+        your_id: human_id,
+    }));
+    for msg in initial_msgs {
+        let _ = event_tx.send(WsEvent::MessageReceived(msg));
+    }
 
-            for (i, color) in bot_colors.into_iter().enumerate() {
-                let url = format!("ws://{addr}/ws");
-                let name = format!("Bot {}", i + 1);
-                tokio::spawn(powergrid_bot::runtime::run_bot(url, name, color));
-            }
+    let session_arc = Arc::new(Mutex::new(session));
 
-            let _ = shutdown_rx.await;
-        });
-    });
+    let runtime_thread = {
+        let session_arc = Arc::clone(&session_arc);
+        let event_tx = event_tx.clone();
+        std::thread::spawn(move || {
+            tracing_subscriber::fmt()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+                )
+                .try_init()
+                .ok();
 
-    let addr = addr_rx.recv().expect("server must bind before returning");
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("tokio runtime")
+                .block_on(local_session_driver(
+                    session_arc,
+                    state_rx,
+                    event_tx,
+                    action_rx,
+                    human_id,
+                    shutdown_rx,
+                ));
+        })
+    };
 
-    let channels = spawn_ws(
-        format!("ws://{addr}/ws"),
-        WsMode::Legacy {
-            name: cfg.human_name,
-            color: cfg.human_color,
-        },
-    );
+    let channels = WsChannels::new_local(event_rx, action_tx, shutdown_tx);
 
     (
         channels,
         LocalHandle {
-            shutdown: Some(shutdown_tx),
             runtime_thread: Some(runtime_thread),
         },
     )
+}
+
+async fn local_session_driver(
+    session_arc: Arc<Mutex<Session>>,
+    state_rx: crossbeam_channel::Receiver<ServerMessage>,
+    event_tx: Sender<WsEvent>,
+    action_rx: crossbeam_channel::Receiver<ClientMessage>,
+    human_id: uuid::Uuid,
+    mut shutdown_rx: oneshot::Receiver<()>,
+) {
+    let bot_delay = Duration::from_millis(
+        std::env::var("BOT_DELAY_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(400),
+    );
+
+    info!("Local session driver started");
+
+    loop {
+        // Forward any pending state updates from the session subscriber.
+        for msg in state_rx.try_iter() {
+            let _ = event_tx.send(WsEvent::MessageReceived(msg));
+        }
+
+        // Check for shutdown or wait 16ms.
+        tokio::select! {
+            _ = &mut shutdown_rx => break,
+            _ = tokio::time::sleep(Duration::from_millis(16)) => {}
+        }
+
+        // Process pending client actions.
+        let mut acted = false;
+        while let Ok(msg) = action_rx.try_recv() {
+            if let ClientMessage::Room { action, .. } = msg {
+                let result = {
+                    let mut s = session_arc.lock().await;
+                    s.apply(human_id, action)
+                };
+                // Forward state updates triggered by the action.
+                for msg in state_rx.try_iter() {
+                    let _ = event_tx.send(WsEvent::MessageReceived(msg));
+                }
+                if let Err(e) = result {
+                    let _ =
+                        event_tx.send(WsEvent::MessageReceived(ServerMessage::ActionError {
+                            message: e.to_string(),
+                        }));
+                } else {
+                    acted = true;
+                }
+                // Authenticate and Lobby actions are ignored — local mode handles them internally.
+            }
+        }
+
+        // Drive bots after any human action.
+        if acted {
+            run_bot_pump(Arc::clone(&session_arc), bot_delay).await;
+            // Forward state updates from bot turns.
+            for msg in state_rx.try_iter() {
+                let _ = event_tx.send(WsEvent::MessageReceived(msg));
+            }
+        }
+    }
+
+    let _ = event_tx.send(WsEvent::Disconnected);
+    info!("Local session driver stopped");
 }

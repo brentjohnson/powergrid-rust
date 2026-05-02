@@ -162,7 +162,6 @@ pub(super) fn local_setup_screen(
                                 bot_count: state.local_bot_count,
                             };
                             state.pending_connect = true;
-                            state.local_expected_players = cfg.bot_count + 1;
                             let (channels, handle) = crate::local::start_local_session(cfg);
                             commands.insert_resource(channels);
                             commands.insert_resource(handle);

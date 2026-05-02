@@ -104,8 +104,6 @@ pub struct AppState {
     pub local_name: String,
     pub local_color: PlayerColor,
     pub local_bot_count: u8,
-    /// Total expected players (human + bots) for the current local session. 0 = not set.
-    pub local_expected_players: u8,
 }
 
 impl AppState {
@@ -173,7 +171,6 @@ impl AppState {
             local_name: "You".to_string(),
             local_color: PlayerColor::Red,
             local_bot_count: 3,
-            local_expected_players: 0,
         }
     }
 

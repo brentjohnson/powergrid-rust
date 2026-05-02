@@ -1,2 +1,2 @@
 pub mod runtime;
-pub mod strategy;
+pub use powergrid_bot_strategy::strategy;

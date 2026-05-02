@@ -1,100 +1,73 @@
 use powergrid_core::{
-    actions::{Action, RoomSummary, ServerMessage},
-    map::Map,
-    rules::apply_action,
+    actions::{RoomSummary, ServerMessage},
     types::{Phase, PlayerColor, PlayerId},
-    GameState,
 };
+use powergrid_session::{Map, Session, Subscriber, MAX_PLAYERS};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::info;
-use uuid::Uuid;
-
-#[allow(dead_code)]
-pub struct BotSlot {
-    pub id: PlayerId,
-    pub name: String,
-    pub color: PlayerColor,
-}
 
 pub struct Room {
     pub name: String,
-    pub game: GameState,
+    pub session: Session,
+    /// WS senders keyed by user_id for targeted per-player messages.
     pub humans: Vec<(PlayerId, mpsc::UnboundedSender<String>)>,
-    pub bots: Vec<BotSlot>,
-    /// user_id of the human who created the room (survives reconnects)
+    /// user_id of the human who created the room (survives reconnects).
     pub creator_user_id: PlayerId,
 }
 
 impl Room {
-    pub fn new(name: String, game: GameState, creator_user_id: PlayerId) -> Self {
+    pub fn new(name: String, map: Map, creator_user_id: PlayerId) -> Self {
         Self {
             name,
-            game,
+            session: Session::new(map, MAX_PLAYERS),
             humans: Vec::new(),
-            bots: Vec::new(),
             creator_user_id,
         }
     }
 
     pub fn broadcast(&mut self, json: &str) {
-        self.humans
-            .retain(|(_, tx)| tx.send(json.to_string()).is_ok());
+        self.session.broadcast_json(json);
+        // Also prune our humans list to match live subscribers.
+        self.humans.retain(|(_, tx)| !tx.is_closed());
     }
 
     pub fn broadcast_msg(&mut self, msg: &ServerMessage) {
-        let json = serde_json::to_string(msg).unwrap();
-        self.broadcast(&json);
+        self.session.broadcast(msg);
+        self.humans.retain(|(_, tx)| !tx.is_closed());
     }
 
-    /// Add an in-process bot to the room. Only valid in Phase::Lobby.
-    pub fn add_bot(&mut self, bot_name: String, color: PlayerColor) -> Result<PlayerId, String> {
-        let bot_id = Uuid::new_v4();
-        apply_action(
-            &mut self.game,
-            bot_id,
-            Action::JoinGame {
-                name: bot_name.clone(),
-                color,
-            },
-        )
-        .map_err(|e| e.to_string())?;
-        info!(
-            "Bot '{}' ({:?}) added to room '{}'",
-            bot_name, color, self.name
-        );
-        self.bots.push(BotSlot {
-            id: bot_id,
-            name: bot_name,
-            color,
-        });
-        Ok(bot_id)
+    pub fn add_human(&mut self, user_id: PlayerId, tx: mpsc::UnboundedSender<String>) {
+        self.session.add_subscriber(Subscriber::Mpsc(tx.clone()));
+        self.humans.push((user_id, tx));
     }
 
-    /// Remove a bot from the room. Only valid in Phase::Lobby.
-    pub fn remove_bot(&mut self, bot_id: PlayerId) -> Result<(), String> {
-        if !matches!(self.game.phase, Phase::Lobby) {
-            return Err("cannot remove bot after game has started".to_string());
+    pub fn replace_human(&mut self, user_id: PlayerId, tx: mpsc::UnboundedSender<String>) {
+        // Update the WS sender in our tracking list.
+        if let Some(slot) = self.humans.iter_mut().find(|(id, _)| *id == user_id) {
+            slot.1 = tx.clone();
+        } else {
+            self.humans.push((user_id, tx.clone()));
         }
-        let idx = self
-            .bots
-            .iter()
-            .position(|b| b.id == bot_id)
-            .ok_or_else(|| "bot not found in this room".to_string())?;
-        self.bots.remove(idx);
-        self.game.players.retain(|p| p.id != bot_id);
-        self.game.player_order.retain(|id| *id != bot_id);
-        info!("Bot {} removed from room '{}'", bot_id, self.name);
-        Ok(())
+        // Add a fresh subscriber (stale ones are pruned on next broadcast).
+        self.session.add_subscriber(Subscriber::Mpsc(tx));
+    }
+
+    pub fn add_bot(&mut self, bot_name: String, color: PlayerColor) -> Result<PlayerId, String> {
+        self.session.add_bot(bot_name, color)
+    }
+
+    pub fn remove_bot(&mut self, bot_id: PlayerId) -> Result<(), String> {
+        self.session.remove_bot(bot_id)
     }
 
     pub fn summary(&self) -> RoomSummary {
         RoomSummary {
             name: self.name.clone(),
-            player_count: self.game.players.len() as u8,
-            max_players: 6,
-            in_lobby: matches!(self.game.phase, Phase::Lobby),
-            has_started: !matches!(self.game.phase, Phase::Lobby),
+            player_count: self.session.game.players.len() as u8,
+            max_players: MAX_PLAYERS,
+            in_lobby: matches!(self.session.game.phase, Phase::Lobby),
+            has_started: !matches!(self.session.game.phase, Phase::Lobby),
         }
     }
 
@@ -103,7 +76,7 @@ impl Room {
     }
 
     pub fn is_game_over(&self) -> bool {
-        matches!(self.game.phase, Phase::GameOver { .. })
+        matches!(self.session.game.phase, Phase::GameOver { .. })
     }
 }
 
@@ -143,8 +116,7 @@ impl RoomManager {
             return Err(format!("a room named '{}' already exists", name));
         }
         let map = (*self.default_map).clone();
-        let game = GameState::new(map, 6);
-        let room = Arc::new(Mutex::new(Room::new(name, game, creator_user_id)));
+        let room = Arc::new(Mutex::new(Room::new(name, map, creator_user_id)));
         rooms.insert(key, Arc::clone(&room));
         Ok(room)
     }

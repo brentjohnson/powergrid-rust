@@ -64,6 +64,13 @@ pub struct ShortestPath {
     pub edges: Vec<(String, String)>,
 }
 
+const DEFAULT_MAP_TOML: &str = include_str!("../../../assets/maps/germany.toml");
+
+/// Load the built-in Germany map.
+pub fn default_map() -> Map {
+    Map::load(DEFAULT_MAP_TOML).expect("embedded map must be valid")
+}
+
 impl Map {
     pub fn from_data(data: MapData) -> Self {
         let mut cities = HashMap::new();

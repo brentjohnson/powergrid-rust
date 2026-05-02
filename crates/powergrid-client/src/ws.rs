@@ -1,10 +1,8 @@
 use bevy::prelude::*;
 use crossbeam_channel::{Receiver, Sender};
 use futures_util::{SinkExt, StreamExt};
-use powergrid_core::{
-    actions::{Action, ClientMessage, LobbyAction, ServerMessage},
-    types::PlayerColor,
-};
+use powergrid_core::actions::{Action, ClientMessage, LobbyAction, ServerMessage};
+use tokio::sync::oneshot;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 use tracing::{debug, warn};
 
@@ -12,97 +10,105 @@ use tracing::{debug, warn};
 // Types
 // ---------------------------------------------------------------------------
 
-pub enum WsMode {
-    /// Production lobby protocol: Authenticate → RoomBrowser → Room actions.
-    Lobby,
-    /// Embedded `powergrid-server`: bare `Action::JoinGame` on connect, bare `Action` thereafter.
-    Legacy { name: String, color: PlayerColor },
-}
-
 pub enum WsEvent {
     Connected,
     MessageReceived(ServerMessage),
     Disconnected,
 }
 
-enum OutboundMessage {
-    Lobby(ClientMessage),
-    Legacy(Action),
-}
-
 #[derive(Resource)]
 pub struct WsChannels {
     pub event_rx: Receiver<WsEvent>,
-    action_tx: Sender<OutboundMessage>,
-    pub mode: WsMode,
+    action_tx: Sender<ClientMessage>,
+    shutdown_tx: Option<oneshot::Sender<()>>,
 }
 
 impl WsChannels {
     pub fn send_lobby(&self, action: LobbyAction) {
-        if matches!(self.mode, WsMode::Lobby) {
-            self.action_tx
-                .send(OutboundMessage::Lobby(ClientMessage::Lobby(action)))
-                .ok();
-        }
+        self.action_tx.send(ClientMessage::Lobby(action)).ok();
     }
 
-    /// Send an in-game action: uses room-scoped `ClientMessage` in Lobby mode,
-    /// or a bare `Action` in Legacy mode (ignored room arg).
-    pub fn send_action(&self, room: Option<&str>, action: powergrid_core::Action) {
-        match &self.mode {
-            WsMode::Lobby => {
-                if let Some(r) = room {
-                    self.action_tx
-                        .send(OutboundMessage::Lobby(ClientMessage::Room {
-                            room: r.to_string(),
-                            action,
-                        }))
-                        .ok();
-                }
-            }
-            WsMode::Legacy { .. } => {
-                self.action_tx.send(OutboundMessage::Legacy(action)).ok();
-            }
+    pub fn send_action(&self, room: Option<&str>, action: Action) {
+        if let Some(r) = room {
+            self.action_tx
+                .send(ClientMessage::Room {
+                    room: r.to_string(),
+                    action,
+                })
+                .ok();
         }
     }
 }
 
+impl WsChannels {
+    /// Construct channels backed by an already-running local session driver.
+    pub(crate) fn new_local(
+        event_rx: Receiver<WsEvent>,
+        action_tx: Sender<ClientMessage>,
+        shutdown_tx: oneshot::Sender<()>,
+    ) -> Self {
+        Self {
+            event_rx,
+            action_tx,
+            shutdown_tx: Some(shutdown_tx),
+        }
+    }
+}
+
+impl Drop for WsChannels {
+    fn drop(&mut self) {
+        drop(self.shutdown_tx.take());
+    }
+}
+
 // ---------------------------------------------------------------------------
-// Public: spawn the WS worker thread and return channel handles
+// Online: spawn the WS worker thread
 // ---------------------------------------------------------------------------
 
-pub fn spawn_ws(url: String, mode: WsMode) -> WsChannels {
+pub fn spawn_ws(url: String) -> WsChannels {
     let (event_tx, event_rx) = crossbeam_channel::unbounded::<WsEvent>();
-    let (action_tx, action_rx) = crossbeam_channel::unbounded::<OutboundMessage>();
+    let (action_tx, action_rx) = crossbeam_channel::unbounded::<ClientMessage>();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
     std::thread::spawn(move || {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("tokio runtime")
-            .block_on(ws_worker(url, event_tx, action_rx));
+            .block_on(ws_worker(url, event_tx, action_rx, shutdown_rx));
     });
 
     WsChannels {
         event_rx,
         action_tx,
-        mode,
+        shutdown_tx: Some(shutdown_tx),
     }
 }
 
 // ---------------------------------------------------------------------------
-// Async worker — reconnects forever
+// Async worker — reconnects until shutdown signal
 // ---------------------------------------------------------------------------
 
-async fn ws_worker(url: String, event_tx: Sender<WsEvent>, action_rx: Receiver<OutboundMessage>) {
+async fn ws_worker(
+    url: String,
+    event_tx: Sender<WsEvent>,
+    action_rx: Receiver<ClientMessage>,
+    mut shutdown_rx: oneshot::Receiver<()>,
+) {
     loop {
-        let ws_stream = match connect_async(&url).await {
-            Ok((s, _)) => s,
-            Err(e) => {
-                warn!("WS connect failed ({url}): {e}");
-                let _ = event_tx.send(WsEvent::Disconnected);
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                continue;
+        let ws_stream = tokio::select! {
+            _ = &mut shutdown_rx => return,
+            result = connect_async(&url) => match result {
+                Ok((s, _)) => s,
+                Err(e) => {
+                    warn!("WS connect failed ({url}): {e}");
+                    let _ = event_tx.send(WsEvent::Disconnected);
+                    tokio::select! {
+                        _ = &mut shutdown_rx => return,
+                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {}
+                    }
+                    continue;
+                }
             }
         };
 
@@ -112,6 +118,7 @@ async fn ws_worker(url: String, event_tx: Sender<WsEvent>, action_rx: Receiver<O
 
         'inner: loop {
             tokio::select! {
+                _ = &mut shutdown_rx => return,
                 msg = read.next() => {
                     match msg {
                         Some(Ok(WsMessage::Text(text))) => {
@@ -139,14 +146,7 @@ async fn ws_worker(url: String, event_tx: Sender<WsEvent>, action_rx: Receiver<O
                 }
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(16)) => {
                     while let Ok(msg) = action_rx.try_recv() {
-                        let json = match msg {
-                            OutboundMessage::Lobby(m) => {
-                                serde_json::to_string(&m).expect("serialize ClientMessage")
-                            }
-                            OutboundMessage::Legacy(a) => {
-                                serde_json::to_string(&a).expect("serialize Action")
-                            }
-                        };
+                        let json = serde_json::to_string(&msg).expect("serialize ClientMessage");
                         if write.send(WsMessage::Text(json)).await.is_err() {
                             break 'inner;
                         }
@@ -157,7 +157,10 @@ async fn ws_worker(url: String, event_tx: Sender<WsEvent>, action_rx: Receiver<O
 
         debug!("WS disconnected, reconnecting in 2s…");
         let _ = event_tx.send(WsEvent::Disconnected);
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        tokio::select! {
+            _ = &mut shutdown_rx => return,
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {}
+        }
     }
 }
 
@@ -175,27 +178,11 @@ pub fn process_ws_events(
         match event {
             WsEvent::Connected => {
                 state.connected = true;
-                match &channels.mode {
-                    WsMode::Lobby => {
-                        if let Some(token) = state.auth_token.clone() {
-                            channels
-                                .action_tx
-                                .send(OutboundMessage::Lobby(ClientMessage::Authenticate {
-                                    token,
-                                }))
-                                .ok();
-                        }
-                    }
-                    WsMode::Legacy { name, color } => {
-                        let action = Action::JoinGame {
-                            name: name.clone(),
-                            color: *color,
-                        };
-                        channels
-                            .action_tx
-                            .send(OutboundMessage::Legacy(action))
-                            .ok();
-                    }
+                if let Some(token) = state.auth_token.clone() {
+                    channels
+                        .action_tx
+                        .send(ClientMessage::Authenticate { token })
+                        .ok();
                 }
             }
             WsEvent::MessageReceived(msg) => match msg {
@@ -214,12 +201,8 @@ pub fn process_ws_events(
                     state.connected = false;
                     state.logout();
                 }
-                ServerMessage::Welcome { your_id } => {
-                    if let WsMode::Legacy { .. } = &channels.mode {
-                        state.my_id = Some(your_id);
-                        state.pending_connect = false;
-                        state.current_room = Some("local".into());
-                    }
+                ServerMessage::Welcome { .. } => {
+                    // Only sent by the legacy standalone server; not used in lobby protocol.
                 }
                 ServerMessage::RoomJoined { room, your_id } => {
                     state.my_id = Some(your_id);
@@ -236,20 +219,6 @@ pub fn process_ws_events(
                     state.room_list = rooms;
                 }
                 ServerMessage::StateUpdate(gs) => {
-                    // In local mode: auto-start once all expected players have joined.
-                    if let WsMode::Legacy { .. } = &channels.mode {
-                        let expected = state.local_expected_players as usize;
-                        if expected > 0
-                            && matches!(gs.phase, powergrid_core::types::Phase::Lobby)
-                            && gs.players.len() >= expected
-                            && gs.host_id() == state.my_id
-                        {
-                            channels
-                                .action_tx
-                                .send(OutboundMessage::Legacy(Action::StartGame))
-                                .ok();
-                        }
-                    }
                     state.handle_state_update(*gs);
                 }
                 ServerMessage::ActionError { message } => {

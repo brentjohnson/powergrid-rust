@@ -1,5 +1,5 @@
 use crate::{driver::run_bot_pump, rooms::RoomManager, ws::ConnState};
-use powergrid_core::{actions::ServerMessage, rules::apply_action, Action};
+use powergrid_core::{actions::ServerMessage, Action};
 use std::{sync::Arc, time::Duration};
 use tracing::{info, warn};
 
@@ -20,7 +20,7 @@ pub async fn handle_room_action(
         Some(r) => r,
     };
 
-    // Verify the socket is actually a member of this room.
+    // Verify membership.
     {
         let room = room_arc.lock().await;
         if !room.humans.iter().any(|(id, _)| *id == conn.user_id) {
@@ -31,33 +31,30 @@ pub async fn handle_room_action(
         }
     }
 
-    // Apply the human's action.
-    let apply_result = {
+    // Apply via session (broadcasts StateUpdate on success).
+    let result = {
         let mut room = room_arc.lock().await;
-        let result = apply_action(&mut room.game, conn.user_id, action);
-        if result.is_ok() {
+        let res = room.session.apply(conn.user_id, action);
+        if res.is_ok() {
             info!(
                 "Action from {} accepted in room '{}'",
                 conn.user_id, room.name
             );
-            let msg = ServerMessage::StateUpdate(Box::new(room.game.clone()));
-            room.broadcast_msg(&msg);
-        } else if let Err(ref e) = result {
+        } else if let Err(ref e) = res {
             warn!(
                 "Action from {} rejected in room '{}': {}",
                 conn.user_id, room.name, e
             );
         }
-        result
+        res
     };
 
-    if let Err(e) = apply_result {
+    if let Err(e) = result {
         conn.send_msg(&ServerMessage::ActionError {
             message: e.to_string(),
         });
         return;
     }
 
-    // Drive bots after every successful human action.
     run_bot_pump(Arc::clone(&room_arc), bot_delay).await;
 }
