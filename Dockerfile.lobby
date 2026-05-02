@@ -14,6 +14,10 @@ RUN cargo build --release -p powergrid-lobby
 FROM debian:trixie-slim
 
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/target/release/powergrid-lobby ./
 
 ENV PORT=3000

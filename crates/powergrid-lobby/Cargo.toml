@@ -15,3 +15,10 @@ axum = { version = "0.7", features = ["ws"] }
 futures = "0.3"
 uuid = { workspace = true }
 rand = { version = "0.8", features = ["small_rng"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "macros", "migrate"] }
+argon2 = "0.5"
+rand_core = { version = "0.6", features = ["std"] }
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
+thiserror = "1"
+tower-http = { version = "0.5", features = ["trace", "cors"] }

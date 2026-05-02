@@ -23,7 +23,7 @@ pub async fn handle_room_action(
     // Verify the socket is actually a member of this room.
     {
         let room = room_arc.lock().await;
-        if !room.humans.iter().any(|(id, _)| *id == conn.socket_id) {
+        if !room.humans.iter().any(|(id, _)| *id == conn.user_id) {
             conn.send_msg(&ServerMessage::LobbyError {
                 message: format!("you are not in room '{}'", room_name),
             });
@@ -34,18 +34,18 @@ pub async fn handle_room_action(
     // Apply the human's action.
     let apply_result = {
         let mut room = room_arc.lock().await;
-        let result = apply_action(&mut room.game, conn.socket_id, action);
+        let result = apply_action(&mut room.game, conn.user_id, action);
         if result.is_ok() {
             info!(
                 "Action from {} accepted in room '{}'",
-                conn.socket_id, room.name
+                conn.user_id, room.name
             );
             let msg = ServerMessage::StateUpdate(Box::new(room.game.clone()));
             room.broadcast_msg(&msg);
         } else if let Err(ref e) = result {
             warn!(
                 "Action from {} rejected in room '{}': {}",
-                conn.socket_id, room.name, e
+                conn.user_id, room.name, e
             );
         }
         result

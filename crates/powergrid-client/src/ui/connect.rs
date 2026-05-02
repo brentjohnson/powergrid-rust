@@ -1,10 +1,11 @@
 use bevy::prelude::Commands;
 use bevy_egui::egui;
-use egui::{Color32, RichText};
+use egui::RichText;
 use powergrid_core::types::PlayerColor;
 
 use crate::{
-    state::{player_color_to_egui, AppState, Screen},
+    auth::{do_logout, AuthEvent},
+    state::{player_color_to_egui, AppState},
     theme, ws,
 };
 
@@ -41,13 +42,43 @@ pub(super) fn connect_screen(ctx: &egui::Context, state: &mut AppState, commands
                     ui.set_width(420.0);
                     ui.spacing_mut().item_spacing.y = 10.0;
 
+                    // Logged-in identity
+                    if let Some(ref username) = state.auth_username.clone() {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!("● {}", username))
+                                    .color(theme::NEON_CYAN)
+                                    .monospace(),
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new("[ LOG OUT ]")
+                                                    .color(theme::NEON_RED)
+                                                    .small()
+                                                    .monospace(),
+                                            )
+                                            .fill(egui::Color32::TRANSPARENT)
+                                            .stroke(egui::Stroke::new(1.0, theme::NEON_RED)),
+                                        )
+                                        .clicked()
+                                    {
+                                        handle_logout(state);
+                                    }
+                                },
+                            );
+                        });
+                        ui.add_space(4.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+                    }
+
                     // Server name
                     ui.label(RichText::new("SERVER NAME").color(theme::TEXT_DIM).small());
                     ui.text_edit_singleline(&mut state.server_name);
-
-                    // Player name
-                    ui.label(RichText::new("CALLSIGN").color(theme::TEXT_DIM).small());
-                    ui.text_edit_singleline(&mut state.player_name);
 
                     // Color selector
                     ui.label(
@@ -74,7 +105,7 @@ pub(super) fn connect_screen(ctx: &egui::Context, state: &mut AppState, commands
                             let label = color_label(color);
 
                             let btn = egui::Button::new(RichText::new(label).color(if selected {
-                                Color32::BLACK
+                                egui::Color32::BLACK
                             } else {
                                 egui_color
                             }))
@@ -98,7 +129,7 @@ pub(super) fn connect_screen(ctx: &egui::Context, state: &mut AppState, commands
 
                     ui.add_space(8.0);
 
-                    let can_connect = !state.player_name.trim().is_empty();
+                    let can_connect = state.auth_token.is_some();
                     let connect_btn = egui::Button::new(
                         RichText::new("[ CONNECT ]")
                             .color(if can_connect {
@@ -123,22 +154,15 @@ pub(super) fn connect_screen(ctx: &egui::Context, state: &mut AppState, commands
                     ));
 
                     if ui.add_enabled(can_connect, connect_btn).clicked() {
-                        let url = state.ws_url();
-                        let name = state.player_name.trim().to_string();
                         let color = state.selected_color;
-                        state.pending_join = Some((name, color));
+                        state.pending_join = Some(color);
+                        let url = state.ws_url();
                         let channels = ws::spawn_ws(url);
                         commands.insert_resource(channels);
                     }
                 });
 
-                if !state.connected
-                    && state.pending_join.is_none()
-                    && state.game_state.is_none()
-                    && state.screen == Screen::Connect
-                {
-                    // No error to show yet
-                } else if !state.connected && state.pending_join.is_some() {
+                if !state.connected && state.pending_join.is_some() {
                     ui.add_space(12.0);
                     ui.label(
                         RichText::new("● CONNECTING…")
@@ -148,4 +172,22 @@ pub(super) fn connect_screen(ctx: &egui::Context, state: &mut AppState, commands
                 }
             });
         });
+}
+
+fn handle_logout(state: &mut AppState) {
+    // Fire-and-forget logout request in background
+    if let (Some(token), server, port) = (
+        state.auth_token.clone(),
+        state.server_name.clone(),
+        state.port,
+    ) {
+        let slot = state.auth_pending.0.clone();
+        std::thread::spawn(move || {
+            do_logout(&server, port, &token);
+            *slot.lock().unwrap() = Some(AuthEvent::LoggedOut);
+        });
+        state.auth_in_flight = true;
+    } else {
+        state.logout();
+    }
 }

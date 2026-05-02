@@ -138,25 +138,45 @@ pub fn process_ws_events(
         match event {
             WsEvent::Connected => {
                 state.connected = true;
+                // Send authentication token as the very first message.
+                if let Some(token) = state.auth_token.clone() {
+                    channels
+                        .action_tx
+                        .send(ClientMessage::Authenticate { token })
+                        .ok();
+                }
             }
             WsEvent::MessageReceived(msg) => match msg {
-                ServerMessage::Welcome { your_id } => {
-                    state.my_id = Some(your_id);
+                ServerMessage::Authenticated { user_id, username } => {
+                    state.my_id = Some(user_id);
+                    state.auth_username = Some(username);
                     // Move to room browser so the player can create or join a room.
                     state.screen = crate::state::Screen::RoomBrowser;
-                    // Request the current room list immediately.
                     channels.send_lobby(LobbyAction::ListRooms);
-                    // If auto-room is set (CLI), create/join it straight away.
                     if let Some(room_name) = state.auto_room.clone() {
                         channels.send_lobby(LobbyAction::CreateRoom { name: room_name });
                     }
+                }
+                ServerMessage::AuthError { message } => {
+                    state.auth_error = Some(message);
+                    state.connected = false;
+                    state.pending_join = None;
+                    // Saved token is invalid; clear it and send back to login.
+                    state.logout();
+                }
+                ServerMessage::Welcome { .. } => {
+                    // No-op: Authenticated supersedes Welcome for the auth flow.
                 }
                 ServerMessage::RoomJoined { room, your_id } => {
                     state.my_id = Some(your_id);
                     state.current_room = Some(room.clone());
                     state.error_message = None;
-                    // Auto-join as a player if we have a pending name/color.
-                    if let Some((name, color)) = state.pending_join.take() {
+                    // Auto-join as a player if we have a pending color.
+                    if let Some(color) = state.pending_join.take() {
+                        let name = state
+                            .auth_username
+                            .clone()
+                            .unwrap_or_else(|| "Operator".to_string());
                         channels.send_room(&room, powergrid_core::Action::JoinGame { name, color });
                     }
                 }

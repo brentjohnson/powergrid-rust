@@ -56,11 +56,18 @@
 
 # v0.4.1
 
+* Fix build
+
+# v0.4.2
+
 
 
 # To do...
 
-* CHECK: Make sure build successful, lobby dockerfile published.  Set up on server
+* IMPROVEMENT: implement user accounts
+* IMPROVEMENT: implement user statistics
+* IMPROVEMENT: implement game statistics
+* IMPROVEMENT: implement game state save
 * IMPROVEMENT: Square rather than circle hit-shape for city.  Add city name. Cover connection lines.
 * BUG: Two people pick same color, can't start game
 * COMPLAINT: Less reading for Nick
@@ -75,3 +82,17 @@
 * DEBUG: view hidden info (deck)
 * FUTURE: Random maps? or use Google maps? 
 * FUTURE: AI training of bots (pettingzoo?)
+
+ ┌────────────────────┬────────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────┐
+ │        Data        │                     Storage shape                      │                                 Why Postgres fits                                 │
+ ├────────────────────┼────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+ │ User accounts      │ Normal table: id, email, username, password_hash, …    │ Inherently relational — login lookups by unique columns, FK targets. Needs ACID.  │
+ ├────────────────────┼────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+ │ User statistics    │ Tables keyed by user_id (games_played, wins, elo…)     │ Aggregations, joins to accounts, indexed leaderboards.                            │
+ ├────────────────────┼────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+ │ Game statistics    │ games table + game_players join + optional             │ Relational queries ("avg score by plant id") with JSONB escape hatch for          │
+ │                    │ events_jsonb for raw history                           │ unstructured detail.                                                              │
+ ├────────────────────┼────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────┤
+ │ In-progress game   │ One row per room: room_id PRIMARY KEY, state JSONB,    │ Turn-based mutation rate is trivially handled by Postgres. JSONB is indexable and │
+ │ state              │ updated_at                                             │  avoids a second datastore.                                                       │
+ └────────────────────┴────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────┘

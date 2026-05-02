@@ -103,6 +103,13 @@ pub enum ActionError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
+    /// Sent after a successful Authenticate handshake.
+    Authenticated {
+        user_id: crate::types::PlayerId,
+        username: String,
+    },
+    /// Sent when authentication fails; connection will be closed.
+    AuthError { message: String },
     /// Sent immediately on connection so the client knows its own player ID.
     Welcome { your_id: crate::types::PlayerId },
     /// Full game state broadcast after every valid action.
@@ -129,6 +136,8 @@ pub enum ServerMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
+    /// Must be the first message sent after connecting; carries the session token.
+    Authenticate { token: String },
     /// Lobby-level actions (room management, bot management).
     Lobby(LobbyAction),
     /// In-game action, scoped to a named room.

@@ -3,7 +3,9 @@ mod connect;
 mod helpers;
 mod left_panel;
 mod lobby;
+mod login;
 mod phase_tracker;
+mod register;
 mod right_panel;
 mod room_browser;
 mod top_panel;
@@ -42,6 +44,12 @@ pub fn ui_system(
     }
 
     match state.screen {
+        Screen::Login => {
+            login::login_screen(ctx, &mut state);
+        }
+        Screen::Register => {
+            register::register_screen(ctx, &mut state);
+        }
         Screen::Connect => {
             connect::connect_screen(ctx, &mut state, &mut commands);
         }

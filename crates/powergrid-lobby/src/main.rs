@@ -1,3 +1,5 @@
+mod auth;
+mod db;
 mod driver;
 mod lobby_handler;
 mod room_handler;
@@ -7,18 +9,21 @@ mod ws;
 use axum::{
     extract::{State, WebSocketUpgrade},
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
+use db::Db;
 use powergrid_core::{actions::RoomSummary, map::Map};
 use rooms::RoomManager;
 use std::{sync::Arc, time::Duration};
+use tower_http::cors::CorsLayer;
 use tracing::info;
 
 #[derive(Clone)]
-struct AppState {
-    manager: Arc<RoomManager>,
-    bot_delay: Duration,
+pub struct AppState {
+    pub manager: Arc<RoomManager>,
+    pub bot_delay: Duration,
+    pub db: Db,
 }
 
 #[tokio::main]
@@ -38,6 +43,8 @@ async fn main() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(250);
+    let database_url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
 
     let map_str = if let Ok(path) = std::env::var("MAP_FILE") {
         std::fs::read_to_string(&path)
@@ -48,15 +55,28 @@ async fn main() {
     let map = Map::load(&map_str).unwrap_or_else(|e| panic!("Failed to parse map: {e}"));
     info!("Loaded map: {}", map.name);
 
+    let db = Db::connect(&database_url)
+        .await
+        .unwrap_or_else(|e| panic!("Failed to connect to database: {e}"));
+    db.migrate()
+        .await
+        .unwrap_or_else(|e| panic!("Failed to run migrations: {e}"));
+    info!("Database ready");
+
     let state = AppState {
         manager: Arc::new(RoomManager::new(map)),
         bot_delay: Duration::from_millis(bot_delay_ms),
+        db,
     };
 
     let app = Router::new()
         .route("/health", get(health))
         .route("/rooms", get(list_rooms))
         .route("/ws", get(ws_handler))
+        .route("/auth/register", post(auth::register))
+        .route("/auth/login", post(auth::login))
+        .route("/auth/logout", post(auth::logout))
+        .layer(CorsLayer::very_permissive())
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");
@@ -74,5 +94,5 @@ async fn list_rooms(State(state): State<AppState>) -> Json<Vec<RoomSummary>> {
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| ws::handle_socket(socket, state.manager, state.bot_delay))
+    ws.on_upgrade(move |socket| ws::handle_socket(socket, state.manager, state.bot_delay, state.db))
 }

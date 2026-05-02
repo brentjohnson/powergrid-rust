@@ -22,18 +22,18 @@ pub struct Room {
     pub game: GameState,
     pub humans: Vec<(PlayerId, mpsc::UnboundedSender<String>)>,
     pub bots: Vec<BotSlot>,
-    /// socket_id of the first human who created the room (for permission checks on lobby actions)
-    pub creator_socket: PlayerId,
+    /// user_id of the human who created the room (survives reconnects)
+    pub creator_user_id: PlayerId,
 }
 
 impl Room {
-    pub fn new(name: String, game: GameState, creator_socket: PlayerId) -> Self {
+    pub fn new(name: String, game: GameState, creator_user_id: PlayerId) -> Self {
         Self {
             name,
             game,
             humans: Vec::new(),
             bots: Vec::new(),
-            creator_socket,
+            creator_user_id,
         }
     }
 
@@ -134,7 +134,7 @@ impl RoomManager {
     pub async fn create(
         &self,
         name: String,
-        creator_socket: PlayerId,
+        creator_user_id: PlayerId,
     ) -> Result<Arc<Mutex<Room>>, String> {
         validate_room_name(&name)?;
         let key = name.to_lowercase();
@@ -144,7 +144,7 @@ impl RoomManager {
         }
         let map = (*self.default_map).clone();
         let game = GameState::new(map, 6);
-        let room = Arc::new(Mutex::new(Room::new(name, game, creator_socket)));
+        let room = Arc::new(Mutex::new(Room::new(name, game, creator_user_id)));
         rooms.insert(key, Arc::clone(&room));
         Ok(room)
     }

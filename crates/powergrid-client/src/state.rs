@@ -1,3 +1,4 @@
+use crate::auth::{AuthPendingSlot, SavedCredentials};
 use bevy::prelude::*;
 use powergrid_core::{
     actions::RoomSummary,
@@ -17,6 +18,8 @@ pub type CitySnapshot = Vec<(PlayerId, usize)>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Screen {
+    Login,
+    Register,
     Connect,
     RoomBrowser,
     Game,
@@ -26,17 +29,30 @@ pub enum Screen {
 pub struct AppState {
     pub screen: Screen,
 
+    // Auth fields
+    pub auth_token: Option<String>,
+    pub auth_username: Option<String>,
+    pub auth_user_id: Option<PlayerId>,
+    pub login_identifier: String,
+    pub login_password: String,
+    pub register_email: String,
+    pub register_username: String,
+    pub register_password: String,
+    pub auth_error: Option<String>,
+    pub auth_in_flight: bool,
+    /// Shared slot written by auth background threads, read each frame.
+    pub auth_pending: AuthPendingSlot,
+
     // Connect fields
     pub server_name: String,
     pub port: u16,
-    pub player_name: String,
     pub selected_color: PlayerColor,
 
     // Connection state
     pub connected: bool,
     pub my_id: Option<PlayerId>,
-    /// Name + color to send once we enter a room.
-    pub pending_join: Option<(String, PlayerColor)>,
+    /// Color to send once we enter a room (username comes from auth).
+    pub pending_join: Option<PlayerColor>,
 
     // Lobby / room state
     pub current_room: Option<String>,
@@ -90,24 +106,40 @@ impl AppState {
             .server
             .unwrap_or_else(|| "powergrid.onyxoryx.net".to_string());
         let port = cli.port.unwrap_or(3000);
-        let player_name = cli.name.unwrap_or_default();
         let selected_color = cli.color.unwrap_or(PlayerColor::Red);
 
-        let pending_join = if !player_name.is_empty() && cli.color.is_some() {
-            Some((player_name.clone(), selected_color))
+        // Load saved credentials; skip Login screen if they exist.
+        let saved = crate::auth::load_credentials();
+        let (screen, auth_token, auth_username, auth_user_id) = if let Some(ref c) = saved {
+            (
+                Screen::Connect,
+                Some(c.token.clone()),
+                Some(c.username.clone()),
+                Some(c.user_id),
+            )
         } else {
-            None
+            (Screen::Login, None, None, None)
         };
 
         Self {
-            screen: Screen::Connect,
+            screen,
+            auth_token,
+            auth_username,
+            auth_user_id,
+            login_identifier: String::new(),
+            login_password: String::new(),
+            register_email: String::new(),
+            register_username: String::new(),
+            register_password: String::new(),
+            auth_error: None,
+            auth_in_flight: false,
+            auth_pending: AuthPendingSlot::new(),
             server_name,
             port,
-            player_name,
             selected_color,
             connected: false,
             my_id: None,
-            pending_join,
+            pending_join: None,
             current_room: None,
             room_list: Vec::new(),
             room_name_input: String::new(),
@@ -135,6 +167,38 @@ impl AppState {
 
     pub fn ws_url(&self) -> String {
         format!("ws://{}:{}/ws", self.server_name, self.port)
+    }
+
+    /// Apply a successful auth result: store credentials and advance to Connect screen.
+    pub fn apply_auth_success(&mut self, creds: SavedCredentials) {
+        if let Err(e) = crate::auth::save_credentials(&creds) {
+            tracing::warn!("Failed to save credentials: {e}");
+        }
+        self.auth_token = Some(creds.token);
+        self.auth_username = Some(creds.username);
+        self.auth_user_id = Some(creds.user_id);
+        self.server_name = creds.server;
+        self.port = creds.port;
+        self.auth_error = None;
+        self.auth_in_flight = false;
+        self.screen = Screen::Connect;
+    }
+
+    /// Clear all auth state and return to Login screen.
+    pub fn logout(&mut self) {
+        if let Err(e) = crate::auth::clear_credentials() {
+            tracing::warn!("Failed to clear credentials: {e}");
+        }
+        self.auth_token = None;
+        self.auth_username = None;
+        self.auth_user_id = None;
+        self.auth_error = None;
+        self.auth_in_flight = false;
+        self.connected = false;
+        self.my_id = None;
+        self.current_room = None;
+        self.game_state = None;
+        self.screen = Screen::Login;
     }
 
     /// Called every time a StateUpdate arrives.
@@ -453,20 +517,17 @@ fn heap_permutations<T: Clone>(arr: &mut Vec<T>, k: usize, cb: &mut impl FnMut(&
 // ---------------------------------------------------------------------------
 
 pub struct CliArgs {
-    pub name: Option<String>,
     pub color: Option<PlayerColor>,
     pub server: Option<String>,
     pub port: Option<u16>,
     /// Auto-create/join this room name on connect (for CLI-driven testing).
     pub room: Option<String>,
-    pub auto_connect: bool,
     pub windowed: bool,
 }
 
 impl CliArgs {
     pub fn parse() -> Self {
         let mut args = std::env::args().skip(1);
-        let mut name = None;
         let mut color = None;
         let mut server = None;
         let mut port = None;
@@ -475,7 +536,6 @@ impl CliArgs {
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "--name" => name = args.next(),
                 "--color" => {
                     color = args.next().and_then(|s| match s.to_lowercase().as_str() {
                         "red" => Some(PlayerColor::Red),
@@ -505,15 +565,37 @@ impl CliArgs {
             }
         }
 
-        let auto_connect = name.is_some() && color.is_some() && server.is_some();
         Self {
-            name,
             color,
             server,
             port,
             room,
-            auto_connect,
             windowed,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bevy system: drain auth results from background threads
+// ---------------------------------------------------------------------------
+
+pub fn process_auth_events(mut state: ResMut<AppState>) {
+    if !state.auth_in_flight {
+        return;
+    }
+    let slot = state.auth_pending.clone();
+    if let Some(event) = slot.take() {
+        match event {
+            crate::auth::AuthEvent::Success(creds) => {
+                state.apply_auth_success(creds);
+            }
+            crate::auth::AuthEvent::Failure(msg) => {
+                state.auth_error = Some(msg);
+                state.auth_in_flight = false;
+            }
+            crate::auth::AuthEvent::LoggedOut => {
+                state.logout();
+            }
         }
     }
 }

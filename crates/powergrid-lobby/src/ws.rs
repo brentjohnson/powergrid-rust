@@ -1,4 +1,5 @@
 use crate::{
+    db::Db,
     lobby_handler::{handle_lobby_action, leave_room},
     room_handler::handle_room_action,
     rooms::RoomManager,
@@ -12,11 +13,11 @@ use powergrid_core::{
 use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
-use uuid::Uuid;
 
-/// Per-connection state.
+/// Per-connection state, populated after authentication.
 pub struct ConnState {
-    pub socket_id: PlayerId,
+    pub user_id: PlayerId,
+    pub username: String,
     pub current_room: Option<String>,
     pub tx: mpsc::UnboundedSender<String>,
 }
@@ -32,20 +33,13 @@ impl ConnState {
     }
 }
 
-pub async fn handle_socket(socket: WebSocket, manager: Arc<RoomManager>, bot_delay: Duration) {
-    let socket_id: PlayerId = Uuid::new_v4();
+pub async fn handle_socket(
+    socket: WebSocket,
+    manager: Arc<RoomManager>,
+    bot_delay: Duration,
+    db: Db,
+) {
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-
-    let mut conn = ConnState {
-        socket_id,
-        current_room: None,
-        tx: tx.clone(),
-    };
-
-    let welcome = serde_json::to_string(&ServerMessage::Welcome { your_id: socket_id }).unwrap();
-    let _ = tx.send(welcome);
-    info!("Client connected: {socket_id}");
-
     let (mut sink, mut stream) = socket.split();
 
     let send_task = tokio::spawn(async move {
@@ -55,6 +49,75 @@ pub async fn handle_socket(socket: WebSocket, manager: Arc<RoomManager>, bot_del
             }
         }
     });
+
+    // Pre-auth: expect Authenticate as the first message within 10 seconds.
+    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(10);
+    let auth_result = loop {
+        match tokio::time::timeout_at(deadline, stream.next()).await {
+            Err(_) => {
+                // Timeout
+                let _ = tx.send(
+                    serde_json::to_string(&ServerMessage::AuthError {
+                        message: "authentication timeout".to_string(),
+                    })
+                    .unwrap(),
+                );
+                break None;
+            }
+            Ok(None) | Ok(Some(Err(_))) => break None,
+            Ok(Some(Ok(Message::Close(_)))) => break None,
+            Ok(Some(Ok(Message::Text(text)))) => {
+                match serde_json::from_str::<ClientMessage>(&text) {
+                    Ok(ClientMessage::Authenticate { token }) => {
+                        match db.validate_token(&token).await {
+                            Ok((user_id, username)) => break Some((user_id, username)),
+                            Err(_) => {
+                                let _ = tx.send(
+                                    serde_json::to_string(&ServerMessage::AuthError {
+                                        message: "invalid or expired token".to_string(),
+                                    })
+                                    .unwrap(),
+                                );
+                                break None;
+                            }
+                        }
+                    }
+                    _ => {
+                        let _ = tx.send(
+                            serde_json::to_string(&ServerMessage::AuthError {
+                                message: "authentication required as first message".to_string(),
+                            })
+                            .unwrap(),
+                        );
+                        break None;
+                    }
+                }
+            }
+            Ok(Some(Ok(_))) => continue,
+        }
+    };
+
+    let (user_id, username) = match auth_result {
+        Some(u) => u,
+        None => {
+            send_task.abort();
+            return;
+        }
+    };
+
+    let mut conn = ConnState {
+        user_id,
+        username: username.clone(),
+        current_room: None,
+        tx: tx.clone(),
+    };
+
+    conn.send_msg(&ServerMessage::Authenticated {
+        user_id,
+        username: username.clone(),
+    });
+    conn.send_msg(&ServerMessage::Welcome { your_id: user_id });
+    info!("Client authenticated: {user_id} ({username})");
 
     while let Some(Ok(msg)) = stream.next().await {
         let text = match msg {
@@ -66,7 +129,7 @@ pub async fn handle_socket(socket: WebSocket, manager: Arc<RoomManager>, bot_del
         let client_msg: ClientMessage = match serde_json::from_str(&text) {
             Ok(m) => m,
             Err(e) => {
-                warn!("Malformed message from {socket_id}: {e}");
+                warn!("Malformed message from {user_id}: {e}");
                 conn.send_msg(&ServerMessage::LobbyError {
                     message: format!("invalid message: {e}"),
                 });
@@ -75,6 +138,9 @@ pub async fn handle_socket(socket: WebSocket, manager: Arc<RoomManager>, bot_del
         };
 
         match client_msg {
+            ClientMessage::Authenticate { .. } => {
+                // Already authenticated; ignore duplicate.
+            }
             ClientMessage::Lobby(action) => {
                 handle_lobby_action(action, &mut conn, &manager).await;
             }
@@ -84,8 +150,7 @@ pub async fn handle_socket(socket: WebSocket, manager: Arc<RoomManager>, bot_del
         }
     }
 
-    // Disconnect cleanup.
     leave_room(&mut conn, &manager).await;
-    info!("Client disconnected: {socket_id}");
+    info!("Client disconnected: {user_id} ({username})");
     send_task.abort();
 }

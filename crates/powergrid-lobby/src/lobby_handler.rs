@@ -19,14 +19,14 @@ pub async fn handle_lobby_action(
         }
 
         LobbyAction::CreateRoom { name } => {
-            match manager.create(name.clone(), conn.socket_id).await {
+            match manager.create(name.clone(), conn.user_id).await {
                 Err(e) => {
                     conn.send_msg(&ServerMessage::LobbyError { message: e });
                 }
                 Ok(room_arc) => {
                     conn.current_room = Some(name.to_lowercase());
                     let mut room = room_arc.lock().await;
-                    room.humans.push((conn.socket_id, conn.tx.clone()));
+                    room.humans.push((conn.user_id, conn.tx.clone()));
                     let state_json = serde_json::to_string(&ServerMessage::StateUpdate(Box::new(
                         room.game.clone(),
                     )))
@@ -34,12 +34,12 @@ pub async fn handle_lobby_action(
                     drop(room);
                     conn.send_msg(&ServerMessage::RoomJoined {
                         room: name.clone(),
-                        your_id: conn.socket_id,
+                        your_id: conn.user_id,
                     });
                     conn.send_raw(&state_json);
                     info!(
-                        "Socket {} created and joined room '{}'",
-                        conn.socket_id, name
+                        "User {} ({}) created and joined room '{}'",
+                        conn.user_id, conn.username, name
                     );
                 }
             }
@@ -62,7 +62,28 @@ pub async fn handle_lobby_action(
                 return;
             }
             let mut room = room_arc.lock().await;
-            room.humans.push((conn.socket_id, conn.tx.clone()));
+
+            // Reconnect: if the user already has a seat, replace their sender.
+            if let Some(idx) = room.humans.iter().position(|(id, _)| *id == conn.user_id) {
+                room.humans[idx] = (conn.user_id, conn.tx.clone());
+                conn.current_room = Some(name.to_lowercase());
+                let state_json =
+                    serde_json::to_string(&ServerMessage::StateUpdate(Box::new(room.game.clone())))
+                        .unwrap();
+                drop(room);
+                conn.send_msg(&ServerMessage::RoomJoined {
+                    room: name.clone(),
+                    your_id: conn.user_id,
+                });
+                conn.send_raw(&state_json);
+                info!(
+                    "User {} ({}) reconnected to room '{}'",
+                    conn.user_id, conn.username, name
+                );
+                return;
+            }
+
+            room.humans.push((conn.user_id, conn.tx.clone()));
             conn.current_room = Some(name.to_lowercase());
             let state_json =
                 serde_json::to_string(&ServerMessage::StateUpdate(Box::new(room.game.clone())))
@@ -70,10 +91,13 @@ pub async fn handle_lobby_action(
             drop(room);
             conn.send_msg(&ServerMessage::RoomJoined {
                 room: name.clone(),
-                your_id: conn.socket_id,
+                your_id: conn.user_id,
             });
             conn.send_raw(&state_json);
-            info!("Socket {} joined room '{}'", conn.socket_id, name);
+            info!(
+                "User {} ({}) joined room '{}'",
+                conn.user_id, conn.username, name
+            );
         }
 
         LobbyAction::LeaveRoom => {
@@ -100,8 +124,7 @@ pub async fn handle_lobby_action(
                 Some(r) => r,
             };
             let mut room = room_arc.lock().await;
-            // Only the room creator (host) may add bots, and only in the lobby phase.
-            if room.creator_socket != conn.socket_id {
+            if room.creator_user_id != conn.user_id {
                 conn.send_msg(&ServerMessage::LobbyError {
                     message: "only the room host can add bots".to_string(),
                 });
@@ -144,7 +167,7 @@ pub async fn handle_lobby_action(
                 Some(r) => r,
             };
             let mut room = room_arc.lock().await;
-            if room.creator_socket != conn.socket_id {
+            if room.creator_user_id != conn.user_id {
                 conn.send_msg(&ServerMessage::LobbyError {
                     message: "only the room host can remove bots".to_string(),
                 });
@@ -163,8 +186,8 @@ pub async fn handle_lobby_action(
     }
 }
 
-/// Remove a socket from its current room. If the socket had joined as a player
-/// and the game is in `Phase::Lobby`, remove the player record so their slot is freed.
+/// Remove a user from their current room. If the game is in `Phase::Lobby`,
+/// also remove their player record so their slot is freed.
 /// Outside lobby, keep the record so they can reconnect.
 pub async fn leave_room(conn: &mut ConnState, manager: &Arc<RoomManager>) {
     let room_name = match conn.current_room.take() {
@@ -176,21 +199,19 @@ pub async fn leave_room(conn: &mut ConnState, manager: &Arc<RoomManager>) {
         Some(r) => r,
     };
     let mut room = room_arc.lock().await;
-    let socket_id = conn.socket_id;
+    let user_id = conn.user_id;
 
-    // Remove from human sender list.
-    room.humans.retain(|(id, _)| *id != socket_id);
+    room.humans.retain(|(id, _)| *id != user_id);
 
-    // If in lobby phase, remove the player record so the color/name slot is freed.
     if matches!(room.game.phase, Phase::Lobby) {
-        room.game.players.retain(|p| p.id != socket_id);
-        room.game.player_order.retain(|id| *id != socket_id);
+        room.game.players.retain(|p| p.id != user_id);
+        room.game.player_order.retain(|id| *id != user_id);
     }
 
-    // If the creator left, assign a new creator (first remaining human, if any).
-    if room.creator_socket == socket_id {
+    // If the creator left, assign a new host (first remaining human).
+    if room.creator_user_id == user_id {
         if let Some((new_host, _)) = room.humans.first() {
-            room.creator_socket = *new_host;
+            room.creator_user_id = *new_host;
         }
     }
 
@@ -200,13 +221,15 @@ pub async fn leave_room(conn: &mut ConnState, manager: &Arc<RoomManager>) {
     .unwrap();
     conn.send_raw(&left_msg);
 
-    // Broadcast updated state to remaining players.
     if !room.humans.is_empty() {
         let msg = ServerMessage::StateUpdate(Box::new(room.game.clone()));
         room.broadcast_msg(&msg);
     }
 
-    info!("Socket {} left room '{}'", socket_id, room_name);
+    info!(
+        "User {} ({}) left room '{}'",
+        user_id, conn.username, room_name
+    );
     drop(room);
     manager.drop_if_finished(&room_name).await;
 }
