@@ -58,9 +58,9 @@
 
 * Fix build
 
-# v0.4.2
+# v0.5.0
 
-
+* Local (offline) play
 
 # To do...
 
