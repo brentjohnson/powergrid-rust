@@ -20,6 +20,7 @@ struct Args {
     color: PlayerColor,
     server: String,
     port: u16,
+    client_id: PlayerId,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -28,6 +29,7 @@ fn parse_args() -> Result<Args, String> {
     let mut color: Option<PlayerColor> = None;
     let mut server = String::from("localhost");
     let mut port: u16 = 3000;
+    let mut client_id: Option<PlayerId> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -50,6 +52,14 @@ fn parse_args() -> Result<Args, String> {
                 let s = args.get(i).ok_or("--port requires a value")?;
                 port = s.parse::<u16>().map_err(|_| "invalid port")?;
             }
+            "--client-id" => {
+                i += 1;
+                let s = args.get(i).ok_or("--client-id requires a value")?;
+                client_id = Some(
+                    s.parse::<PlayerId>()
+                        .map_err(|_| "invalid UUID for --client-id")?,
+                );
+            }
             other => return Err(format!("unknown argument: {other}")),
         }
         i += 1;
@@ -60,6 +70,7 @@ fn parse_args() -> Result<Args, String> {
         color: color.ok_or("--color is required")?,
         server,
         port,
+        client_id: client_id.unwrap_or_else(PlayerId::new_v4),
     })
 }
 
@@ -94,28 +105,31 @@ async fn main() {
         Ok(a) => a,
         Err(e) => {
             eprintln!("Error: {e}");
-            eprintln!("Usage: powergrid-bot --name <name> --color <color> [--server <host>] [--port <port>]");
+            eprintln!("Usage: powergrid-bot --name <name> --color <color> [--server <host>] [--port <port>] [--client-id <uuid>]");
             eprintln!("Colors: red, blue, green, yellow, purple, white");
             std::process::exit(1);
         }
     };
 
     let url = format!("ws://{}:{}/ws", args.server, args.port);
-    info!("Bot '{}' ({:?}) connecting to {url}", args.name, args.color);
+    info!(
+        "Bot '{}' ({:?}) id={} connecting to {url}",
+        args.name, args.color, args.client_id
+    );
 
-    run_bot(url, args.name, args.color).await;
+    run_bot(url, args.name, args.color, args.client_id).await;
 }
 
 // ---------------------------------------------------------------------------
 // Bot loop — reconnects forever
 // ---------------------------------------------------------------------------
 
-async fn run_bot(url: String, name: String, color: PlayerColor) {
+async fn run_bot(url: String, name: String, color: PlayerColor, client_id: PlayerId) {
     loop {
         match connect_async(&url).await {
             Ok((stream, _)) => {
                 info!("Connected to {url}");
-                match bot_session(stream, &name, color).await {
+                match bot_session(stream, &name, color, client_id).await {
                     SessionResult::GameOver => {
                         info!("Game over — exiting");
                         return;
@@ -142,9 +156,10 @@ async fn bot_session(
     stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
     name: &str,
     color: PlayerColor,
+    client_id: PlayerId,
 ) -> SessionResult {
     let (mut write, mut read) = stream.split();
-    let mut my_id: Option<PlayerId> = None;
+    let my_id = client_id;
 
     while let Some(msg) = read.next().await {
         let text = match msg {
@@ -163,12 +178,12 @@ async fn bot_session(
         };
 
         match server_msg {
-            ServerMessage::Welcome { your_id } => {
-                my_id = Some(your_id);
-                info!("Received Welcome as {your_id}; sending JoinGame");
+            ServerMessage::Welcome { .. } => {
+                info!("Received Welcome; sending JoinGame as {client_id}");
                 let action = Action::JoinGame {
                     name: name.to_string(),
                     color,
+                    client_id,
                 };
                 if write
                     .send(WsMessage::Text(
@@ -182,7 +197,7 @@ async fn bot_session(
             }
 
             ServerMessage::StateUpdate(gs) => {
-                let Some(id) = my_id else { continue };
+                let id = my_id;
 
                 if let powergrid_core::types::Phase::GameOver { winner } = gs.phase {
                     if let Some(winner_player) = gs.player(winner) {

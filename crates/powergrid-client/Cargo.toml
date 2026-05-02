@@ -18,6 +18,7 @@ egui = "0.33"
 crossbeam-channel = "0.5"
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
+confy = "0.6"
 
 # Speed up incremental dev builds significantly
 [features]

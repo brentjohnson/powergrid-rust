@@ -1,5 +1,6 @@
 mod card_painter;
 mod map_panel;
+mod prefs;
 mod state;
 mod theme;
 mod ui;

@@ -10,21 +10,21 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 pub async fn handle_socket(socket: WebSocket, state: SharedState) {
-    let player_id = Uuid::new_v4();
+    // Temporary id for pre-join routing; replaced by client_id on JoinGame.
+    let temp_id = Uuid::new_v4();
+    let mut current_id = temp_id;
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
 
-    // Register the client and send Welcome so the client knows its own ID.
     {
         let mut s = state.lock().await;
-        s.clients.push((player_id, tx.clone()));
-        info!("Client connected: {player_id}");
+        s.clients.push((temp_id, tx.clone()));
+        info!("Client connected: {temp_id}");
     }
-    let welcome = serde_json::to_string(&ServerMessage::Welcome { your_id: player_id }).unwrap();
+    let welcome = serde_json::to_string(&ServerMessage::Welcome { your_id: temp_id }).unwrap();
     let _ = tx.send(welcome);
 
     let (mut sink, mut stream) = socket.split();
 
-    // Spawn a task to forward outbound messages to the WebSocket.
     let send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             if sink.send(Message::Text(msg)).await.is_err() {
@@ -33,7 +33,6 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
         }
     });
 
-    // Handle inbound messages.
     while let Some(Ok(msg)) = stream.next().await {
         let text = match msg {
             Message::Text(t) => t.to_string(),
@@ -44,22 +43,36 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
         let action: Action = match serde_json::from_str(&text) {
             Ok(a) => a,
             Err(e) => {
-                warn!("Malformed action from {player_id}: {e}");
-                send_error(&state, player_id, format!("Invalid message: {e}")).await;
+                warn!("Malformed action from {current_id}: {e}");
+                send_error(&state, current_id, format!("Invalid message: {e}")).await;
                 continue;
             }
         };
 
-        info!("Action from {player_id}: {action:?}");
+        // On JoinGame, adopt the client-supplied id as the authoritative PlayerId.
+        if let Action::JoinGame { client_id, .. } = &action {
+            let client_id = *client_id;
+            if client_id != current_id {
+                let mut s = state.lock().await;
+                // Re-key the connection entry: remove the temp entry and replace with client_id.
+                // If an entry for client_id already exists (player is rejoining), replace its sender.
+                s.clients
+                    .retain(|(id, _)| *id != current_id && *id != client_id);
+                s.clients.push((client_id, tx.clone()));
+                current_id = client_id;
+                info!("Client {temp_id} adopted player id {current_id}");
+            }
+        }
+
+        info!("Action from {current_id}: {action:?}");
 
         let mut s = state.lock().await;
-        match apply_action(&mut s.game, player_id, action) {
+        match apply_action(&mut s.game, current_id, action) {
             Ok(()) => {
                 info!(
-                    "Action from {player_id} succeeded; broadcasting state to {} client(s)",
+                    "Action from {current_id} succeeded; broadcasting state to {} client(s)",
                     s.clients.len()
                 );
-                // Broadcast full state to all clients.
                 let msg =
                     serde_json::to_string(&ServerMessage::StateUpdate(Box::new(s.game.clone())))
                         .unwrap();
@@ -67,7 +80,7 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                     .retain(|(_, tx): &(Uuid, _)| tx.send(msg.clone()).is_ok());
             }
             Err(e) => {
-                warn!("Action from {player_id} rejected: {e}");
+                warn!("Action from {current_id} rejected: {e}");
                 let err_msg = serde_json::to_string(&ServerMessage::ActionError {
                     message: e.to_string(),
                 })
@@ -75,7 +88,7 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
                 if let Some((_, tx)) = s
                     .clients
                     .iter()
-                    .find(|(id, _): &&(Uuid, _)| *id == player_id)
+                    .find(|(id, _): &&(Uuid, _)| *id == current_id)
                 {
                     let _ = tx.send(err_msg);
                 }
@@ -83,11 +96,11 @@ pub async fn handle_socket(socket: WebSocket, state: SharedState) {
         }
     }
 
-    // Disconnect.
+    // Disconnect: remove the current (possibly client-owned) id from the connection list.
     {
         let mut s = state.lock().await;
-        s.clients.retain(|(id, _)| *id != player_id);
-        info!("Client disconnected: {player_id}");
+        s.clients.retain(|(id, _)| *id != current_id);
+        info!("Client disconnected: {current_id}");
     }
 
     send_task.abort();

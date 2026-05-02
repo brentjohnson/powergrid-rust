@@ -18,7 +18,9 @@ pub async fn handle_lobby_action(
             conn.send_msg(&msg);
         }
 
-        LobbyAction::CreateRoom { name } => {
+        LobbyAction::CreateRoom { name, client_id } => {
+            // Adopt the stable client-owned id before creating the room.
+            conn.socket_id = client_id;
             match manager.create(name.clone(), conn.socket_id).await {
                 Err(e) => {
                     conn.send_msg(&ServerMessage::LobbyError { message: e });
@@ -38,14 +40,14 @@ pub async fn handle_lobby_action(
                     });
                     conn.send_raw(&state_json);
                     info!(
-                        "Socket {} created and joined room '{}'",
+                        "Player {} created and joined room '{}'",
                         conn.socket_id, name
                     );
                 }
             }
         }
 
-        LobbyAction::JoinRoom { name } => {
+        LobbyAction::JoinRoom { name, client_id } => {
             let room_arc = match manager.get(&name).await {
                 None => {
                     conn.send_msg(&ServerMessage::LobbyError {
@@ -61,9 +63,18 @@ pub async fn handle_lobby_action(
                 });
                 return;
             }
-            let mut room = room_arc.lock().await;
-            room.humans.push((conn.socket_id, conn.tx.clone()));
+            // Adopt the stable client-owned id.
+            conn.socket_id = client_id;
             conn.current_room = Some(name.to_lowercase());
+            let mut room = room_arc.lock().await;
+            // Replace the sender if the player is already registered (reconnect), else add new.
+            if let Some(entry) = room.humans.iter_mut().find(|(id, _)| *id == client_id) {
+                entry.1 = conn.tx.clone();
+                info!("Player {} reconnected to room '{}'", client_id, name);
+            } else {
+                room.humans.push((conn.socket_id, conn.tx.clone()));
+                info!("Player {} joined room '{}'", conn.socket_id, name);
+            }
             let state_json =
                 serde_json::to_string(&ServerMessage::StateUpdate(Box::new(room.game.clone())))
                     .unwrap();
@@ -73,7 +84,6 @@ pub async fn handle_lobby_action(
                 your_id: conn.socket_id,
             });
             conn.send_raw(&state_json);
-            info!("Socket {} joined room '{}'", conn.socket_id, name);
         }
 
         LobbyAction::LeaveRoom => {

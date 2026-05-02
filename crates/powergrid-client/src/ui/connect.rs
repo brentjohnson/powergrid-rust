@@ -4,6 +4,7 @@ use egui::{Color32, RichText};
 use powergrid_core::types::PlayerColor;
 
 use crate::{
+    prefs::{self, ClientPrefs},
     state::{player_color_to_egui, AppState, Screen},
     theme, ws,
 };
@@ -126,6 +127,10 @@ pub(super) fn connect_screen(ctx: &egui::Context, state: &mut AppState, commands
                         let url = state.ws_url();
                         let name = state.player_name.trim().to_string();
                         let color = state.selected_color;
+                        prefs::save(&ClientPrefs {
+                            client_id: state.client_id,
+                            player_name: name.clone(),
+                        });
                         state.pending_join = Some((name, color));
                         let channels = ws::spawn_ws(url);
                         commands.insert_resource(channels);

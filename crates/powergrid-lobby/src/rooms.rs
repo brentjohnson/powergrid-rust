@@ -56,6 +56,7 @@ impl Room {
             Action::JoinGame {
                 name: bot_name.clone(),
                 color,
+                client_id: bot_id,
             },
         )
         .map_err(|e| e.to_string())?;

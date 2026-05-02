@@ -1,3 +1,4 @@
+use crate::prefs;
 use bevy::prelude::*;
 use powergrid_core::{
     actions::RoomSummary,
@@ -34,6 +35,8 @@ pub struct AppState {
 
     // Connection state
     pub connected: bool,
+    /// Stable UUID generated once on first launch and persisted in the OS config dir.
+    pub client_id: PlayerId,
     pub my_id: Option<PlayerId>,
     /// Name + color to send once we enter a room.
     pub pending_join: Option<(String, PlayerColor)>,
@@ -86,12 +89,17 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(cli: CliArgs) -> Self {
+        let saved = prefs::load();
+
         let server_name = cli
             .server
             .unwrap_or_else(|| "powergrid.onyxoryx.net".to_string());
         let port = cli.port.unwrap_or(3000);
-        let player_name = cli.name.unwrap_or_default();
+        // CLI --name takes precedence; fall back to saved name.
+        let player_name = cli.name.unwrap_or(saved.player_name);
         let selected_color = cli.color.unwrap_or(PlayerColor::Red);
+
+        let client_id = saved.client_id;
 
         let pending_join = if !player_name.is_empty() && cli.color.is_some() {
             Some((player_name.clone(), selected_color))
@@ -106,7 +114,8 @@ impl AppState {
             player_name,
             selected_color,
             connected: false,
-            my_id: None,
+            client_id,
+            my_id: Some(client_id),
             pending_join,
             current_room: None,
             room_list: Vec::new(),

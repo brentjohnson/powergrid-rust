@@ -79,6 +79,7 @@ pub(super) fn room_browser_screen(
                             send_lobby(
                                 LobbyAction::CreateRoom {
                                     name: room_name.clone(),
+                                    client_id: state.client_id,
                                 },
                                 channels,
                             );
@@ -108,7 +109,13 @@ pub(super) fn room_browser_screen(
                         ));
 
                         if ui.add_enabled(valid, join_btn).clicked() {
-                            send_lobby(LobbyAction::JoinRoom { name: room_name }, channels);
+                            send_lobby(
+                                LobbyAction::JoinRoom {
+                                    name: room_name,
+                                    client_id: state.client_id,
+                                },
+                                channels,
+                            );
                         }
                     });
                 });
@@ -184,7 +191,10 @@ pub(super) fn room_browser_screen(
                                             {
                                                 state.room_name_input = room_name.clone();
                                                 send_lobby(
-                                                    LobbyAction::JoinRoom { name: room_name },
+                                                    LobbyAction::JoinRoom {
+                                                        name: room_name,
+                                                        client_id: state.client_id,
+                                                    },
                                                     channels,
                                                 );
                                             }

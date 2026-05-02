@@ -60,7 +60,10 @@
 
 # To do...
 
-* CHECK: Make sure build successful, lobby dockerfile published.  Set up on server
+* IMPROVEMENT: implement user accounts
+* IMPROVEMENT: implement user statistics
+* IMPROVEMENT: implement game statistics
+* IMPROVEMENT: implement game state save
 * IMPROVEMENT: Square rather than circle hit-shape for city.  Add city name. Cover connection lines.
 * BUG: Two people pick same color, can't start game
 * COMPLAINT: Less reading for Nick

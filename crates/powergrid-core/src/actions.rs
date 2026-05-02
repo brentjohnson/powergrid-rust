@@ -6,8 +6,13 @@ use thiserror::Error;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
-    /// Join the game lobby.
-    JoinGame { name: String, color: PlayerColor },
+    /// Join the game lobby.  `client_id` is the caller's stable UUID (client-owned); the server
+    /// uses it as the authoritative PlayerId so reconnecting clients rejoin the same Player record.
+    JoinGame {
+        name: String,
+        color: PlayerColor,
+        client_id: PlayerId,
+    },
     /// Host starts the game (transitions Lobby → PlayerOrder → Auction).
     StartGame,
     /// During auction: select a plant to put up for bid.
@@ -49,8 +54,6 @@ pub enum Action {
 pub enum ActionError {
     #[error("game is full")]
     GameFull,
-    #[error("name already taken")]
-    NameTaken,
     #[error("color already taken")]
     ColorTaken,
     #[error("only the host can start the game")]
@@ -143,10 +146,10 @@ pub enum ClientMessage {
 pub enum LobbyAction {
     /// List all current rooms.
     ListRooms,
-    /// Create a new room with the given name.
-    CreateRoom { name: String },
-    /// Join an existing room.
-    JoinRoom { name: String },
+    /// Create a new room with the given name.  `client_id` is the caller's stable UUID.
+    CreateRoom { name: String, client_id: PlayerId },
+    /// Join an existing room.  `client_id` is the caller's stable UUID.
+    JoinRoom { name: String, client_id: PlayerId },
     /// Leave the current room.
     LeaveRoom,
     /// Add an in-process bot to the current room (host only, lobby phase only).
@@ -242,6 +245,7 @@ mod tests {
     fn test_client_message_lobby_serde_roundtrip() {
         let msg = ClientMessage::Lobby(LobbyAction::CreateRoom {
             name: "test-room".to_string(),
+            client_id: Uuid::new_v4(),
         });
         let json = serde_json::to_string(&msg).unwrap();
         // Verify the wire format: type=lobby, action=create_room, name=test-room all in one object.
@@ -249,7 +253,7 @@ mod tests {
         assert!(json.contains("\"action\":\"create_room\""), "json: {json}");
         let parsed: ClientMessage = serde_json::from_str(&json).unwrap();
         assert!(
-            matches!(parsed, ClientMessage::Lobby(LobbyAction::CreateRoom { name }) if name == "test-room")
+            matches!(parsed, ClientMessage::Lobby(LobbyAction::CreateRoom { name, .. }) if name == "test-room")
         );
     }
 

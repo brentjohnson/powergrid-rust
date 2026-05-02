@@ -12,7 +12,7 @@ pub fn apply_action(
     action: Action,
 ) -> Result<(), ActionError> {
     match action {
-        Action::JoinGame { name, color } => handle_join(state, actor, name, color),
+        Action::JoinGame { name, color, .. } => handle_join(state, actor, name, color),
         Action::StartGame => handle_start(state, actor),
         Action::SelectPlant { plant_number } => handle_select_plant(state, actor, plant_number),
         Action::PlaceBid { amount } => handle_place_bid(state, actor, amount),
@@ -45,20 +45,35 @@ fn handle_join(
     color: PlayerColor,
 ) -> Result<(), ActionError> {
     if !matches!(state.phase, Phase::Lobby) {
+        // Allow rejoin outside the lobby phase so a reconnecting client can rebind.
+        if state.players.iter().any(|p| p.id == actor) {
+            // No state change needed — the server layer already rebound the sender.
+            return Ok(());
+        }
         return Err(ActionError::WrongPhase);
     }
+
+    // If a player with this id already exists (reconnect during lobby), update their display
+    // name and confirm the color is still available (or already theirs).
+    if let Some(idx) = state.players.iter().position(|p| p.id == actor) {
+        let current_color = state.players[idx].color;
+        if current_color != color && state.players.iter().any(|p| p.color == color) {
+            return Err(ActionError::ColorTaken);
+        }
+        state.players[idx].name = name;
+        state.players[idx].color = color;
+        return Ok(());
+    }
+
     if state.players.len() >= 6 {
         return Err(ActionError::GameFull);
-    }
-    if state.players.iter().any(|p| p.name == name) {
-        return Err(ActionError::NameTaken);
     }
     if state.players.iter().any(|p| p.color == color) {
         return Err(ActionError::ColorTaken);
     }
 
     let mut player = Player::new(name.clone(), color);
-    player.id = actor; // use the id assigned by the server
+    player.id = actor;
     state.players.push(player);
     state.log(format!("{} joined the game", name));
     Ok(())
@@ -1666,6 +1681,7 @@ mod tests {
             Action::JoinGame {
                 name: "Alice".into(),
                 color: PlayerColor::Red,
+                client_id: p1,
             },
         )
         .unwrap();
@@ -1675,6 +1691,7 @@ mod tests {
             Action::JoinGame {
                 name: "Bob".into(),
                 color: PlayerColor::Blue,
+                client_id: p2,
             },
         )
         .unwrap();
@@ -1684,6 +1701,7 @@ mod tests {
             Action::JoinGame {
                 name: "Carol".into(),
                 color: PlayerColor::Yellow,
+                client_id: p3,
             },
         )
         .unwrap();
@@ -1700,6 +1718,7 @@ mod tests {
             Action::JoinGame {
                 name: "Alice".into(),
                 color: PlayerColor::Red,
+                client_id: p1,
             },
         )
         .unwrap();
@@ -1709,6 +1728,7 @@ mod tests {
             Action::JoinGame {
                 name: "Bob".into(),
                 color: PlayerColor::Blue,
+                client_id: p2,
             },
         )
         .unwrap();
@@ -1771,7 +1791,7 @@ mod tests {
     }
 
     #[test]
-    fn test_duplicate_name_rejected() {
+    fn test_duplicate_names_allowed() {
         let mut state = GameState::new_with_seed(test_map(), 2, 42);
         let p1 = uuid::Uuid::new_v4();
         let p2 = uuid::Uuid::new_v4();
@@ -1781,18 +1801,51 @@ mod tests {
             Action::JoinGame {
                 name: "Alice".into(),
                 color: PlayerColor::Red,
+                client_id: p1,
             },
         )
         .unwrap();
-        let err = apply_action(
+        // Different player id, same display name — must succeed.
+        apply_action(
             &mut state,
             p2,
             Action::JoinGame {
                 name: "Alice".into(),
                 color: PlayerColor::Blue,
+                client_id: p2,
             },
-        );
-        assert!(matches!(err, Err(ActionError::NameTaken)));
+        )
+        .unwrap();
+        assert_eq!(state.players.len(), 2);
+    }
+
+    #[test]
+    fn test_rejoin_lobby() {
+        let mut state = GameState::new_with_seed(test_map(), 2, 42);
+        let p1 = uuid::Uuid::new_v4();
+        apply_action(
+            &mut state,
+            p1,
+            Action::JoinGame {
+                name: "Alice".into(),
+                color: PlayerColor::Red,
+                client_id: p1,
+            },
+        )
+        .unwrap();
+        // Same player id, updated name — treated as rejoin, no new Player added.
+        apply_action(
+            &mut state,
+            p1,
+            Action::JoinGame {
+                name: "Alicia".into(),
+                color: PlayerColor::Red,
+                client_id: p1,
+            },
+        )
+        .unwrap();
+        assert_eq!(state.players.len(), 1);
+        assert_eq!(state.players[0].name, "Alicia");
     }
 
     #[test]
@@ -2874,6 +2927,7 @@ mod tests {
                 Action::JoinGame {
                     name: names[i].into(),
                     color: colors[i],
+                    client_id: id,
                 },
             )
             .unwrap();

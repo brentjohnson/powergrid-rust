@@ -140,24 +140,32 @@ pub fn process_ws_events(
                 state.connected = true;
             }
             WsEvent::MessageReceived(msg) => match msg {
-                ServerMessage::Welcome { your_id } => {
-                    state.my_id = Some(your_id);
+                ServerMessage::Welcome { .. } => {
                     // Move to room browser so the player can create or join a room.
                     state.screen = crate::state::Screen::RoomBrowser;
                     // Request the current room list immediately.
                     channels.send_lobby(LobbyAction::ListRooms);
                     // If auto-room is set (CLI), create/join it straight away.
                     if let Some(room_name) = state.auto_room.clone() {
-                        channels.send_lobby(LobbyAction::CreateRoom { name: room_name });
+                        channels.send_lobby(LobbyAction::CreateRoom {
+                            name: room_name,
+                            client_id: state.client_id,
+                        });
                     }
                 }
-                ServerMessage::RoomJoined { room, your_id } => {
-                    state.my_id = Some(your_id);
+                ServerMessage::RoomJoined { room, .. } => {
                     state.current_room = Some(room.clone());
                     state.error_message = None;
                     // Auto-join as a player if we have a pending name/color.
                     if let Some((name, color)) = state.pending_join.take() {
-                        channels.send_room(&room, powergrid_core::Action::JoinGame { name, color });
+                        channels.send_room(
+                            &room,
+                            powergrid_core::Action::JoinGame {
+                                name,
+                                color,
+                                client_id: state.client_id,
+                            },
+                        );
                     }
                 }
                 ServerMessage::RoomLeft { .. } => {
