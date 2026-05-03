@@ -102,6 +102,9 @@ pub struct AppState {
     pub city_history: Vec<CitySnapshot>,
     last_recorded_round: u32,
 
+    /// Elapsed seconds (from Bevy Time) when the last ListRooms was sent.
+    pub room_list_last_refresh: f64,
+
     // ESC menu overlay
     pub menu_open: bool,
 
@@ -173,6 +176,7 @@ impl AppState {
             power_fuel_coal: 0,
             city_history: Vec::new(),
             last_recorded_round: 0,
+            room_list_last_refresh: f64::NEG_INFINITY,
             menu_open: false,
             local_name: "You".to_string(),
             local_color: PlayerColor::Red,

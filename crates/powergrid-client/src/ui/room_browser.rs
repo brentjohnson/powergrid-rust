@@ -118,25 +118,7 @@ pub(super) fn room_browser_screen(
                 // Room list
                 theme::neon_frame().show(ui, |ui| {
                     ui.set_width(440.0);
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("ACTIVE ROOMS").color(theme::TEXT_DIM).small());
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        RichText::new("[ REFRESH ]")
-                                            .color(theme::NEON_CYAN)
-                                            .monospace(),
-                                    )
-                                    .fill(theme::BG_WIDGET)
-                                    .stroke(egui::Stroke::new(1.0, theme::NEON_CYAN)),
-                                )
-                                .clicked()
-                            {
-                                send_lobby(LobbyAction::ListRooms, channels);
-                            }
-                        });
-                    });
+                    ui.label(RichText::new("ACTIVE ROOMS").color(theme::TEXT_DIM).small());
                     ui.add_space(8.0);
 
                     if state.room_list.is_empty() {

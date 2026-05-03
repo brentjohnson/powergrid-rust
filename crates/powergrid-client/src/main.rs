@@ -43,11 +43,35 @@ fn main() {
         })
         .insert_resource(app_state)
         .add_systems(Startup, spawn_camera)
-        .add_systems(Update, (state::process_auth_events, ws::process_ws_events))
+        .add_systems(
+            Update,
+            (
+                state::process_auth_events,
+                ws::process_ws_events,
+                auto_refresh_room_list,
+            ),
+        )
         .add_systems(EguiPrimaryContextPass, ui::ui_system)
         .run();
 }
 
 fn spawn_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
+}
+
+fn auto_refresh_room_list(
+    mut state: ResMut<AppState>,
+    channels: Option<Res<ws::WsChannels>>,
+    time: Res<Time>,
+) {
+    if state.screen != state::Screen::RoomBrowser {
+        return;
+    }
+    let now = time.elapsed_secs_f64();
+    if now - state.room_list_last_refresh >= 10.0 {
+        if let Some(ch) = channels {
+            ch.send_lobby(powergrid_core::actions::LobbyAction::ListRooms);
+        }
+        state.room_list_last_refresh = now;
+    }
 }

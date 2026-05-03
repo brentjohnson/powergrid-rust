@@ -65,14 +65,15 @@
 # v0.5.1
 
 * IMPROVEMENT: implement user accounts
+* IMPROVEMENT: Remove connect screen for on-line. Just use default or command line arg
+* IMPROVEMENT: Dynamically refresh active game list. Remove "refresh" button
 
 
 # To do...
 
+* REFACTOR: continue with PR 2 and PR 3 in architecture plan
 * BUG: local game not showing individual bot actions
 * BUG: local game "back to main menu" crashes client
-* IMPROVEMENT: Remove connect screen for on-line. Just use default or command line arg
-* IMPROVEMENT: Dynamically refresh active game list. Remove "refresh" button
 * IMPROVEMENT: Click on "active" game to populate the name
 * IMPROVEMENT: Existing games should be marked started/not started and if you are in them
 * IMPROVEMENT: don't select color on connect, select for each game
