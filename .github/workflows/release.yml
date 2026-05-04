@@ -14,18 +14,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: linux-server
-            os: ubuntu-latest
-            package: powergrid-server
-            binary: powergrid-server
-            artifact: powergrid-server-linux-x86_64
-
-          - name: linux-server-arm
-            os: ubuntu-24.04-arm
-            package: powergrid-server
-            binary: powergrid-server
-            artifact: powergrid-server-linux-aarch64
-
           - name: linux-client
             os: ubuntu-latest
             package: powergrid-client
@@ -117,8 +105,6 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            powergrid-server-linux-x86_64
-            powergrid-server-linux-aarch64
             powergrid-client-linux-x86_64
             powergrid-client-linux-aarch64
             powergrid-client-windows-x86_64.exe
@@ -147,7 +133,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/powergrid-server
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/powergrid-lobby
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -161,46 +147,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  docker-lobby:
-    name: Build and Push Lobby Docker Image
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Extract Docker metadata
-        id: meta-lobby
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/powergrid-lobby
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: Dockerfile.lobby
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-lobby.outputs.tags }}
-          labels: ${{ steps.meta-lobby.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
