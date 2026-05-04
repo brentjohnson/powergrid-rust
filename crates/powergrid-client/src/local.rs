@@ -161,7 +161,7 @@ async fn local_session_driver(
     // StartGame was applied synchronously in start_local_session; drive the
     // initial bot turns now so the game isn't stuck waiting on a bot before
     // the first human action arrives.
-    run_bot_pump(Arc::clone(&session_arc), bot_delay).await;
+    drive_bots_with_forwarding(&session_arc, &state_rx, &event_tx, bot_delay).await;
 
     loop {
         // Forward any pending state updates from the session subscriber.
@@ -200,14 +200,38 @@ async fn local_session_driver(
 
         // Drive bots after any human action.
         if acted {
-            run_bot_pump(Arc::clone(&session_arc), bot_delay).await;
-            // Forward state updates from bot turns.
-            for msg in state_rx.try_iter() {
-                let _ = event_tx.send(WsEvent::MessageReceived(msg));
-            }
+            drive_bots_with_forwarding(&session_arc, &state_rx, &event_tx, bot_delay).await;
         }
     }
 
     let _ = event_tx.send(WsEvent::Disconnected);
     info!("Local session driver stopped");
+}
+
+/// Run the bot pump while concurrently forwarding state updates to the UI.
+///
+/// Without this, awaiting `run_bot_pump` blocks the driver task and all
+/// `StateUpdate` messages pile up in `state_rx` until the pump finishes,
+/// making every bot turn invisible until the whole batch lands at once.
+async fn drive_bots_with_forwarding(
+    session_arc: &Arc<Mutex<Session>>,
+    state_rx: &crossbeam_channel::Receiver<ServerMessage>,
+    event_tx: &Sender<WsEvent>,
+    delay: Duration,
+) {
+    let pump = run_bot_pump(Arc::clone(session_arc), delay);
+    tokio::pin!(pump);
+    loop {
+        tokio::select! {
+            _ = &mut pump => break,
+            _ = tokio::time::sleep(Duration::from_millis(16)) => {
+                for msg in state_rx.try_iter() {
+                    let _ = event_tx.send(WsEvent::MessageReceived(msg));
+                }
+            }
+        }
+    }
+    for msg in state_rx.try_iter() {
+        let _ = event_tx.send(WsEvent::MessageReceived(msg));
+    }
 }

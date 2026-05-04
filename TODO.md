@@ -62,17 +62,19 @@
 
 * Local (offline) play
 
-# v0.5.1
+# v0.6.0
 
 * IMPROVEMENT: implement user accounts
 * IMPROVEMENT: Remove connect screen for on-line. Just use default or command line arg
 * IMPROVEMENT: Dynamically refresh active game list. Remove "refresh" button
+* BUG: local game not showing individual bot actions
+
+# v0.6.1
 
 
 # To do...
 
-* REFACTOR: continue with PR 2 and PR 3 in architecture plan
-* BUG: local game not showing individual bot actions
+* REFACTOR: continue with PR 2 and PR 3 in architecture plan (at beginning of the week)
 * BUG: local game "back to main menu" crashes client
 * IMPROVEMENT: Click on "active" game to populate the name
 * IMPROVEMENT: Existing games should be marked started/not started and if you are in them
