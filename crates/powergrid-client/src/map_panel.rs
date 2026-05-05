@@ -175,6 +175,11 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
         }
     }
 
+    // Keep animating while cities are selected so the glow stays live.
+    if !state.selected_build_cities.is_empty() {
+        crate::effects::keep_animating(ui.ctx());
+    }
+
     // Build preview edges — animated lightning bolts
     if !state.build_preview.edges.is_empty() {
         let stroke_w = (city_r * 0.6).max(2.0);
@@ -230,12 +235,14 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
             let spacing = city_r * 2.3;
             let total_w = spacing * 2.0; // 3 slots → 2 gaps
 
-            // Cyan glow behind all slots when this city is selected for building.
+            // Animated selection glow matching the lightning edge style.
             if is_selected {
-                painter.circle_filled(
+                crate::effects::draw_selected_city_glow(
+                    &painter,
                     center,
-                    total_w / 2.0 + city_r * 2.0,
-                    Color32::from_rgba_unmultiplied(0, 200, 230, 30),
+                    city_r,
+                    t,
+                    crate::effects::city_seed(city_id),
                 );
             }
 
@@ -263,17 +270,25 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
                         Stroke::new(2.0, Color32::WHITE),
                     ));
                 } else if slot < game_state.step as usize {
-                    // Available this step: outline house, brighter during build turn.
-                    let (r, g, b) = if is_my_build_turn {
-                        (120, 180, 165) // TEXT_MID
+                    // Available this step: electric fill+border when selected, dim outline otherwise.
+                    if is_selected {
+                        painter.add(egui::Shape::convex_polygon(
+                            house_points(pos, city_r),
+                            Color32::from_rgba_unmultiplied(0, 150, 210, 150),
+                            Stroke::new(2.0, Color32::from_rgba_unmultiplied(0, 230, 255, 255)),
+                        ));
                     } else {
-                        (60, 100, 90) // TEXT_DIM
-                    };
-                    painter.add(egui::Shape::convex_polygon(
-                        house_points(pos, city_r),
-                        Color32::TRANSPARENT,
-                        Stroke::new(1.2, Color32::from_rgb(r, g, b)),
-                    ));
+                        let (r, g, b) = if is_my_build_turn {
+                            (120, 180, 165)
+                        } else {
+                            (60, 100, 90)
+                        };
+                        painter.add(egui::Shape::convex_polygon(
+                            house_points(pos, city_r),
+                            Color32::TRANSPARENT,
+                            Stroke::new(1.2, Color32::from_rgb(r, g, b)),
+                        ));
+                    }
                 } else {
                     // Locked: tiny faint house indicating the slot exists.
                     painter.add(egui::Shape::convex_polygon(

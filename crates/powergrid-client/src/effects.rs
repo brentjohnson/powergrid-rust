@@ -3,6 +3,68 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
+/// Stable per-city hash for animation phase variety.
+pub fn city_seed(city_id: &str) -> u64 {
+    let mut h = DefaultHasher::new();
+    city_id.hash(&mut h);
+    h.finish()
+}
+
+/// Animated selection indicator for a city cluster during BuildCities.
+/// Draws pulsing rings + orbiting sparks in the same electric-cyan palette as lightning edges.
+/// `city_r` is the per-slot house radius used in map_panel.
+pub fn draw_selected_city_glow(painter: &Painter, center: Pos2, city_r: f32, t: f64, seed: u64) {
+    let seed_phase = (seed % 1000) as f64 * (std::f64::consts::TAU / 1000.0);
+    let pulse = ((t * 3.0 + seed_phase).sin() * 0.5 + 0.5) as f32;
+    let pulse2 = 1.0 - pulse;
+
+    // Soft area glow behind the whole cluster
+    let glow_a = (pulse * 50.0 + 15.0) as u8;
+    painter.circle_filled(
+        center,
+        city_r * 4.2,
+        Color32::from_rgba_unmultiplied(0, 200, 255, glow_a),
+    );
+
+    // Primary ring — pulsing size and alpha, matching lightning halo colour
+    let ring_a = (pulse * 180.0 + 70.0) as u8;
+    painter.circle_stroke(
+        center,
+        city_r * 3.4 + pulse * city_r * 0.35,
+        Stroke::new(
+            (city_r * 0.25).max(1.5),
+            Color32::from_rgba_unmultiplied(0, 210, 255, ring_a),
+        ),
+    );
+
+    // Secondary ring — counter-phase so one is always visible
+    let ring2_a = (pulse2 * 90.0 + 20.0) as u8;
+    painter.circle_stroke(
+        center,
+        city_r * 4.1 + pulse2 * city_r * 0.3,
+        Stroke::new(
+            (city_r * 0.12).max(0.8),
+            Color32::from_rgba_unmultiplied(0, 220, 255, ring2_a),
+        ),
+    );
+
+    // Orbiting spark dots — same style as lightning edge sparks
+    const NUM_SPARKS: usize = 5;
+    for k in 0..NUM_SPARKS {
+        let angle = t * 1.8 + k as f64 * std::f64::consts::TAU / NUM_SPARKS as f64 + seed_phase;
+        if (t * 7.0 + k as f64 * 2.1 + seed_phase).sin() > 0.1 {
+            let orbit_r = city_r * 3.7;
+            let sp = Pos2::new(
+                center.x + orbit_r * angle.cos() as f32,
+                center.y + orbit_r * angle.sin() as f32,
+            );
+            let sr = (city_r * 0.28).max(1.5);
+            painter.circle_filled(sp, sr, Color32::from_rgba_unmultiplied(180, 240, 255, 200));
+            painter.circle_filled(sp, sr * 0.4, Color32::WHITE);
+        }
+    }
+}
+
 pub fn elapsed_seconds(ctx: &egui::Context) -> f64 {
     ctx.input(|i| i.time)
 }
