@@ -1,5 +1,3 @@
-use bevy::prelude::Res;
-use bevy_egui::egui;
 use egui::{RichText, Ui};
 use powergrid_core::{
     actions::Action,
@@ -17,7 +15,7 @@ use super::helpers::{
 pub(super) fn action_panel(
     ui: &mut Ui,
     state: &mut AppState,
-    channels: &Option<Res<WsChannels>>,
+    channels: Option<&WsChannels>,
     gs: &GameStateView,
     my_id: PlayerId,
 ) {

@@ -1,4 +1,3 @@
-use bevy::prelude::*;
 use crossbeam_channel::{Receiver, Sender};
 use futures_util::{SinkExt, StreamExt};
 use powergrid_core::actions::{Action, ClientMessage, LobbyAction, ServerMessage};
@@ -17,7 +16,6 @@ pub enum WsEvent {
     Disconnected,
 }
 
-#[derive(Resource)]
 pub struct WsChannels {
     pub event_rx: Receiver<WsEvent>,
     action_tx: Sender<ClientMessage>,
@@ -166,13 +164,10 @@ async fn ws_worker(
 }
 
 // ---------------------------------------------------------------------------
-// Bevy system: drain the channel each frame and update AppState
+// Drain the WS channel each frame and update AppState
 // ---------------------------------------------------------------------------
 
-pub fn process_ws_events(
-    mut state: ResMut<crate::state::AppState>,
-    channels: Option<Res<WsChannels>>,
-) {
+pub fn process_ws_events(state: &mut crate::state::AppState, channels: Option<&WsChannels>) {
     let Some(channels) = channels else { return };
 
     while let Ok(event) = channels.event_rx.try_recv() {

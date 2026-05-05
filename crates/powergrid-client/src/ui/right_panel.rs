@@ -1,4 +1,3 @@
-use bevy::prelude::Res;
 use egui::{text::LayoutJob, Color32, FontId, RichText, TextFormat, Ui};
 use powergrid_core::{types::PlayerId, GameStateView};
 
@@ -14,7 +13,7 @@ use super::helpers::section_header;
 pub(super) fn action_console_contents(
     ui: &mut Ui,
     state: &mut AppState,
-    channels: &Option<Res<WsChannels>>,
+    channels: Option<&WsChannels>,
     gs: &GameStateView,
     my_id: PlayerId,
 ) {

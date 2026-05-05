@@ -8,71 +8,109 @@ mod theme;
 mod ui;
 mod ws;
 
-use bevy::prelude::*;
-use bevy::window::{MonitorSelection, WindowMode};
-use bevy::winit::{UpdateMode, WinitSettings};
-use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
+use local::LocalHandle;
 use state::{AppState, CliArgs};
 use std::time::Duration;
+use ui::UiAction;
+use ws::WsChannels;
 
-fn main() {
+fn main() -> eframe::Result {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
     let cli = CliArgs::parse();
-    let windowed = cli.windowed;
-
-    let window_mode = if windowed {
-        WindowMode::Windowed
-    } else {
-        WindowMode::BorderlessFullscreen(MonitorSelection::Current)
-    };
-
+    let fullscreen = !cli.windowed;
     let app_state = AppState::new(cli);
 
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Power Grid: Reimagined".into(),
-                resolution: (1600_u32, 900_u32).into(),
-                mode: window_mode,
-                ..default()
-            }),
-            ..default()
-        }))
-        .add_plugins(EguiPlugin::default())
-        .insert_resource(WinitSettings {
-            focused_mode: UpdateMode::reactive(Duration::from_millis(100)),
-            unfocused_mode: UpdateMode::reactive_low_power(Duration::from_millis(1000)),
-        })
-        .insert_resource(app_state)
-        .add_systems(Startup, spawn_camera)
-        .add_systems(
-            Update,
-            (
-                state::process_auth_events,
-                ws::process_ws_events,
-                auto_refresh_room_list,
-            ),
-        )
-        .add_systems(EguiPrimaryContextPass, ui::ui_system)
-        .run();
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("Power Grid: Reimagined")
+            .with_inner_size([1600.0, 900.0])
+            .with_fullscreen(fullscreen),
+        ..Default::default()
+    };
+
+    eframe::run_native(
+        "Power Grid: Reimagined",
+        options,
+        Box::new(|_cc| Ok(Box::new(PowerGridApp::new(app_state)))),
+    )
 }
 
-fn spawn_camera(mut commands: Commands) {
-    commands.spawn(Camera2d);
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
+
+struct PowerGridApp {
+    state: AppState,
+    ws: Option<WsChannels>,
+    local: Option<LocalHandle>,
 }
 
-fn auto_refresh_room_list(
-    mut state: ResMut<AppState>,
-    channels: Option<Res<ws::WsChannels>>,
-    time: Res<Time>,
-) {
-    if state.screen != state::Screen::RoomBrowser {
-        return;
-    }
-    let now = time.elapsed_secs_f64();
-    if now - state.room_list_last_refresh >= 10.0 {
-        if let Some(ch) = channels {
-            ch.send_lobby(powergrid_core::actions::LobbyAction::ListRooms);
+impl PowerGridApp {
+    fn new(state: AppState) -> Self {
+        Self {
+            state,
+            ws: None,
+            local: None,
         }
-        state.room_list_last_refresh = now;
+    }
+}
+
+impl eframe::App for PowerGridApp {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Per-frame polling: drain background thread results before drawing.
+        state::process_auth_events(&mut self.state);
+        ws::process_ws_events(&mut self.state, self.ws.as_ref());
+
+        // Auto-connect for online play: trigger once when pending and not yet connected.
+        if self.state.pending_connect && self.ws.is_none() {
+            let url = self.state.ws_url();
+            self.ws = Some(ws::spawn_ws(url));
+        }
+
+        // Auto-refresh room list (every 10s when in RoomBrowser).
+        if self.state.screen == state::Screen::RoomBrowser {
+            let now = ctx.input(|i| i.time);
+            if now - self.state.room_list_last_refresh >= 10.0 {
+                if let Some(ch) = &self.ws {
+                    ch.send_lobby(powergrid_core::actions::LobbyAction::ListRooms);
+                }
+                self.state.room_list_last_refresh = now;
+            }
+        }
+
+        // Keep the app responsive while a session or auth request is in flight.
+        if self.ws.is_some() || self.state.auth_in_flight {
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
+
+        // Draw UI and collect deferred actions.
+        let action = ui::ui_system(ctx, &mut self.state, self.ws.as_ref());
+
+        // Apply side-effects after the egui pass.
+        match action {
+            UiAction::None => {}
+            UiAction::StartLocal(cfg) => {
+                let (channels, handle) = local::start_local_session(cfg);
+                self.ws = Some(channels);
+                self.local = Some(handle);
+            }
+            UiAction::ExitToMenu => {
+                self.local = None;
+                self.ws = None;
+            }
+            UiAction::Exit => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
+
+        // Drop session channels when disconnected and not pending a reconnect.
+        // (The WS worker reconnects automatically; only clear on an explicit exit.)
+        let _ = frame; // frame unused but required by trait
     }
 }

@@ -1,5 +1,3 @@
-use bevy::prelude::Res;
-use bevy_egui::egui;
 use egui::RichText;
 use powergrid_core::actions::LobbyAction;
 
@@ -10,7 +8,7 @@ use super::helpers::send_lobby;
 pub(super) fn room_browser_screen(
     ctx: &egui::Context,
     state: &mut AppState,
-    channels: &Option<Res<WsChannels>>,
+    channels: Option<&WsChannels>,
 ) {
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.fill(theme::BG_DEEP))

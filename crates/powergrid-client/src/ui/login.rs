@@ -1,4 +1,3 @@
-use bevy_egui::egui;
 use egui::RichText;
 
 use crate::{

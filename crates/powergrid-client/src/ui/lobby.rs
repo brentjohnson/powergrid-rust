@@ -1,5 +1,3 @@
-use bevy::prelude::Res;
-use bevy_egui::egui;
 use egui::RichText;
 use powergrid_core::{
     actions::{Action, LobbyAction},
@@ -18,7 +16,7 @@ use super::helpers::{color_label, send, send_lobby};
 pub(super) fn lobby_screen(
     ctx: &egui::Context,
     state: &mut AppState,
-    channels: &Option<Res<WsChannels>>,
+    channels: Option<&WsChannels>,
     gs: &GameStateView,
     my_id: PlayerId,
 ) {

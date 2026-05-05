@@ -11,62 +11,59 @@ mod right_panel;
 mod room_browser;
 mod top_panel;
 
-use bevy::app::AppExit;
-use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
 use egui::{Color32, RichText};
 use powergrid_core::types::Phase;
 
 use crate::{
-    local::LocalHandle,
+    local::LocalConfig,
     state::{AppState, Screen},
     theme,
     ws::WsChannels,
 };
 
+/// Side-effects requested by the UI for the app to apply after the egui pass.
+pub enum UiAction {
+    None,
+    StartLocal(LocalConfig),
+    ExitToMenu,
+    Exit,
+}
+
 // ---------------------------------------------------------------------------
-// Main UI system (runs every frame via EguiContextPass)
+// Main UI function (called from eframe App::update each frame)
 // ---------------------------------------------------------------------------
 
 pub fn ui_system(
-    mut contexts: EguiContexts,
-    mut state: ResMut<AppState>,
-    channels: Option<Res<WsChannels>>,
-    mut commands: Commands,
-    mut exit_writer: MessageWriter<AppExit>,
-) -> bevy::prelude::Result {
-    let ctx = contexts.ctx_mut()?;
-
+    ctx: &egui::Context,
+    state: &mut AppState,
+    channels: Option<&WsChannels>,
+) -> UiAction {
     theme::apply(ctx);
-
-    // Auto-connect when pending_connect is set and no connection exists yet.
-    if state.pending_connect && channels.is_none() {
-        let url = state.ws_url();
-        commands.insert_resource(crate::ws::spawn_ws(url));
-    }
 
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         state.menu_open = !state.menu_open;
     }
 
+    let mut action = UiAction::None;
+
     match state.screen {
         Screen::MainMenu => {
-            main_menu::main_menu_screen(ctx, &mut state, &mut exit_writer);
+            main_menu::main_menu_screen(ctx, state, &mut action);
         }
         Screen::LocalSetup => {
-            local_setup::local_setup_screen(ctx, &mut state, &mut commands);
+            local_setup::local_setup_screen(ctx, state, &mut action);
         }
         Screen::Login => {
-            login::login_screen(ctx, &mut state);
+            login::login_screen(ctx, state);
         }
         Screen::Register => {
-            register::register_screen(ctx, &mut state);
+            register::register_screen(ctx, state);
         }
         Screen::RoomBrowser => {
-            room_browser::room_browser_screen(ctx, &mut state, &channels);
+            room_browser::room_browser_screen(ctx, state, channels);
         }
         Screen::Game => {
-            game_screen(ctx, &mut state, &channels);
+            game_screen(ctx, state, channels, &mut action);
         }
     }
 
@@ -85,8 +82,6 @@ pub fn ui_system(
                     ))
                     .clicked()
                 {
-                    commands.remove_resource::<LocalHandle>();
-                    commands.remove_resource::<WsChannels>();
                     state.connected = false;
                     state.pending_connect = false;
                     state.my_id = None;
@@ -96,26 +91,32 @@ pub fn ui_system(
                     state.error_message = None;
                     state.screen = Screen::MainMenu;
                     state.menu_open = false;
+                    action = UiAction::ExitToMenu;
                 }
                 ui.add_space(4.0);
                 if ui
                     .add(helpers::neon_button("[ EXIT ]", theme::NEON_RED))
                     .clicked()
                 {
-                    exit_writer.write(AppExit::Success);
+                    action = UiAction::Exit;
                 }
                 ui.add_space(4.0);
             });
     }
 
-    Ok(())
+    action
 }
 
 // ---------------------------------------------------------------------------
 // Game screen
 // ---------------------------------------------------------------------------
 
-fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: &Option<Res<WsChannels>>) {
+fn game_screen(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    channels: Option<&WsChannels>,
+    _action: &mut UiAction,
+) {
     let Some(gs) = state.game_state.clone() else {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.centered_and_justified(|ui| {

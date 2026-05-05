@@ -1,4 +1,3 @@
-use bevy_egui::egui;
 use egui::{RichText, Ui};
 use powergrid_core::{
     types::{Phase, PlayerId},

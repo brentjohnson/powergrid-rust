@@ -69,7 +69,9 @@
 * IMPROVEMENT: Dynamically refresh active game list. Remove "refresh" button
 * BUG: local game not showing individual bot actions
 
-# v0.6.1
+# v0.7.0
+
+* REFACTOR: Eliminate Bevy :(
 
 
 # To do...
@@ -85,10 +87,8 @@
 * IMPROVEMENT: implement game state save
 * IMPROVEMENT: configurable bot speed (in settings menu)
 * IMPROVEMENT: Square rather than circle hit-shape for city.  Add city name. Cover connection lines.
-* BUG: Two people pick same color, can't start game
 * COMPLAINT: Less reading for Nick
 * IMPROVEMENT: Randomize initial order
-* IMPROVEMENT: Do not reorder players on left (that should remain bidding order) DEBATABLE!?
 * IMPROVEMENT: Ding on your turn
 * IMPROVEMENT: Add "capacity" to player card (how many you could power)
 * IMPROVEMENT: Show remaining money when doing resources or cities?

@@ -1,5 +1,5 @@
 use crate::auth::{AuthPendingSlot, SavedCredentials};
-use bevy::prelude::*;
+use egui::Vec2;
 use powergrid_core::{
     actions::RoomSummary,
     connection_cost,
@@ -29,7 +29,6 @@ pub enum Screen {
     Game,
 }
 
-#[derive(Resource)]
 pub struct AppState {
     pub screen: Screen,
 
@@ -102,7 +101,7 @@ pub struct AppState {
     pub city_history: Vec<CitySnapshot>,
     last_recorded_round: u32,
 
-    /// Elapsed seconds (from Bevy Time) when the last ListRooms was sent.
+    /// Elapsed seconds when the last ListRooms was sent.
     pub room_list_last_refresh: f64,
 
     // ESC menu overlay
@@ -650,10 +649,10 @@ Options:
 }
 
 // ---------------------------------------------------------------------------
-// Bevy system: drain auth results from background threads
+// Drain auth results written by background threads
 // ---------------------------------------------------------------------------
 
-pub fn process_auth_events(mut state: ResMut<AppState>) {
+pub fn process_auth_events(state: &mut AppState) {
     if !state.auth_in_flight {
         return;
     }

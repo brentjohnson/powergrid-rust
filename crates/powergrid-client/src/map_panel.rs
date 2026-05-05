@@ -55,7 +55,7 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
     }
     if response.dragged() {
         let delta = response.drag_delta();
-        state.map_offset += bevy::prelude::Vec2::new(delta.x, delta.y);
+        state.map_offset += egui::Vec2::new(delta.x, delta.y);
     }
 
     // ---- city click ----

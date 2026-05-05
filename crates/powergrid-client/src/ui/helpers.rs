@@ -1,5 +1,3 @@
-use bevy::prelude::Res;
-use bevy_egui::egui;
 use egui::{Color32, RichText, Ui};
 use powergrid_core::{
     actions::{Action, LobbyAction},
@@ -77,15 +75,15 @@ pub(super) fn color_label(c: PlayerColor) -> &'static str {
     }
 }
 
-/// Send an in-game action. In Lobby mode uses a room-scoped message; in Legacy mode sends bare.
-pub(super) fn send(action: Action, room: Option<&str>, channels: &Option<Res<WsChannels>>) {
+/// Send an in-game action.
+pub(super) fn send(action: Action, room: Option<&str>, channels: Option<&WsChannels>) {
     if let Some(ch) = channels {
         ch.send_action(room, action);
     }
 }
 
 /// Send a lobby-level action (room management, bot management).
-pub(super) fn send_lobby(action: LobbyAction, channels: &Option<Res<WsChannels>>) {
+pub(super) fn send_lobby(action: LobbyAction, channels: Option<&WsChannels>) {
     if let Some(ch) = channels {
         ch.send_lobby(action);
     }

@@ -1,4 +1,3 @@
-use bevy_egui::egui;
 use egui::{Color32, CornerRadius, FontFamily, FontId, Rect, Stroke, StrokeKind, Vec2};
 use powergrid_core::types::{PlantKind, PowerPlant};
 

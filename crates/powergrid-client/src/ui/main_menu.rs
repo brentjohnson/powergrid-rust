@@ -1,6 +1,3 @@
-use bevy::app::AppExit;
-use bevy::prelude::*;
-use bevy_egui::egui;
 use egui::RichText;
 
 use crate::{
@@ -9,12 +6,9 @@ use crate::{
 };
 
 use super::helpers::neon_button;
+use super::UiAction;
 
-pub(super) fn main_menu_screen(
-    ctx: &egui::Context,
-    state: &mut AppState,
-    exit_writer: &mut MessageWriter<AppExit>,
-) {
+pub(super) fn main_menu_screen(ctx: &egui::Context, state: &mut AppState, action: &mut UiAction) {
     egui::CentralPanel::default()
         .frame(
             egui::Frame::NONE
@@ -84,7 +78,7 @@ pub(super) fn main_menu_screen(
                         .add(neon_button("[ QUIT GAME ]", theme::NEON_RED))
                         .clicked()
                     {
-                        exit_writer.write(AppExit::Success);
+                        *action = UiAction::Exit;
                     }
                 });
             });

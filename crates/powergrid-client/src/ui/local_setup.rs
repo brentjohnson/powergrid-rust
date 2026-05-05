@@ -1,5 +1,3 @@
-use bevy::prelude::Commands;
-use bevy_egui::egui;
 use egui::RichText;
 use powergrid_core::types::PlayerColor;
 
@@ -10,12 +8,9 @@ use crate::{
 };
 
 use super::helpers::{color_label, neon_button};
+use super::UiAction;
 
-pub(super) fn local_setup_screen(
-    ctx: &egui::Context,
-    state: &mut AppState,
-    commands: &mut Commands,
-) {
+pub(super) fn local_setup_screen(ctx: &egui::Context, state: &mut AppState, action: &mut UiAction) {
     egui::CentralPanel::default()
         .frame(
             egui::Frame::NONE
@@ -156,15 +151,12 @@ pub(super) fn local_setup_screen(
                         ));
 
                         if ui.add_enabled(can_start, start_btn).clicked() {
-                            let cfg = LocalConfig {
+                            *action = UiAction::StartLocal(LocalConfig {
                                 human_name: state.local_name.trim().to_string(),
                                 human_color: state.local_color,
                                 bot_count: state.local_bot_count,
-                            };
+                            });
                             state.pending_connect = true;
-                            let (channels, handle) = crate::local::start_local_session(cfg);
-                            commands.insert_resource(channels);
-                            commands.insert_resource(handle);
                         }
                     });
 

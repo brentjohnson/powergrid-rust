@@ -1,5 +1,3 @@
-use bevy::prelude::Res;
-use bevy_egui::egui;
 use egui::{Align2, Color32, FontId, Rect, RichText, Sense, Stroke, Ui};
 use powergrid_core::{
     actions::Action,
@@ -21,7 +19,7 @@ pub(super) fn top_panel_contents(
     ui: &mut Ui,
     gs: GameStateView,
     state: &AppState,
-    channels: &Option<Res<WsChannels>>,
+    channels: Option<&WsChannels>,
     my_id: PlayerId,
 ) {
     let room = state.current_room.as_deref();
@@ -155,7 +153,7 @@ pub(super) fn top_panel_contents(
 fn plant_column(
     ui: &mut Ui,
     plants: &[powergrid_core::types::PowerPlant],
-    channels: &Option<Res<WsChannels>>,
+    channels: Option<&WsChannels>,
     phase: &Phase,
     my_id: PlayerId,
     player_order: &[PlayerId],

@@ -1,4 +1,3 @@
-use bevy::prelude::*;
 use crossbeam_channel::Sender;
 use powergrid_core::{
     actions::{Action, ClientMessage, ServerMessage},
@@ -19,9 +18,8 @@ pub struct LocalConfig {
 }
 
 /// Holds the background runtime thread for a local play session.
-/// Dropping this resource blocks until the runtime fully shuts down.
+/// Dropping this blocks until the runtime fully shuts down.
 /// Shutdown is triggered by dropping `WsChannels` (which holds the oneshot sender).
-#[derive(Resource)]
 pub struct LocalHandle {
     runtime_thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -87,7 +85,7 @@ pub fn start_local_session(cfg: LocalConfig) -> (WsChannels, LocalHandle) {
     let initial_msgs: Vec<ServerMessage> = state_rx.try_iter().collect();
 
     // Pre-queue the full connection + auth + room handshake so the client
-    // sees them all on the first Bevy frame and lands on the Game screen.
+    // sees them all on the first frame and lands on the Game screen.
     let _ = event_tx.send(WsEvent::Connected);
     let _ = event_tx.send(WsEvent::MessageReceived(ServerMessage::Authenticated {
         user_id: human_id,
