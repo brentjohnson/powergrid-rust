@@ -1,5 +1,6 @@
 mod auth;
 mod card_painter;
+mod effects;
 mod local;
 mod map_panel;
 mod state;

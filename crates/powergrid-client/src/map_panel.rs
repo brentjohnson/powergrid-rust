@@ -32,6 +32,8 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
 
     let available = ui.available_rect_before_wrap();
 
+    let t = crate::effects::elapsed_seconds(ui.ctx());
+
     // Reserve the entire available area for map interaction.
     let (response, painter) = ui.allocate_painter(available.size(), Sense::click_and_drag());
 
@@ -173,10 +175,9 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
         }
     }
 
-    // Build preview edges
+    // Build preview edges — animated lightning bolts
     if !state.build_preview.edges.is_empty() {
         let stroke_w = (city_r * 0.6).max(2.0);
-        let edge_color = Color32::from_rgba_unmultiplied(0, 220, 255, 220);
         for (from_id, to_id) in &state.build_preview.edges {
             let fc = map.cities.get(from_id);
             let tc = map.cities.get(to_id);
@@ -195,17 +196,17 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
             {
                 let fp = to_screen(*fx, *fy);
                 let tp = to_screen(*tx, *ty);
-                // Glow: draw thicker dim line behind the bright one
-                painter.line_segment(
-                    [fp, tp],
-                    Stroke::new(
-                        stroke_w * 2.5,
-                        Color32::from_rgba_unmultiplied(0, 180, 220, 60),
-                    ),
+                crate::effects::draw_lightning_edge(
+                    &painter,
+                    fp,
+                    tp,
+                    t,
+                    stroke_w,
+                    crate::effects::edge_seed(from_id, to_id),
                 );
-                painter.line_segment([fp, tp], Stroke::new(stroke_w, edge_color));
             }
         }
+        crate::effects::keep_animating(ui.ctx());
     }
 
     // City markers — always show 3 slots (one per game step).
