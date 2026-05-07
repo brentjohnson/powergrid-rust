@@ -23,14 +23,13 @@ fn main() -> eframe::Result {
         .init();
 
     let cli = CliArgs::parse();
-    let fullscreen = !cli.windowed;
     let app_state = AppState::new(cli);
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Power Grid: Reimagined")
             .with_inner_size([1600.0, 900.0])
-            .with_fullscreen(fullscreen),
+            .with_fullscreen(app_state.fullscreen),
         ..Default::default()
     };
 
@@ -103,6 +102,14 @@ impl eframe::App for PowerGridApp {
             UiAction::ExitToMenu => {
                 self.local = None;
                 self.ws = None;
+            }
+            UiAction::ToggleFullscreen => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.state.fullscreen));
+                if let Err(e) = auth::save_preferences(&auth::UserPreferences {
+                    fullscreen: self.state.fullscreen,
+                }) {
+                    tracing::warn!("Failed to save preferences: {e}");
+                }
             }
             UiAction::Exit => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);

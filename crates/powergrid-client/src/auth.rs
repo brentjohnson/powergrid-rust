@@ -7,6 +7,43 @@ use std::{
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
+// User preferences (persisted to disk)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserPreferences {
+    pub fullscreen: bool,
+}
+
+impl Default for UserPreferences {
+    fn default() -> Self {
+        Self { fullscreen: true }
+    }
+}
+
+fn preferences_path() -> Option<PathBuf> {
+    ProjectDirs::from("net", "onyxoryx", "powergrid")
+        .map(|d| d.config_dir().join("preferences.json"))
+}
+
+pub fn load_preferences() -> UserPreferences {
+    preferences_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|data| serde_json::from_str(&data).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_preferences(prefs: &UserPreferences) -> std::io::Result<()> {
+    let path =
+        preferences_path().ok_or_else(|| std::io::Error::other("could not resolve config dir"))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let data = serde_json::to_string_pretty(prefs).map_err(std::io::Error::other)?;
+    std::fs::write(path, data)
+}
+
+// ---------------------------------------------------------------------------
 // Saved credentials (persisted to disk)
 // ---------------------------------------------------------------------------
 

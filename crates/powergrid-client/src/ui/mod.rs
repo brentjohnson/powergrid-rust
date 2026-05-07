@@ -27,6 +27,7 @@ pub enum UiAction {
     StartLocal(LocalConfig),
     ExitToMenu,
     Exit,
+    ToggleFullscreen,
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +93,20 @@ pub fn ui_system(
                     state.screen = Screen::MainMenu;
                     state.menu_open = false;
                     action = UiAction::ExitToMenu;
+                }
+                ui.add_space(4.0);
+                let fs_label = if state.fullscreen {
+                    "[ WINDOWED MODE ]"
+                } else {
+                    "[ FULLSCREEN ]"
+                };
+                if ui
+                    .add(helpers::neon_button(fs_label, theme::NEON_CYAN))
+                    .clicked()
+                {
+                    state.fullscreen = !state.fullscreen;
+                    state.menu_open = false;
+                    action = UiAction::ToggleFullscreen;
                 }
                 ui.add_space(4.0);
                 if ui

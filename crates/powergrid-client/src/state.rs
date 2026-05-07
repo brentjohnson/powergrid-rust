@@ -107,6 +107,9 @@ pub struct AppState {
     // ESC menu overlay
     pub menu_open: bool,
 
+    // Window mode (kept in sync with the actual viewport)
+    pub fullscreen: bool,
+
     // Local play setup
     pub local_name: String,
     pub local_color: PlayerColor,
@@ -133,6 +136,14 @@ impl AppState {
             (None, None, None)
         };
         let screen = Screen::MainMenu;
+
+        // CLI --windowed overrides saved preference; otherwise use saved (default: fullscreen).
+        let prefs = crate::auth::load_preferences();
+        let fullscreen = if cli.windowed {
+            false
+        } else {
+            prefs.fullscreen
+        };
 
         Self {
             screen,
@@ -177,6 +188,7 @@ impl AppState {
             last_recorded_round: 0,
             room_list_last_refresh: f64::NEG_INFINITY,
             menu_open: false,
+            fullscreen,
             local_name: "You".to_string(),
             local_color: PlayerColor::Red,
             local_bot_count: 3,

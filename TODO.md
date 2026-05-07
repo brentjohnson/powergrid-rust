@@ -73,12 +73,32 @@
 
 * REFACTOR: Eliminate Bevy :(
 
+# v0.7.1
+
+* Menu option to change between full screen/windowed & save as option
+
 
 # To do...
 
+* BUG: Phase three started in the middle of auction
+* During power cities, select which cities
+* Highlight nominated plant in the market
+* Windows version not full screen (no window frame)
+* Resource buying: button to add "1 set" or "2 sets" to cart
+* add resource icons to right of plant
+* Add "capacity" to player card (how many you could power) - where resource are
+* Click on resoure market squares to add to cart
+* Show on map where other people are placing cities
+* USA map
+* Check payouts based on players
+* Show payouts
+* Ding when it's your turn
+* Reset password?
+* Switch plants to Recharged version (random start) - add option at game start of OG/Recharge
+* Scrollable event log
+
 * REFACTOR: continue with PR 2 and PR 3 in architecture plan (at beginning of the week)
 * BUG: local game "back to main menu" crashes client
-* IMPROVEMENT: Click on "active" game to populate the name
 * IMPROVEMENT: Existing games should be marked started/not started and if you are in them
 * IMPROVEMENT: don't select color on connect, select for each game
 * IMPROVEMENT: user can save color preferences in account (order of pref)
@@ -89,8 +109,6 @@
 * IMPROVEMENT: Square rather than circle hit-shape for city.  Add city name. Cover connection lines.
 * COMPLAINT: Less reading for Nick
 * IMPROVEMENT: Randomize initial order
-* IMPROVEMENT: Ding on your turn
-* IMPROVEMENT: Add "capacity" to player card (how many you could power)
 * IMPROVEMENT: Show remaining money when doing resources or cities?
 * IMPROVEMENT: Implement dependabot on the repo
 * DEBUG: log more info
