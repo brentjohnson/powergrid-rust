@@ -998,45 +998,17 @@ fn handle_power_cities(
         }
     }
 
-    // Find the optimal subset of plants to fire.  Track the chosen subset's numbers.
+    // Fire exactly the submitted plants; the player is responsible for the selection.
     let (best_subset_numbers, best_powered, best_resources) = {
         let player = state.player(actor).ok_or(ActionError::UnknownPlayer)?;
         let cities_owned = player.city_count() as u8;
-        let n = plant_numbers.len();
-        let mut best_powered = 0u8;
-        let mut best_res = player.resources.clone();
-        let mut best_subset: Vec<u8> = Vec::new();
-
-        for mask in 1u8..(1u8 << n) {
-            let subset: Vec<&PowerPlant> = plant_numbers
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| mask & (1 << i) != 0)
-                .map(|(_, &num)| player.plants.iter().find(|p| p.number == num).unwrap())
-                .collect();
-
-            if let Some((powered, res)) = check_plant_feasibility(&subset, &player.resources) {
-                let capped = powered.min(cities_owned);
-                let leftover =
-                    res.coal as u16 + res.oil as u16 + res.garbage as u16 + res.uranium as u16;
-                let best_leftover = best_res.coal as u16
-                    + best_res.oil as u16
-                    + best_res.garbage as u16
-                    + best_res.uranium as u16;
-                if capped > best_powered || (capped == best_powered && leftover > best_leftover) {
-                    best_powered = capped;
-                    best_res = res;
-                    best_subset = plant_numbers
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, _)| mask & (1 << i) != 0)
-                        .map(|(_, &num)| num)
-                        .collect();
-                }
-            }
-        }
-
-        (best_subset, best_powered, best_res)
+        let subset: Vec<&PowerPlant> = plant_numbers
+            .iter()
+            .map(|&num| player.plants.iter().find(|p| p.number == num).unwrap())
+            .collect();
+        let (powered, res) = check_plant_feasibility(&subset, &player.resources)
+            .ok_or(ActionError::InfeasiblePlantSelection)?;
+        (plant_numbers.clone(), powered.min(cities_owned), res)
     };
 
     // Check whether the hybrid fuel split is ambiguous for the chosen subset.
@@ -2283,10 +2255,9 @@ mod tests {
         assert!(matches!(err, ActionError::OverCapacity), "got {err:?}");
     }
 
-    /// Reproduce the reported bug: player owns plants 8 (Coal/3/2), 10 (Coal/2/2), and
-    /// 21 (CoalOrOil/2/4) with only 2 coal.  The optimal firing is plant 21 alone (2 coal →
-    /// 4 cities).  Without the fix the greedy pass consumed coal on plant 10 first and
-    /// plant 21 could not fire, yielding only 2 cities.
+    /// Player owns plants 8 (Coal/3/2), 10 (Coal/2/2), and 21 (CoalOrOil/2/4) with only
+    /// 2 coal.  The player (or bot via `optimal_firing_subset`) selects plant 21 alone, which
+    /// fires on 2 coal and powers 4 cities.  Submitting all three would be infeasible.
     #[test]
     fn test_bureaucracy_optimal_coalor_oil_plant() {
         use crate::types::{PlantKind, PowerPlant};
@@ -2331,16 +2302,17 @@ mod tests {
             uranium: 0,
         };
 
+        // Player selects only plant 21 (the feasible choice given 2 coal).
         apply_action(
             &mut state,
             p1,
             Action::PowerCities {
-                plant_numbers: vec![8, 10, 21],
+                plant_numbers: vec![21],
             },
         )
         .unwrap();
 
-        // Plant 21 should have fired: 4 cities powered.
+        // Plant 21 fired: 4 cities powered.
         let found = state
             .event_log
             .iter()
@@ -2355,8 +2327,8 @@ mod tests {
         assert_eq!(player.resources.coal, 0, "2 coal should have been consumed");
     }
 
-    /// When a player can power more cities than they own, only fire enough plants
-    /// to cover the owned cities and conserve resources.
+    /// Player explicitly selects only the wind plant to conserve coal even though
+    /// the coal plant could also fire.  Income is capped at cities owned.
     #[test]
     fn test_bureaucracy_caps_at_cities_owned() {
         use crate::types::{PlantKind, PowerPlant};
@@ -2393,22 +2365,179 @@ mod tests {
             uranium: 0,
         };
 
+        // Player selects only the wind plant — coal plant is excluded to conserve resources.
         apply_action(
             &mut state,
             p1,
             Action::PowerCities {
-                plant_numbers: vec![13, 10],
+                plant_numbers: vec![13],
             },
         )
         .unwrap();
 
-        // Wind alone covers 2 cities (== cities owned), so coal should NOT be consumed.
+        // Wind powers 2 cities (= cities owned); coal was not submitted so it stays.
         let player = state.player(p1).unwrap();
         assert_eq!(
             player.resources.coal, 2,
             "coal should be conserved when wind covers all cities; got {}",
             player.resources.coal
         );
+    }
+
+    /// Submitting a plant combination that exceeds available resources returns InfeasiblePlantSelection.
+    #[test]
+    fn test_bureaucracy_rejects_infeasible_selection() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        state.phase = Phase::Bureaucracy {
+            remaining: vec![p1],
+        };
+
+        let player = state.player_mut(p1).unwrap();
+        player.cities = vec!["a".into()];
+        player.plants = vec![PowerPlant {
+            number: 10,
+            kind: PlantKind::Coal,
+            cost: 2,
+            cities: 1,
+        }];
+        player.resources = PlayerResources {
+            coal: 1, // only 1 coal but plant costs 2
+            oil: 0,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        let err = apply_action(
+            &mut state,
+            p1,
+            Action::PowerCities {
+                plant_numbers: vec![10],
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, ActionError::InfeasiblePlantSelection),
+            "expected InfeasiblePlantSelection, got {err:?}"
+        );
+    }
+
+    /// Submitting more plant capacity than cities owned burns all selected fuel but
+    /// income is capped at the number of cities owned.
+    #[test]
+    fn test_bureaucracy_overfire_burns_fuel() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        state.phase = Phase::Bureaucracy {
+            remaining: vec![p1],
+        };
+
+        let player = state.player_mut(p1).unwrap();
+        // Only 2 cities owned.
+        player.cities = vec!["a".into(), "b".into()];
+        // Three plants each powering 1 city.
+        player.plants = vec![
+            PowerPlant {
+                number: 5,
+                kind: PlantKind::Coal,
+                cost: 1,
+                cities: 1,
+            },
+            PowerPlant {
+                number: 6,
+                kind: PlantKind::Coal,
+                cost: 1,
+                cities: 1,
+            },
+            PowerPlant {
+                number: 7,
+                kind: PlantKind::Coal,
+                cost: 1,
+                cities: 1,
+            },
+        ];
+        player.resources = PlayerResources {
+            coal: 3,
+            oil: 0,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        // Player fires all three (over-fire: 3 capacity for 2 cities).
+        apply_action(
+            &mut state,
+            p1,
+            Action::PowerCities {
+                plant_numbers: vec![5, 6, 7],
+            },
+        )
+        .unwrap();
+
+        let player = state.player(p1).unwrap();
+        // All 3 coal are burned (over-fire).
+        assert_eq!(player.resources.coal, 0, "all 3 coal should be consumed");
+        // Income capped at 2 cities owned.
+        assert_eq!(
+            player.last_cities_powered, 2,
+            "cities powered should be capped at 2"
+        );
+    }
+
+    /// Player explicitly skips a powerable plant to conserve its fuel.
+    #[test]
+    fn test_bureaucracy_skip_plant_for_fuel_conservation() {
+        use crate::types::{PlantKind, PowerPlant};
+
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        state.phase = Phase::Bureaucracy {
+            remaining: vec![p1],
+        };
+
+        let player = state.player_mut(p1).unwrap();
+        player.cities = vec!["a".into()];
+        // Wind (free, 1 city) and Coal (cost 2, 1 city).
+        player.plants = vec![
+            PowerPlant {
+                number: 13,
+                kind: PlantKind::Wind,
+                cost: 0,
+                cities: 1,
+            },
+            PowerPlant {
+                number: 10,
+                kind: PlantKind::Coal,
+                cost: 2,
+                cities: 1,
+            },
+        ];
+        player.resources = PlayerResources {
+            coal: 2,
+            oil: 0,
+            garbage: 0,
+            uranium: 0,
+        };
+
+        // Player submits only the wind plant — skipping coal to save it for later.
+        apply_action(
+            &mut state,
+            p1,
+            Action::PowerCities {
+                plant_numbers: vec![13],
+            },
+        )
+        .unwrap();
+
+        let player = state.player(p1).unwrap();
+        assert_eq!(player.resources.coal, 2, "coal should be untouched");
+        assert_eq!(player.last_cities_powered, 1, "1 city powered via wind");
     }
 
     /// Players can submit PowerCities in any order during Bureaucracy.

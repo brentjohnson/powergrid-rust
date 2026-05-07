@@ -363,6 +363,50 @@ impl Player {
         }
         best
     }
+
+    /// Optimal feasible subset of plants to fire in the Bureaucracy phase.
+    /// Returns (chosen plant numbers, cities powered capped at cities owned, remaining resources).
+    /// Used by the bot and client to compute the recommended default selection.
+    pub fn optimal_firing_subset(&self) -> (Vec<u8>, u8, PlayerResources) {
+        let cities_owned = self.city_count() as u8;
+        let n = self.plants.len();
+        let mut best_powered = 0u8;
+        let mut best_res = self.resources.clone();
+        let mut best_subset: Vec<u8> = Vec::new();
+
+        for mask in 1u32..(1u32 << n) {
+            let subset: Vec<&PowerPlant> = self
+                .plants
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| mask & (1 << i) != 0)
+                .map(|(_, p)| p)
+                .collect();
+
+            if let Some((powered, res)) = check_plant_feasibility(&subset, &self.resources) {
+                let capped = powered.min(cities_owned);
+                let leftover =
+                    res.coal as u16 + res.oil as u16 + res.garbage as u16 + res.uranium as u16;
+                let best_leftover = best_res.coal as u16
+                    + best_res.oil as u16
+                    + best_res.garbage as u16
+                    + best_res.uranium as u16;
+                if capped > best_powered || (capped == best_powered && leftover > best_leftover) {
+                    best_powered = capped;
+                    best_res = res;
+                    best_subset = self
+                        .plants
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| mask & (1 << i) != 0)
+                        .map(|(_, p)| p.number)
+                        .collect();
+                }
+            }
+        }
+
+        (best_subset, best_powered, best_res)
+    }
 }
 
 /// Check whether a set of plants can fire with the given resources using a

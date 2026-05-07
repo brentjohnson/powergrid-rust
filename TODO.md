@@ -76,12 +76,12 @@
 # v0.7.1
 
 * Menu option to change between full screen/windowed & save as option
+* During power cities, select which cities
 
 
 # To do...
 
 * BUG: Phase three started in the middle of auction
-* During power cities, select which cities
 * Highlight nominated plant in the market
 * Windows version not full screen (no window frame)
 * Resource buying: button to add "1 set" or "2 sets" to cart

@@ -97,6 +97,10 @@ pub struct AppState {
     // PowerCitiesFuel phase (hybrid fuel split during bureaucracy)
     pub power_fuel_coal: u8,
 
+    // Bureaucracy plant-selection scratch state
+    pub power_selected_plants: HashSet<u8>,
+    pub power_selected_initialised: bool,
+
     // City count history: one CitySnapshot per round recorded so far.
     pub city_history: Vec<CitySnapshot>,
     last_recorded_round: u32,
@@ -184,6 +188,8 @@ impl AppState {
             discard_coal: 0,
             discard_oil: 0,
             power_fuel_coal: 0,
+            power_selected_plants: HashSet::new(),
+            power_selected_initialised: false,
             city_history: Vec::new(),
             last_recorded_round: 0,
             room_list_last_refresh: f64::NEG_INFINITY,
@@ -310,6 +316,13 @@ impl AppState {
             .unwrap_or(false);
         if !still_my_fuel {
             self.power_fuel_coal = 0;
+        }
+
+        // Clear plant-selection scratch state when not in Bureaucracy.
+        let still_bureaucracy = matches!(&view.phase, Phase::Bureaucracy { .. });
+        if !still_bureaucracy {
+            self.power_selected_plants.clear();
+            self.power_selected_initialised = false;
         }
 
         // Record city counts when the round number advances (or on first state).

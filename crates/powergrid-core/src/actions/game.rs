@@ -97,4 +97,6 @@ pub enum ActionError {
     InvalidDiscardSplit,
     #[error("coal + oil must equal the hybrid fuel cost, and neither may exceed what you hold after pure-fuel plants are paid")]
     InvalidFuelSplit,
+    #[error("selected plants cannot all be fired with available resources")]
+    InfeasiblePlantSelection,
 }

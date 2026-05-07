@@ -570,16 +570,8 @@ fn decide_build_cities(state: &GameState, me: PlayerId) -> Option<Action> {
 fn decide_power_cities(state: &GameState, me: PlayerId) -> Option<Action> {
     let player = state.player(me)?;
 
-    // Fire all plants that have enough fuel (the server picks the optimal subset).
-    let plant_numbers: Vec<u8> = player
-        .plants
-        .iter()
-        .filter(|p| can_fire(p, &player.resources))
-        .map(|p| p.number)
-        .collect();
-
-    let cities_powered = player.cities_powerable();
-    let expected_income = income_for(cities_powered.min(player.city_count() as u8));
+    let (plant_numbers, cities_powered, _) = player.optimal_firing_subset();
+    let expected_income = income_for(cities_powered);
 
     info!(
         "PowerCities with plants {:?} — expect to power {} cities, earn {} elektro",
@@ -622,17 +614,6 @@ fn decide_power_cities_fuel(state: &GameState, me: PlayerId, hybrid_cost: u8) ->
         Some(Action::PowerCitiesFuel { coal, oil })
     } else {
         None
-    }
-}
-
-fn can_fire(plant: &PowerPlant, resources: &powergrid_core::types::PlayerResources) -> bool {
-    match plant.kind {
-        PlantKind::Wind | PlantKind::Fusion => true,
-        PlantKind::Coal => resources.coal >= plant.cost,
-        PlantKind::Oil => resources.oil >= plant.cost,
-        PlantKind::CoalOrOil => resources.coal + resources.oil >= plant.cost,
-        PlantKind::Garbage => resources.garbage >= plant.cost,
-        PlantKind::Uranium => resources.uranium >= plant.cost,
     }
 }
 
