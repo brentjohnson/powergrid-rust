@@ -1,4 +1,4 @@
-use crate::types::PlayerId;
+use crate::types::{BotDifficulty, PlayerId};
 use serde::{Deserialize, Serialize};
 
 use super::game::Action;
@@ -68,6 +68,8 @@ pub enum LobbyAction {
     AddBot {
         bot_name: String,
         color: crate::types::PlayerColor,
+        #[serde(default)]
+        difficulty: BotDifficulty,
     },
     /// Remove a bot from the current room (host only, lobby phase only).
     RemoveBot { bot_id: PlayerId },
@@ -171,6 +173,42 @@ mod tests {
         assert!(
             matches!(parsed, ClientMessage::Lobby(LobbyAction::CreateRoom { name }) if name == "test-room")
         );
+    }
+
+    #[test]
+    fn test_add_bot_back_compat_no_difficulty_field() {
+        // Older clients omit the difficulty field; should deserialize as Normal.
+        let json = r#"{"type":"lobby","action":"add_bot","bot_name":"BotA","color":"red"}"#;
+        let parsed: ClientMessage = serde_json::from_str(json).unwrap();
+        assert!(
+            matches!(
+                parsed,
+                ClientMessage::Lobby(LobbyAction::AddBot {
+                    difficulty: BotDifficulty::Normal,
+                    ..
+                })
+            ),
+            "expected Normal difficulty by default, got: {:?}",
+            parsed
+        );
+    }
+
+    #[test]
+    fn test_add_bot_with_difficulty_field() {
+        let msg = ClientMessage::Lobby(LobbyAction::AddBot {
+            bot_name: "BotA".to_string(),
+            color: crate::types::PlayerColor::Red,
+            difficulty: BotDifficulty::Hard,
+        });
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ClientMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            parsed,
+            ClientMessage::Lobby(LobbyAction::AddBot {
+                difficulty: BotDifficulty::Hard,
+                ..
+            })
+        ));
     }
 
     #[test]

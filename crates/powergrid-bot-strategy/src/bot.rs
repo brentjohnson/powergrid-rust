@@ -1,0 +1,87 @@
+use powergrid_core::{
+    actions::Action,
+    state::GameState,
+    types::{PlayerColor, PlayerId},
+};
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
+
+use crate::profile::BotProfile;
+
+/// A stateful bot: holds its identity, decision profile, and a seeded RNG.
+/// The RNG must persist across `decide` calls so sampling is stable within a game.
+pub struct Bot {
+    pub id: PlayerId,
+    pub name: String,
+    pub color: PlayerColor,
+    pub profile: BotProfile,
+    pub(crate) rng: SmallRng,
+}
+
+impl Bot {
+    pub fn new(
+        id: PlayerId,
+        name: String,
+        color: PlayerColor,
+        profile: BotProfile,
+        seed: u64,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            color,
+            profile,
+            rng: SmallRng::seed_from_u64(seed),
+        }
+    }
+
+    pub fn decide(&mut self, state: &GameState) -> Option<Action> {
+        crate::strategy::decide_with_bot(state, self)
+    }
+
+    /// Boltzmann / softmax selection over scored candidates.
+    /// `temperature == 0.0` → pure argmax (deterministic).
+    pub fn sample_softmax<C: Clone>(&mut self, scored: &[(C, f32)]) -> Option<C> {
+        if scored.is_empty() {
+            return None;
+        }
+
+        let temperature = self.profile.temperature;
+
+        if temperature == 0.0 {
+            return scored
+                .iter()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(c, _)| c.clone());
+        }
+
+        // Shift by max for numerical stability before exponentiation.
+        let max_score = scored
+            .iter()
+            .map(|(_, s)| *s)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let weights: Vec<f32> = scored
+            .iter()
+            .map(|(_, s)| ((s - max_score) / temperature).exp())
+            .collect();
+        let total: f32 = weights.iter().sum();
+        let mut threshold = self.rng.gen::<f32>() * total;
+        for (i, w) in weights.iter().enumerate() {
+            threshold -= w;
+            if threshold <= 0.0 {
+                return Some(scored[i].0.clone());
+            }
+        }
+        scored.last().map(|(c, _)| c.clone())
+    }
+
+    /// Apply bid jitter with probability `profile.jitter`, adding 1..=max_jitter elektro.
+    pub fn maybe_jitter(&mut self, base: u32, max_add: u8) -> u32 {
+        if self.profile.jitter > 0.0 && max_add > 0 && self.rng.gen::<f32>() < self.profile.jitter {
+            let add = self.rng.gen_range(1..=max_add) as u32;
+            base.saturating_add(add)
+        } else {
+            base
+        }
+    }
+}

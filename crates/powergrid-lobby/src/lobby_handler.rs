@@ -111,7 +111,11 @@ pub async fn handle_lobby_action(
             leave_room(conn, manager).await;
         }
 
-        LobbyAction::AddBot { bot_name, color } => {
+        LobbyAction::AddBot {
+            bot_name,
+            color,
+            difficulty,
+        } => {
             let room_name = match &conn.current_room {
                 None => {
                     conn.send_msg(&ServerMessage::LobbyError {
@@ -143,7 +147,7 @@ pub async fn handle_lobby_action(
                 });
                 return;
             }
-            match room.add_bot(bot_name, color) {
+            match room.add_bot(bot_name, color, difficulty) {
                 Err(e) => {
                     conn.send_msg(&ServerMessage::LobbyError { message: e });
                 }

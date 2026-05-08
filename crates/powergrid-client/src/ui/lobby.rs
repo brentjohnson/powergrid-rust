@@ -225,6 +225,33 @@ pub(super) fn lobby_screen(
                             }
                         });
                         ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Difficulty:").color(theme::TEXT_DIM).small());
+                            egui::ComboBox::from_id_salt("bot_difficulty_online")
+                                .selected_text(match state.bot_difficulty_input {
+                                    powergrid_core::types::BotDifficulty::Easy => "Easy",
+                                    powergrid_core::types::BotDifficulty::Normal => "Normal",
+                                    powergrid_core::types::BotDifficulty::Hard => "Hard",
+                                })
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut state.bot_difficulty_input,
+                                        powergrid_core::types::BotDifficulty::Easy,
+                                        "Easy",
+                                    );
+                                    ui.selectable_value(
+                                        &mut state.bot_difficulty_input,
+                                        powergrid_core::types::BotDifficulty::Normal,
+                                        "Normal",
+                                    );
+                                    ui.selectable_value(
+                                        &mut state.bot_difficulty_input,
+                                        powergrid_core::types::BotDifficulty::Hard,
+                                        "Hard",
+                                    );
+                                });
+                        });
+                        ui.add_space(4.0);
                         let can_add_bot =
                             !state.bot_name_input.trim().is_empty() && gs.players.len() < 6;
                         if ui
@@ -249,10 +276,12 @@ pub(super) fn lobby_screen(
                         {
                             let bot_name = state.bot_name_input.trim().to_string();
                             let bot_color = state.bot_color_input;
+                            let bot_difficulty = state.bot_difficulty_input;
                             send_lobby(
                                 LobbyAction::AddBot {
                                     bot_name,
                                     color: bot_color,
+                                    difficulty: bot_difficulty,
                                 },
                                 channels,
                             );

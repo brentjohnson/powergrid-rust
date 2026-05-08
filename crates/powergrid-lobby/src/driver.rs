@@ -1,5 +1,4 @@
 use crate::rooms::Room;
-use powergrid_bot_strategy::strategy;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tracing::{info, warn};
@@ -11,11 +10,8 @@ const MAX_BOT_ITERATIONS: usize = 50;
 pub async fn run_bot_pump(room_arc: Arc<Mutex<Room>>, delay: Duration) {
     for iter in 0..MAX_BOT_ITERATIONS {
         let next = {
-            let room = room_arc.lock().await;
-            room.session
-                .bots
-                .iter()
-                .find_map(|b| strategy::decide(&room.session.game, b.id).map(|a| (b.id, a)))
+            let mut room = room_arc.lock().await;
+            room.session.next_bot_action()
         };
 
         let Some((bot_id, action)) = next else {

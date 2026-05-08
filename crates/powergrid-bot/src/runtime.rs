@@ -2,7 +2,7 @@ use futures_util::{SinkExt, StreamExt};
 use powergrid_core::{
     actions::{Action, ServerMessage},
     map::Map,
-    types::{PlayerColor, PlayerId},
+    types::{BotDifficulty, PlayerColor, PlayerId},
 };
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
@@ -10,15 +10,18 @@ use tokio_tungstenite::{
 };
 use tracing::{error, info, warn};
 
-use powergrid_bot_strategy::strategy;
+use powergrid_bot_strategy::{default_registry, Bot, BotProfile};
 
-pub async fn run_bot(url: String, name: String, color: PlayerColor) {
+pub async fn run_bot(url: String, name: String, color: PlayerColor, difficulty: BotDifficulty) {
     let map = powergrid_core::default_map();
+    let registry = default_registry();
+    let profile = registry.profile_for(difficulty).clone();
+
     loop {
         match connect_async(&url).await {
             Ok((stream, _)) => {
                 info!("Connected to {url}");
-                match bot_session(stream, &name, color, &map).await {
+                match bot_session(stream, &name, color, &map, profile.clone()).await {
                     SessionResult::GameOver => {
                         info!("Game over — exiting");
                         return;
@@ -46,9 +49,11 @@ async fn bot_session(
     name: &str,
     color: PlayerColor,
     map: &Map,
+    profile: BotProfile,
 ) -> SessionResult {
     let (mut write, mut read) = stream.split();
     let mut my_id: Option<PlayerId> = None;
+    let mut bot: Option<Bot> = None;
 
     while let Some(msg) = read.next().await {
         let text = match msg {
@@ -69,6 +74,14 @@ async fn bot_session(
         match server_msg {
             ServerMessage::Welcome { your_id } => {
                 my_id = Some(your_id);
+                let seed = your_id.as_u128() as u64;
+                bot = Some(Bot::new(
+                    your_id,
+                    name.to_string(),
+                    color,
+                    profile.clone(),
+                    seed,
+                ));
                 info!("Received Welcome as {your_id}; sending JoinGame");
                 let action = Action::JoinGame {
                     name: name.to_string(),
@@ -86,7 +99,8 @@ async fn bot_session(
             }
 
             ServerMessage::StateUpdate(view) => {
-                let Some(id) = my_id else { continue };
+                let Some(_id) = my_id else { continue };
+                let Some(bot) = bot.as_mut() else { continue };
 
                 if let powergrid_core::types::Phase::GameOver { winner } = &view.phase {
                     if let Some(winner_player) = view.player(*winner) {
@@ -101,7 +115,7 @@ async fn bot_session(
                 tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
 
                 let gs = view.into_game_state(map);
-                if let Some(action) = strategy::decide(&gs, id) {
+                if let Some(action) = bot.decide(&gs) {
                     info!("Sending action: {:?}", action);
                     if write
                         .send(WsMessage::Text(

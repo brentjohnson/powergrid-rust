@@ -1,8 +1,8 @@
-use powergrid_bot_strategy::strategy;
+use powergrid_bot_strategy::{default_registry, Bot};
 use powergrid_core::{
     actions::{Action, ActionError, ServerMessage},
     rules::apply_action,
-    types::{Phase, PlayerColor, PlayerId},
+    types::{BotDifficulty, Phase, PlayerColor, PlayerId},
     GameState,
 };
 use std::{sync::Arc, time::Duration};
@@ -38,23 +38,13 @@ impl Subscriber {
 }
 
 // ---------------------------------------------------------------------------
-// BotSlot
-// ---------------------------------------------------------------------------
-
-pub struct BotSlot {
-    pub id: PlayerId,
-    pub name: String,
-    pub color: PlayerColor,
-}
-
-// ---------------------------------------------------------------------------
 // Session
 // ---------------------------------------------------------------------------
 
 pub struct Session {
     pub game: GameState,
     subscribers: Vec<Subscriber>,
-    pub bots: Vec<BotSlot>,
+    pub bots: Vec<Bot>,
 }
 
 impl Session {
@@ -101,7 +91,12 @@ impl Session {
     }
 
     /// Add an in-process bot (Lobby phase only).
-    pub fn add_bot(&mut self, bot_name: String, color: PlayerColor) -> Result<PlayerId, String> {
+    pub fn add_bot(
+        &mut self,
+        bot_name: String,
+        color: PlayerColor,
+        difficulty: BotDifficulty,
+    ) -> Result<PlayerId, String> {
         let bot_id = uuid::Uuid::new_v4();
         apply_action(
             &mut self.game,
@@ -112,12 +107,16 @@ impl Session {
             },
         )
         .map_err(|e| e.to_string())?;
-        info!("Bot '{}' ({:?}) added to session", bot_name, color);
-        self.bots.push(BotSlot {
-            id: bot_id,
-            name: bot_name,
-            color,
-        });
+        info!(
+            "Bot '{}' ({:?}) added to session (difficulty: {:?})",
+            bot_name, color, difficulty
+        );
+
+        let registry = default_registry();
+        let profile = registry.profile_for(difficulty).clone();
+        let seed = bot_id.as_u128() as u64;
+        self.bots
+            .push(Bot::new(bot_id, bot_name, color, profile, seed));
         Ok(bot_id)
     }
 
@@ -137,6 +136,15 @@ impl Session {
         info!("Bot {} removed from session", bot_id);
         Ok(())
     }
+
+    /// Find the first bot that has a move and return its id + action.
+    /// Uses disjoint field borrows so game can be read while bots are iterated mutably.
+    pub fn next_bot_action(&mut self) -> Option<(PlayerId, Action)> {
+        let game = &self.game;
+        self.bots
+            .iter_mut()
+            .find_map(|b| b.decide(game).map(|a| (b.id, a)))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -150,11 +158,8 @@ const MAX_BOT_ITERATIONS: usize = 50;
 pub async fn run_bot_pump(session_arc: Arc<Mutex<Session>>, delay: Duration) {
     for iter in 0..MAX_BOT_ITERATIONS {
         let next = {
-            let session = session_arc.lock().await;
-            session
-                .bots
-                .iter()
-                .find_map(|b| strategy::decide(&session.game, b.id).map(|a| (b.id, a)))
+            let mut session = session_arc.lock().await;
+            session.next_bot_action()
         };
 
         let Some((bot_id, action)) = next else {

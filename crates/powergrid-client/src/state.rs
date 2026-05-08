@@ -4,7 +4,7 @@ use powergrid_core::{
     actions::RoomSummary,
     connection_cost,
     map::Map,
-    types::{Phase, PlayerColor, PlayerId, Resource},
+    types::{BotDifficulty, Phase, PlayerColor, PlayerId, Resource},
     GameStateView,
 };
 use std::{
@@ -63,9 +63,10 @@ pub struct AppState {
     pub room_name_input: String,
     /// If set, auto-create/join this room name on first Welcome (CLI arg).
     pub auto_room: Option<String>,
-    /// Bot name + color inputs for the Add Bot form.
+    /// Bot name + color + difficulty inputs for the Add Bot form (online lobby).
     pub bot_name_input: String,
     pub bot_color_input: PlayerColor,
+    pub bot_difficulty_input: BotDifficulty,
 
     // Game state
     pub game_state: Option<GameStateView>,
@@ -117,7 +118,8 @@ pub struct AppState {
     // Local play setup
     pub local_name: String,
     pub local_color: PlayerColor,
-    pub local_bot_count: u8,
+    /// Per-bot difficulty for local play. Length = number of bots (1–5).
+    pub local_bots: Vec<BotDifficulty>,
 }
 
 impl AppState {
@@ -174,6 +176,7 @@ impl AppState {
             auto_room: cli.room,
             bot_name_input: String::new(),
             bot_color_input: PlayerColor::Blue,
+            bot_difficulty_input: BotDifficulty::Normal,
             game_state: None,
             map: None,
             error_message: None,
@@ -197,7 +200,11 @@ impl AppState {
             fullscreen,
             local_name: "You".to_string(),
             local_color: PlayerColor::Red,
-            local_bot_count: 3,
+            local_bots: vec![
+                BotDifficulty::Normal,
+                BotDifficulty::Normal,
+                BotDifficulty::Normal,
+            ],
         }
     }
 

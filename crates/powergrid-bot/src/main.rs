@@ -1,9 +1,10 @@
 use powergrid_bot::runtime::run_bot;
-use powergrid_core::types::PlayerColor;
+use powergrid_core::types::{BotDifficulty, PlayerColor};
 
 struct Args {
     name: String,
     color: PlayerColor,
+    difficulty: BotDifficulty,
     server: String,
     port: u16,
 }
@@ -12,6 +13,7 @@ fn parse_args() -> Result<Args, String> {
     let args: Vec<String> = std::env::args().collect();
     let mut name: Option<String> = None;
     let mut color: Option<PlayerColor> = None;
+    let mut difficulty = BotDifficulty::Normal;
     let mut server = String::from("localhost");
     let mut port: u16 = 3000;
 
@@ -31,6 +33,11 @@ fn parse_args() -> Result<Args, String> {
                 let s = args.get(i).ok_or("--color requires a value")?;
                 color = Some(parse_color(s)?);
             }
+            "--difficulty" => {
+                i += 1;
+                let s = args.get(i).ok_or("--difficulty requires a value")?;
+                difficulty = parse_difficulty(s)?;
+            }
             "--server" => {
                 i += 1;
                 server = args.get(i).cloned().ok_or("--server requires a value")?;
@@ -48,6 +55,7 @@ fn parse_args() -> Result<Args, String> {
     Ok(Args {
         name: name.ok_or("--name is required")?,
         color: color.ok_or("--color is required")?,
+        difficulty,
         server,
         port,
     })
@@ -58,12 +66,14 @@ fn print_help() {
         "Usage: powergrid-bot --name <name> --color <color> [options]
 
 Options:
-  --name <name>    Bot player name (required)
-  --color <color>  Bot player color (required)
-                     Choices: red, blue, green, yellow, purple, white
-  --server <host>  Server hostname (default: localhost)
-  --port <port>    Server port (default: 3000)
-  -h, --help       Show this help message"
+  --name <name>        Bot player name (required)
+  --color <color>      Bot player color (required)
+                         Choices: red, blue, green, yellow, purple, white
+  --difficulty <d>     Bot difficulty (default: normal)
+                         Choices: easy, normal, hard
+  --server <host>      Server hostname (default: localhost)
+  --port <port>        Server port (default: 3000)
+  -h, --help           Show this help message"
     );
 }
 
@@ -81,6 +91,17 @@ fn parse_color(s: &str) -> Result<PlayerColor, String> {
     }
 }
 
+fn parse_difficulty(s: &str) -> Result<BotDifficulty, String> {
+    match s.to_lowercase().as_str() {
+        "easy" => Ok(BotDifficulty::Easy),
+        "normal" => Ok(BotDifficulty::Normal),
+        "hard" => Ok(BotDifficulty::Hard),
+        other => Err(format!(
+            "unknown difficulty '{other}'; expected: easy, normal, hard"
+        )),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -94,14 +115,18 @@ async fn main() {
         Ok(a) => a,
         Err(e) => {
             eprintln!("Error: {e}");
-            eprintln!("Usage: powergrid-bot --name <name> --color <color> [--server <host>] [--port <port>]");
-            eprintln!("Colors: red, blue, green, yellow, purple, white");
+            eprintln!("Usage: powergrid-bot --name <name> --color <color> [--difficulty easy|normal|hard] [--server <host>] [--port <port>]");
             std::process::exit(1);
         }
     };
 
     let url = format!("ws://{}:{}/ws", args.server, args.port);
-    tracing::info!("Bot '{}' ({:?}) connecting to {url}", args.name, args.color);
+    tracing::info!(
+        "Bot '{}' ({:?}, {:?}) connecting to {url}",
+        args.name,
+        args.color,
+        args.difficulty
+    );
 
-    run_bot(url, args.name, args.color).await;
+    run_bot(url, args.name, args.color, args.difficulty).await;
 }

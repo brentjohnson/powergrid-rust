@@ -1,0 +1,100 @@
+# Bot difficulty profiles.
+# All values under [normal] reproduce the original hard-coded constants exactly.
+# Change weights here without recompiling to experiment with bot behaviour.
+
+# ---------------------------------------------------------------------------
+# Easy — weaker, more random play for beginners to practice against.
+# ---------------------------------------------------------------------------
+
+[easy]
+display_name = "Easy"
+temperature  = 2.0   # Boltzmann sampling: occasionally picks 2nd/3rd best action
+jitter       = 0.5   # 50% chance of bid jitter
+max_jitter   = 5     # up to +5 elektro above ceiling
+
+[easy.auction]
+cities_weight       = 15.0
+green_bonus         = 25.0
+efficiency_weight   = 10.0
+city_reserve        = 30.0
+safety_buffer       = 5.0
+upgrade_margin      = 5.0   # lower = replaces plants even for small improvements (wastes money)
+min_open_score      = 15.0  # lower = buys plants more aggressively even when suboptimal
+capacity_premium    = 3.0   # higher = overbids more
+opponent_gap_weight = 0.0
+endgame_weight      = 0.0
+pipeline_weight     = 0.0
+
+[easy.buy]
+fuel_reserve_multiplier = 4.0
+
+[easy.build]
+block_weight = 0.0
+
+[easy.bureaucracy]
+oil_preference = 1.0   # 1.0 = always prefer oil for hybrids (conserves coal)
+
+# ---------------------------------------------------------------------------
+# Normal — matches the original hand-coded logic exactly.
+# ---------------------------------------------------------------------------
+
+[normal]
+display_name = "Normal"
+temperature  = 0.0  # pure argmax — deterministic best choice
+jitter       = 0.3  # ~30% chance of bid jitter
+max_jitter   = 3    # up to +3 elektro above ceiling
+
+[normal.auction]
+cities_weight       = 15.0
+green_bonus         = 25.0
+efficiency_weight   = 10.0
+city_reserve        = 30.0   # ~2 city builds kept in reserve
+safety_buffer       = 5.0
+upgrade_margin      = 10.0   # minimum score improvement to justify replacing a plant
+min_open_score      = 20.0   # minimum score for a plant to be worth selecting
+capacity_premium    = 2.0    # extra elektro per city of capacity gained
+opponent_gap_weight = 0.0
+endgame_weight      = 0.0
+pipeline_weight     = 0.0
+
+[normal.buy]
+fuel_reserve_multiplier = 4.0   # spend 4× plant cost on fuel reserves
+
+[normal.build]
+block_weight = 0.0
+
+[normal.bureaucracy]
+oil_preference = 1.0
+
+# ---------------------------------------------------------------------------
+# Hard — deterministic best-move with opponent and endgame awareness.
+# ---------------------------------------------------------------------------
+
+[hard]
+display_name = "Hard"
+temperature  = 0.0   # pure argmax
+jitter       = 0.15  # less bid noise — tighter, harder to read
+max_jitter   = 2
+
+[hard.auction]
+cities_weight       = 15.0
+green_bonus         = 25.0
+efficiency_weight   = 10.0
+city_reserve        = 30.0
+safety_buffer       = 5.0
+upgrade_margin      = 10.0
+min_open_score      = 20.0
+capacity_premium    = 2.0
+# Non-zero weights activate opponent/endgame awareness:
+opponent_gap_weight = 3.0   # bonus per city the leading opponent is ahead of us
+endgame_weight      = 5.0   # bonus proportional to how close we are to game end
+pipeline_weight     = 2.0   # bonus when this plant is better than the upcoming deck
+
+[hard.buy]
+fuel_reserve_multiplier = 4.0
+
+[hard.build]
+block_weight = 2.0   # bonus for cities that opponents are already building in
+
+[hard.bureaucracy]
+oil_preference = 1.0

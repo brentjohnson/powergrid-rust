@@ -25,6 +25,16 @@ pub enum PlayerColor {
     White,
 }
 
+/// Bot difficulty level, carried in `LobbyAction::AddBot` and `Session::add_bot`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BotDifficulty {
+    Easy,
+    #[default]
+    Normal,
+    Hard,
+}
+
 /// A power plant card.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PowerPlant {
@@ -694,15 +704,6 @@ impl PlantMarket {
                 // Step 3 already triggered or not in play; put in main deck.
                 self.deck.insert(0, plant);
             }
-            self.refill();
-        }
-    }
-
-    /// Remove the highest-numbered plant from the market entirely.
-    /// Used at end of Bureaucracy in Step 3 (replaces cycling to deck bottom).
-    pub fn remove_highest_from_game(&mut self) {
-        if !self.actual.is_empty() {
-            self.actual.pop(); // actual is sorted ascending, last = highest
             self.refill();
         }
     }

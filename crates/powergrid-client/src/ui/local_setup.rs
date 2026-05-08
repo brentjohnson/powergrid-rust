@@ -1,5 +1,5 @@
 use egui::RichText;
-use powergrid_core::types::PlayerColor;
+use powergrid_core::types::{BotDifficulty, PlayerColor};
 
 use crate::{
     local::LocalConfig,
@@ -37,7 +37,7 @@ pub(super) fn local_setup_screen(ctx: &egui::Context, state: &mut AppState, acti
                 ui.add_space(40.0);
 
                 theme::neon_frame().show(ui, |ui| {
-                    ui.set_width(420.0);
+                    ui.set_width(480.0);
                     ui.spacing_mut().item_spacing.y = 10.0;
 
                     // Name
@@ -83,39 +83,56 @@ pub(super) fn local_setup_screen(ctx: &egui::Context, state: &mut AppState, acti
 
                     ui.add_space(4.0);
 
-                    // Bot count
+                    // Per-bot difficulty rows
                     ui.label(
                         RichText::new("BOT OPPONENTS")
                             .color(theme::TEXT_DIM)
                             .small(),
                     );
-                    ui.horizontal(|ui| {
-                        let count = state.local_bot_count;
-                        ui.label(
-                            RichText::new(format!("{count}"))
-                                .color(theme::TEXT_BRIGHT)
-                                .monospace()
-                                .size(16.0),
-                        );
-                        ui.add_space(8.0);
-                        if ui
-                            .add_enabled(count > 1, neon_button("[-]", theme::NEON_AMBER))
+
+                    let mut remove_idx: Option<usize> = None;
+                    for (i, difficulty) in state.local_bots.iter_mut().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!("Bot {}", i + 1))
+                                    .color(theme::TEXT_BRIGHT)
+                                    .monospace()
+                                    .small(),
+                            );
+                            ui.add_space(8.0);
+                            egui::ComboBox::from_id_salt(format!("bot_diff_{i}"))
+                                .selected_text(difficulty_label(*difficulty))
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(difficulty, BotDifficulty::Easy, "Easy");
+                                    ui.selectable_value(
+                                        difficulty,
+                                        BotDifficulty::Normal,
+                                        "Normal",
+                                    );
+                                    ui.selectable_value(difficulty, BotDifficulty::Hard, "Hard");
+                                });
+                            if ui.add(neon_button("[×]", theme::NEON_AMBER)).clicked() {
+                                remove_idx = Some(i);
+                            }
+                        });
+                    }
+                    if let Some(idx) = remove_idx {
+                        state.local_bots.remove(idx);
+                    }
+
+                    if state.local_bots.len() < 5
+                        && ui
+                            .add(neon_button("[+ ADD BOT]", theme::NEON_GREEN))
                             .clicked()
-                        {
-                            state.local_bot_count -= 1;
-                        }
-                        if ui
-                            .add_enabled(count < 5, neon_button("[+]", theme::NEON_GREEN))
-                            .clicked()
-                        {
-                            state.local_bot_count += 1;
-                        }
-                        ui.label(
-                            RichText::new(format!("({} total players)", count + 1))
-                                .color(theme::TEXT_DIM)
-                                .small(),
-                        );
-                    });
+                    {
+                        state.local_bots.push(BotDifficulty::Normal);
+                    }
+
+                    ui.label(
+                        RichText::new(format!("({} total players)", state.local_bots.len() + 1))
+                            .color(theme::TEXT_DIM)
+                            .small(),
+                    );
 
                     ui.add_space(12.0);
 
@@ -126,7 +143,8 @@ pub(super) fn local_setup_screen(ctx: &egui::Context, state: &mut AppState, acti
 
                         ui.add_space(8.0);
 
-                        let can_start = !state.local_name.trim().is_empty();
+                        let can_start =
+                            !state.local_name.trim().is_empty() && !state.local_bots.is_empty();
                         let start_btn = egui::Button::new(
                             RichText::new("[ START LOCAL GAME ]")
                                 .color(if can_start {
@@ -154,7 +172,7 @@ pub(super) fn local_setup_screen(ctx: &egui::Context, state: &mut AppState, acti
                             *action = UiAction::StartLocal(LocalConfig {
                                 human_name: state.local_name.trim().to_string(),
                                 human_color: state.local_color,
-                                bot_count: state.local_bot_count,
+                                bots: state.local_bots.clone(),
                             });
                             state.pending_connect = true;
                         }
@@ -171,4 +189,12 @@ pub(super) fn local_setup_screen(ctx: &egui::Context, state: &mut AppState, acti
                 });
             });
         });
+}
+
+fn difficulty_label(d: BotDifficulty) -> &'static str {
+    match d {
+        BotDifficulty::Easy => "Easy",
+        BotDifficulty::Normal => "Normal",
+        BotDifficulty::Hard => "Hard",
+    }
 }

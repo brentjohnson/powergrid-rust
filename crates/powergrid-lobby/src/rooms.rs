@@ -1,6 +1,6 @@
 use powergrid_core::{
     actions::{RoomSummary, ServerMessage},
-    types::{Phase, PlayerColor, PlayerId},
+    types::{BotDifficulty, Phase, PlayerColor, PlayerId},
 };
 use powergrid_session::{Map, Session, Subscriber, MAX_PLAYERS};
 use std::{collections::HashMap, sync::Arc};
@@ -53,8 +53,13 @@ impl Room {
         self.session.add_subscriber(Subscriber::Mpsc(tx));
     }
 
-    pub fn add_bot(&mut self, bot_name: String, color: PlayerColor) -> Result<PlayerId, String> {
-        self.session.add_bot(bot_name, color)
+    pub fn add_bot(
+        &mut self,
+        bot_name: String,
+        color: PlayerColor,
+        difficulty: BotDifficulty,
+    ) -> Result<PlayerId, String> {
+        self.session.add_bot(bot_name, color, difficulty)
     }
 
     pub fn remove_bot(&mut self, bot_id: PlayerId) -> Result<(), String> {

@@ -8,3 +8,4 @@ powergrid-core = { path = "../powergrid-core" }
 serde = { workspace = true }
 tracing = { workspace = true }
 rand = { version = "0.8", features = ["small_rng"] }
+toml = "0.8"

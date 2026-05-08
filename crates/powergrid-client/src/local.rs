@@ -1,7 +1,7 @@
 use crossbeam_channel::Sender;
 use powergrid_core::{
     actions::{Action, ClientMessage, ServerMessage},
-    types::PlayerColor,
+    types::{BotDifficulty, PlayerColor},
 };
 use powergrid_session::{run_bot_pump, Session, Subscriber, MAX_PLAYERS};
 use std::{sync::Arc, time::Duration};
@@ -14,7 +14,8 @@ use crate::ws::{WsChannels, WsEvent};
 pub struct LocalConfig {
     pub human_name: String,
     pub human_color: PlayerColor,
-    pub bot_count: u8,
+    /// One entry per bot; length determines bot count (1–5).
+    pub bots: Vec<BotDifficulty>,
 }
 
 /// Holds the background runtime thread for a local play session.
@@ -51,7 +52,7 @@ pub fn start_local_session(cfg: LocalConfig) -> (WsChannels, LocalHandle) {
         .iter()
         .copied()
         .filter(|&c| c != human_color)
-        .take(cfg.bot_count as usize)
+        .take(cfg.bots.len())
         .collect();
 
     let (event_tx, event_rx) = crossbeam_channel::unbounded::<WsEvent>();
@@ -72,8 +73,8 @@ pub fn start_local_session(cfg: LocalConfig) -> (WsChannels, LocalHandle) {
             },
         )
         .expect("human JoinGame must succeed");
-        for (i, color) in bot_colors.into_iter().enumerate() {
-            s.add_bot(format!("Bot {}", i + 1), color)
+        for (i, (color, difficulty)) in bot_colors.into_iter().zip(cfg.bots.iter()).enumerate() {
+            s.add_bot(format!("Bot {}", i + 1), color, *difficulty)
                 .expect("add_bot must succeed in Lobby");
         }
         s.apply(human_id, Action::StartGame)

@@ -868,17 +868,14 @@ fn note_step3_trigger(state: &mut GameState) {
         Phase::Auction { .. } | Phase::DiscardPlant { .. } => {
             // Phase 2: defer everything (market transition + step) to begin_buy_resources.
             state.step3_pending = Some(crate::state::Step3Pending::AfterAuction);
-            state.log(
-                "Step 3 card drawn — takes effect at the start of Buy Resources.".to_string(),
-            );
+            state
+                .log("Step 3 card drawn — takes effect at the start of Buy Resources.".to_string());
         }
         Phase::BuildCities { .. } => {
             // Phase 4: reshape market now; defer state.step to begin_bureaucracy.
             apply_step3_market_transition(state);
             state.step3_pending = Some(crate::state::Step3Pending::AfterBuilding);
-            state.log(
-                "Step 3 card drawn — takes effect at the start of Bureaucracy.".to_string(),
-            );
+            state.log("Step 3 card drawn — takes effect at the start of Bureaucracy.".to_string());
         }
         Phase::Bureaucracy { .. } => {
             // Phase 5: reshape market now; defer state.step to next begin_auction.
@@ -1243,8 +1240,8 @@ fn end_of_round(state: &mut GameState) {
 
     // End-of-round market update.
     if state.step >= 3 {
-        // Step 3: remove the highest plant from the game entirely.
-        state.market.remove_highest_from_game();
+        // Step 3: remove the lowest plant from the market entirely.
+        state.market.remove_lowest();
     } else {
         // Steps 1 & 2: cycle the highest future-market plant to the bottom of the draw deck.
         state.market.cycle_highest_to_bottom();
@@ -3879,7 +3876,14 @@ mod tests {
         // Second player selects the lowest available plant (auto-wins) → auction ends
         // → BuyResources starts → pending applied.
         let lowest = state.market.actual[0].number;
-        apply_action(&mut state, second, Action::SelectPlant { plant_number: lowest }).unwrap();
+        apply_action(
+            &mut state,
+            second,
+            Action::SelectPlant {
+                plant_number: lowest,
+            },
+        )
+        .unwrap();
         assert!(
             matches!(state.phase, Phase::BuyResources { .. }),
             "expected BuyResources; got {:?}",
@@ -3916,7 +3920,9 @@ mod tests {
         apply_action(
             &mut state,
             first,
-            Action::BuildCities { city_ids: vec!["a".into()] },
+            Action::BuildCities {
+                city_ids: vec!["a".into()],
+            },
         )
         .unwrap();
 
@@ -3966,7 +3972,7 @@ mod tests {
         // Deck empty so the end-of-round market cycle hits the Step 3 card.
         state.market.deck.clear();
         state.market.below_step3 = Some(vec![]); // Step 3 card "in play"
-        // future must be non-empty for cycle_highest_to_bottom to pop.
+                                                 // future must be non-empty for cycle_highest_to_bottom to pop.
         if state.market.future.is_empty() {
             use crate::types::{PlantKind, PowerPlant};
             state.market.future.push(PowerPlant {
@@ -3986,7 +3992,9 @@ mod tests {
             apply_action(
                 &mut state,
                 *actor,
-                Action::PowerCities { plant_numbers: vec![] },
+                Action::PowerCities {
+                    plant_numbers: vec![],
+                },
             )
             .unwrap();
         }
@@ -3997,7 +4005,10 @@ mod tests {
             "expected Auction for next round; got {:?}",
             state.phase
         );
-        assert_eq!(state.step, 3, "Step 3 must begin at start of the next round");
+        assert_eq!(
+            state.step, 3,
+            "Step 3 must begin at start of the next round"
+        );
         assert_eq!(state.step3_pending, None, "pending must be cleared");
         // 2-player Step 2 replenishment rate = 4 coal; Step 3 rate = 3 coal.
         assert_eq!(
@@ -4019,7 +4030,13 @@ mod tests {
         // Populate city "a" with two fake owners to hit the Step-2 max.
         let fake1 = uuid::Uuid::new_v4();
         let fake2 = uuid::Uuid::new_v4();
-        state.map.cities.get_mut("a").unwrap().owners.extend([fake1, fake2]);
+        state
+            .map
+            .cities
+            .get_mut("a")
+            .unwrap()
+            .owners
+            .extend([fake1, fake2]);
 
         // Mark Step 3 card as drawn so the next build action notes it.
         state.market.below_step3 = Some(vec![]);
@@ -4035,7 +4052,9 @@ mod tests {
         apply_action(
             &mut state,
             first,
-            Action::BuildCities { city_ids: vec!["b".into()] },
+            Action::BuildCities {
+                city_ids: vec!["b".into()],
+            },
         )
         .unwrap();
 
@@ -4053,7 +4072,9 @@ mod tests {
         let err = apply_action(
             &mut state,
             second,
-            Action::BuildCities { city_ids: vec!["a".into()] },
+            Action::BuildCities {
+                city_ids: vec!["a".into()],
+            },
         )
         .unwrap_err();
         assert!(
@@ -4082,7 +4103,9 @@ mod tests {
         apply_action(
             &mut state,
             first,
-            Action::BuildCity { city_id: "a".into() },
+            Action::BuildCity {
+                city_id: "a".into(),
+            },
         )
         .unwrap();
 

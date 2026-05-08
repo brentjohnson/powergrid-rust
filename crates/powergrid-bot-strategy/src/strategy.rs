@@ -8,13 +8,37 @@ use powergrid_core::{
 };
 use tracing::{debug, info};
 
+use crate::{
+    bot::Bot,
+    features::{
+        bid_ceiling, capacity_bump, city_contest_bonus, plant_score, plant_score_contextual,
+        should_skip_auction,
+    },
+    profile::default_registry,
+};
+
 // ---------------------------------------------------------------------------
-// Public entry point
+// Public entry points
 // ---------------------------------------------------------------------------
 
-/// Given the current game state and the bot's player id, decide what action to
-/// take next.  Returns `None` when it is not the bot's turn to act.
+/// Compatibility shim: creates a one-shot Normal-profile bot and decides.
+/// Use `Bot::decide` for persistent bots with stable RNG state.
 pub fn decide(state: &GameState, me: PlayerId) -> Option<Action> {
+    let registry = default_registry();
+    let profile = registry.normal.clone();
+    let seed = me.as_u128() as u64;
+    let mut bot = Bot::new(
+        me,
+        String::new(),
+        powergrid_core::types::PlayerColor::Red,
+        profile,
+        seed,
+    );
+    decide_with_bot(state, &mut bot)
+}
+
+/// Full implementation: dispatch to phase-specific handlers.
+pub(crate) fn decide_with_bot(state: &GameState, bot: &mut Bot) -> Option<Action> {
     use powergrid_core::types::Phase;
     match &state.phase {
         Phase::Lobby | Phase::PlayerOrder | Phase::GameOver { .. } => None,
@@ -24,45 +48,45 @@ pub fn decide(state: &GameState, me: PlayerId) -> Option<Action> {
             active_bid,
             bought,
             passed,
-        } => decide_auction(state, me, *current_bidder_idx, active_bid, bought, passed),
+        } => decide_auction(state, bot, *current_bidder_idx, active_bid, bought, passed),
 
         Phase::DiscardPlant {
             player, new_plant, ..
         } => {
-            if *player != me {
+            if *player != bot.id {
                 return None;
             }
-            decide_discard(state, me, new_plant)
+            decide_discard(state, bot, new_plant)
         }
 
         Phase::DiscardResource {
             player, drop_total, ..
         } => {
-            if *player != me {
+            if *player != bot.id {
                 return None;
             }
-            decide_discard_resource(state, me, *drop_total)
+            decide_discard_resource(state, bot, *drop_total)
         }
 
         Phase::BuyResources { remaining } => {
-            if remaining.first() != Some(&me) {
+            if remaining.first() != Some(&bot.id) {
                 return None;
             }
-            decide_buy_resources(state, me)
+            decide_buy_resources(state, bot)
         }
 
         Phase::BuildCities { remaining } => {
-            if remaining.first() != Some(&me) {
+            if remaining.first() != Some(&bot.id) {
                 return None;
             }
-            decide_build_cities(state, me)
+            decide_build_cities(state, bot)
         }
 
         Phase::Bureaucracy { remaining } => {
-            if !remaining.contains(&me) {
+            if !remaining.contains(&bot.id) {
                 return None;
             }
-            decide_power_cities(state, me)
+            decide_power_cities(state, bot)
         }
 
         Phase::PowerCitiesFuel {
@@ -70,126 +94,12 @@ pub fn decide(state: &GameState, me: PlayerId) -> Option<Action> {
             hybrid_cost,
             ..
         } => {
-            if *player != me {
+            if *player != bot.id {
                 return None;
             }
-            decide_power_cities_fuel(state, me, *hybrid_cost)
+            decide_power_cities_fuel(state, bot, *hybrid_cost)
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// Plant scoring
-// ---------------------------------------------------------------------------
-
-/// Score a plant for acquisition. Higher = more desirable.
-fn plant_score(plant: &PowerPlant) -> i32 {
-    let city_value = plant.cities as i32 * 15;
-    let fuel_bonus = if matches!(plant.kind, PlantKind::Wind | PlantKind::Fusion) {
-        25 // no running cost ever
-    } else {
-        0
-    };
-    // Efficiency: cities per resource consumed (wind/fusion cost=0, treat as very efficient)
-    let efficiency = if plant.cost == 0 {
-        30
-    } else {
-        (plant.cities as i32 * 10) / plant.cost as i32
-    };
-    city_value + fuel_bonus + efficiency
-}
-
-/// Net cities-powered capacity gained by acquiring `plant`.  When the rack is
-/// already full (3 plants) we'd discard the lowest-scored plant — mirroring
-/// `decide_discard` — so the bump is `plant.cities - worst.cities`.
-fn capacity_bump(plant: &PowerPlant, player: &Player) -> i32 {
-    if player.plants.len() < 3 {
-        return plant.cities as i32;
-    }
-    let worst_cities = player
-        .plants
-        .iter()
-        .min_by_key(|p| plant_score(p))
-        .map(|p| p.cities as i32)
-        .unwrap_or(0);
-    plant.cities as i32 - worst_cities
-}
-
-/// How much cash to keep after winning an auction: fuel for all owned plants
-/// (including the new one) plus enough for two city builds.  Cities are the
-/// scoring resource, so we bias the reserve toward affording them rather than
-/// pouring cash into plant auctions.
-fn auction_reserve(plant: &PowerPlant, player: &Player) -> u32 {
-    let mut reserve = 0u32;
-    for p in &player.plants {
-        if p.kind.needs_resources() {
-            reserve += p.cost as u32 * 4;
-        }
-    }
-    if plant.kind.needs_resources() {
-        reserve += plant.cost as u32 * 4;
-    }
-    reserve += 30; // ~2 city builds
-    reserve += 5; // safety buffer
-    reserve
-}
-
-/// True when acquiring a new plant would give little or no benefit.
-///
-/// Two cases: (1) we already have any surplus generation capacity over the
-/// cities we own — building cities is more valuable than stockpiling plants —
-/// or (2) we have a full rack (3 plants) and the candidate is not a meaningful
-/// upgrade over our worst plant.
-fn should_skip_auction(player: &Player, candidate: &PowerPlant) -> bool {
-    let powerable: u8 = player.plants.iter().map(|p| p.cities).sum();
-    let owned = player.cities.len() as u8;
-    if powerable > owned {
-        return true;
-    }
-    if player.plants.len() >= 3 {
-        if let Some(worst) = player.plants.iter().min_by_key(|p| plant_score(p)) {
-            if plant_score(candidate) - plant_score(worst) < 10 {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// Deterministic bid ceiling.  Round 1 caps strictly at the listed price —
-/// bidding wars there starve the rest of the early game of cash for fuel and
-/// city builds.  Later rounds accept a small premium only when the plant
-/// materially boosts cities-powered capacity (counting the 4th-plant discard).
-fn bid_ceiling(plant: &PowerPlant, player: &Player, round: u32) -> u32 {
-    let listed = plant.number as u32;
-
-    let raw_ceiling = if round == 1 {
-        listed
-    } else {
-        let bump = capacity_bump(plant, player);
-        let premium = if bump > 0 { (bump as u32) * 2 } else { 0 };
-        let affordable = player.money.saturating_sub(auction_reserve(plant, player));
-        (listed + premium).min(affordable).max(listed)
-    };
-
-    raw_ceiling.min(player.money)
-}
-
-/// Max we are willing to pay for a plant.  Built on top of `bid_ceiling` with
-/// a small upward jitter applied periodically so opponents can't read the
-/// ceiling exactly — but capped tightly enough that round 1 still rarely
-/// exceeds the listed price.
-fn max_bid(plant: &PowerPlant, player: &Player, round: u32) -> u32 {
-    use rand::Rng;
-    let base = bid_ceiling(plant, player, round);
-    let mut rng = rand::thread_rng();
-    // ~30% of the time, add a small premium of 1-3 elektro on top.
-    let jitter = if rng.gen_bool(0.3) {
-        rng.gen_range(1..=3)
-    } else {
-        0
-    };
-    base.saturating_add(jitter).min(player.money)
 }
 
 // ---------------------------------------------------------------------------
@@ -198,109 +108,127 @@ fn max_bid(plant: &PowerPlant, player: &Player, round: u32) -> u32 {
 
 fn decide_auction(
     state: &GameState,
-    me: PlayerId,
+    bot: &mut Bot,
     current_bidder_idx: usize,
     active_bid: &Option<powergrid_core::types::ActiveBid>,
     bought: &[PlayerId],
     passed: &[PlayerId],
 ) -> Option<Action> {
-    let my_player = state.player(me)?;
+    let w = &bot.profile.auction.clone();
+    let buy = &bot.profile.buy.clone();
+    let my_player = state.player(bot.id)?;
 
     if let Some(bid) = active_bid {
-        // An active bid is in progress — act only if we are the next bidder.
-        if bid.remaining_bidders.first() != Some(&me) {
+        if bid.remaining_bidders.first() != Some(&bot.id) {
             return None;
         }
-
-        // Find the plant being auctioned.
         let plant = state
             .market
             .actual
             .iter()
             .find(|p| p.number == bid.plant_number)?;
 
-        let ceiling = max_bid(plant, my_player, state.round);
-        if bid.amount < ceiling {
+        let ceiling = bid_ceiling(plant, my_player, state.round, w, buy);
+        let ceiling_jittered = bot
+            .maybe_jitter(ceiling, bot.profile.max_jitter)
+            .min(my_player.money);
+
+        if bid.amount < ceiling_jittered {
             let raise = bid.amount + 1;
             info!(
                 "Raising bid on plant {} to {} (ceiling {})",
-                bid.plant_number, raise, ceiling
+                bid.plant_number, raise, ceiling_jittered
             );
             return Some(Action::PlaceBid { amount: raise });
         } else {
             info!(
                 "Passing on plant {} — bid {} exceeds ceiling {}",
-                bid.plant_number, bid.amount, ceiling
+                bid.plant_number, bid.amount, ceiling_jittered
             );
             return Some(Action::PassAuction);
         }
     }
 
-    // No active bid — it's our turn to select a plant (or pass).
     if state
         .player_order
         .get(current_bidder_idx)
         .copied()
         .unwrap_or_default()
-        != me
+        != bot.id
     {
         return None;
     }
-
-    // Already bought or passed this round?
-    if bought.contains(&me) || passed.contains(&me) {
+    if bought.contains(&bot.id) || passed.contains(&bot.id) {
         return None;
     }
 
     let is_round_one = state.round == 1;
 
-    // Score each plant in the actual market and pick the best affordable one.
-    let best = state
+    // Build a scored list of candidates: each affordable plant + PassAuction baseline.
+    // Pass gets the `min_open_score` baseline; plants must exceed it to be preferred.
+    #[derive(Clone)]
+    enum AuctionCandidate {
+        Select(u8), // plant_number
+        Pass,
+    }
+
+    let mut candidates: Vec<(AuctionCandidate, f32)> = state
         .market
         .actual
         .iter()
         .filter(|p| my_player.money >= p.number as u32)
-        .max_by_key(|p| plant_score(p));
+        .filter(|p| {
+            // In round 1 we must buy — don't filter. Later: apply skip logic.
+            is_round_one
+                || (!should_skip_auction(my_player, p, w) && capacity_bump(p, my_player, w) >= 1)
+        })
+        .map(|p| {
+            let score = plant_score_contextual(p, my_player, state, w);
+            (AuctionCandidate::Select(p.number), score)
+        })
+        .collect();
 
-    match best {
-        Some(plant) => {
-            let score = plant_score(plant);
-            // In round 1 we must buy; otherwise only open an auction when the
-            // plant is worthwhile, we actually need more capacity, and it would
-            // materially boost cities-powered (counting the 4th-plant discard).
-            let bump = capacity_bump(plant, my_player);
-            if is_round_one || (score >= 20 && !should_skip_auction(my_player, plant) && bump >= 1)
-            {
-                info!(
-                    "Selecting plant {} (kind={:?}, cities={}, score={})",
-                    plant.number, plant.kind, plant.cities, score
-                );
-                Some(Action::SelectPlant {
-                    plant_number: plant.number,
-                })
-            } else {
-                info!(
-                    "Passing auction — no plant worth buying (best score {})",
-                    score
-                );
-                Some(Action::PassAuction)
-            }
+    // PassAuction as a scored baseline (not available in round 1).
+    if !is_round_one {
+        candidates.push((AuctionCandidate::Pass, w.min_open_score));
+    }
+
+    if candidates.is_empty() {
+        // Round 1 forced buy but nothing is affordable — pick cheapest regardless.
+        if is_round_one {
+            let cheapest = state.market.actual.iter().min_by_key(|p| p.number)?;
+            info!(
+                "Round 1 forced buy — selecting cheapest plant {}",
+                cheapest.number
+            );
+            return Some(Action::SelectPlant {
+                plant_number: cheapest.number,
+            });
         }
-        None => {
-            if is_round_one {
-                // Must buy in round 1 but can't afford anything — pick cheapest regardless.
-                let cheapest = state.market.actual.iter().min_by_key(|p| p.number)?;
-                info!(
-                    "Round 1 forced buy — selecting cheapest plant {}",
-                    cheapest.number
-                );
-                Some(Action::SelectPlant {
-                    plant_number: cheapest.number,
-                })
-            } else {
-                info!("Passing auction — cannot afford any plant");
-                Some(Action::PassAuction)
-            }
+        info!("Passing auction — cannot afford or no viable plant");
+        return Some(Action::PassAuction);
+    }
+
+    let chosen = bot.sample_softmax(&candidates)?;
+    match chosen {
+        AuctionCandidate::Select(plant_number) => {
+            let plant = state
+                .market
+                .actual
+                .iter()
+                .find(|p| p.number == plant_number)?;
+            info!(
+                "Selecting plant {} (kind={:?}, cities={}, score={:.1})",
+                plant.number,
+                plant.kind,
+                plant.cities,
+                plant_score_contextual(plant, my_player, state, w),
+            );
+            Some(Action::SelectPlant { plant_number })
+        }
+        AuctionCandidate::Pass => {
+            info!("Passing auction — no plant scores above threshold");
+            Some(Action::PassAuction)
         }
     }
 }
@@ -309,22 +237,26 @@ fn decide_auction(
 // Discard phase
 // ---------------------------------------------------------------------------
 
-fn decide_discard(state: &GameState, me: PlayerId, new_plant: &PowerPlant) -> Option<Action> {
-    let player = state.player(me)?;
+fn decide_discard(state: &GameState, bot: &mut Bot, new_plant: &PowerPlant) -> Option<Action> {
+    let player = state.player(bot.id)?;
+    let w = &bot.profile.auction;
 
-    // Discard the existing plant with the lowest score that is not the new plant.
     let worst = player
         .plants
         .iter()
         .filter(|p| p.number != new_plant.number)
-        .min_by_key(|p| plant_score(p))?;
+        .min_by(|a, b| {
+            plant_score(a, w)
+                .partial_cmp(&plant_score(b, w))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })?;
 
     info!(
-        "Discarding plant {} (score {}) to make room for plant {} (score {})",
+        "Discarding plant {} ({:.1}) to make room for plant {} ({:.1})",
         worst.number,
-        plant_score(worst),
+        plant_score(worst, w),
         new_plant.number,
-        plant_score(new_plant)
+        plant_score(new_plant, w),
     );
     Some(Action::DiscardPlant {
         plant_number: worst.number,
@@ -335,9 +267,8 @@ fn decide_discard(state: &GameState, me: PlayerId, new_plant: &PowerPlant) -> Op
 // Resource-discard phase
 // ---------------------------------------------------------------------------
 
-fn decide_discard_resource(state: &GameState, me: PlayerId, drop_total: u8) -> Option<Action> {
-    let player = state.player(me)?;
-    // Drop coal first to preserve oil for hybrid plants (mirrors resources_needed heuristic).
+fn decide_discard_resource(state: &GameState, bot: &mut Bot, drop_total: u8) -> Option<Action> {
+    let player = state.player(bot.id)?;
     let coal = drop_total.min(player.resources.coal);
     let oil = drop_total - coal;
     info!(
@@ -351,8 +282,8 @@ fn decide_discard_resource(state: &GameState, me: PlayerId, drop_total: u8) -> O
 // Buy resources phase
 // ---------------------------------------------------------------------------
 
-fn decide_buy_resources(state: &GameState, me: PlayerId) -> Option<Action> {
-    let player = state.player(me)?;
+fn decide_buy_resources(state: &GameState, bot: &mut Bot) -> Option<Action> {
+    let player = state.player(bot.id)?;
 
     let mut purchases: Vec<(Resource, u8)> = Vec::new();
     let mut sim_market = state.resources.clone();
@@ -363,8 +294,6 @@ fn decide_buy_resources(state: &GameState, me: PlayerId) -> Option<Action> {
     let mut plants = player.plants.clone();
     plants.sort_by(|a, b| b.cities.cmp(&a.cities).then(a.number.cmp(&b.number)));
 
-    // Pass 1 — essential: ensure each plant can fire at least once this round.
-    // Use the full money budget so the city-build reserve does not starve fuel.
     for plant in &plants {
         buy_for_plant(
             plant,
@@ -389,10 +318,7 @@ fn decide_buy_resources(state: &GameState, me: PlayerId) -> Option<Action> {
     Some(Action::BuyResourceBatch { purchases })
 }
 
-/// Bring `plant`'s fuel level up to `target` by purchasing from the simulated
-/// market.  Hybrid plants try oil first, then fall back to coal when oil is
-/// unavailable or won't fit in storage.  Commits all changes to `sim_market`,
-/// `sim_player`, `budget`, and `purchases`.
+/// Bring `plant`'s fuel level up to `target` by purchasing from the simulated market.
 fn buy_for_plant(
     plant: &PowerPlant,
     target: u8,
@@ -415,15 +341,12 @@ fn buy_for_plant(
             }
         }
         PlantKind::CoalOrOil => {
-            // The plant can fire on any mix of coal and oil; compare combined total.
             let combined = player.resources.coal.saturating_add(player.resources.oil);
             let want = target.saturating_sub(combined);
             if want == 0 {
                 return;
             }
-            // Coal and oil share a price table, so the cheaper one at the margin
-            // is whichever has more units left in the market.  Tie-break to oil
-            // to keep coal available for any pure-coal plants we own.
+            // Prefer the fuel type with more market supply; tie-break to oil.
             let prefer_oil = market.available(Resource::Oil) >= market.available(Resource::Coal);
             let (first, second) = if prefer_oil {
                 (Resource::Oil, Resource::Coal)
@@ -431,7 +354,6 @@ fn buy_for_plant(
                 (Resource::Coal, Resource::Oil)
             };
             try_buy(first, want, market, player, budget, purchases);
-            // Cover any remaining shortfall with the other fuel.
             let combined = player.resources.coal.saturating_add(player.resources.oil);
             let remaining = target.saturating_sub(combined);
             if remaining > 0 {
@@ -454,9 +376,7 @@ fn buy_for_plant(
     }
 }
 
-/// Attempt to purchase up to `want` units of `resource`, degrading gracefully
-/// to smaller amounts when the full quantity is too expensive or would exceed
-/// storage capacity.  Commits a successful purchase to all mutable state.
+/// Attempt to purchase up to `want` units, degrading gracefully on budget/storage limits.
 fn try_buy(
     resource: Resource,
     want: u8,
@@ -470,7 +390,6 @@ fn try_buy(
     if cap == 0 {
         return;
     }
-    // Find the largest affordable amount that also fits in storage.
     for n in (1..=cap).rev() {
         if !player.can_add_resource(resource, n) {
             continue;
@@ -496,13 +415,14 @@ fn try_buy(
 // Build cities phase
 // ---------------------------------------------------------------------------
 
-fn decide_build_cities(state: &GameState, me: PlayerId) -> Option<Action> {
-    let player = state.player(me)?;
+fn decide_build_cities(state: &GameState, bot: &mut Bot) -> Option<Action> {
+    let player = state.player(bot.id)?;
+    let block_weight = bot.profile.build.block_weight;
 
     let mut budget = player.money;
 
-    // Enumerate all cities in active regions that we could build in.
-    let mut candidates: Vec<(String, u32)> = state
+    // Enumerate buildable cities in active regions: not already owned, slot open.
+    let mut candidates: Vec<(String, u32, f32)> = state
         .map
         .cities
         .values()
@@ -514,21 +434,36 @@ fn decide_build_cities(state: &GameState, me: PlayerId) -> Option<Action> {
         .filter_map(|city| {
             let route_cost = state.map.connection_cost_to(&player.cities, &city.id)?;
             let slot_cost = connection_cost(city.owners.len());
-            Some((city.id.clone(), route_cost + slot_cost))
+            let total = route_cost + slot_cost;
+            // Hard-only: prefer cities opponents already occupy (block / density bonus).
+            let bonus = city_contest_bonus(city.owners.len(), block_weight);
+            Some((city.id.clone(), total, bonus))
         })
         .collect();
 
-    // Sort cheapest first.
-    candidates.sort_by_key(|(_, cost)| *cost);
+    // Sort by (cost - contest_bonus) ascending — cheapest and most contested first.
+    candidates.sort_by(|(_, cost_a, bonus_a), (_, cost_b, bonus_b)| {
+        let adjusted_a = *cost_a as f32 - bonus_a;
+        let adjusted_b = *cost_b as f32 - bonus_b;
+        adjusted_a
+            .partial_cmp(&adjusted_b)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    // Greedily build cheapest affordable cities. Budget is the only constraint —
-    // building ahead of current powering capacity is correct since income tracks
-    // cities owned and claiming spots early denies them to opponents.
+    // Only buy up to capacity headroom: cities we can actually power.
+    // Buying more than that never increases income and wastes the city-build budget.
+    let powerable: u8 = player.plants.iter().map(|p| p.cities).sum();
+    let owned = player.cities.len() as u8;
+    let headroom = powerable.saturating_sub(owned) as usize;
+
     let mut city_ids: Vec<String> = Vec::new();
     let mut simulated_cities: Vec<String> = player.cities.clone();
 
-    for (city_id, _) in &candidates {
-        // Recompute cost using the growing simulated network (batch routing).
+    for (city_id, _, _) in &candidates {
+        if city_ids.len() >= headroom {
+            break;
+        }
+
         let route_cost = state
             .map
             .connection_cost_to(&simulated_cities, city_id)
@@ -567,8 +502,8 @@ fn decide_build_cities(state: &GameState, me: PlayerId) -> Option<Action> {
 // Bureaucracy phase
 // ---------------------------------------------------------------------------
 
-fn decide_power_cities(state: &GameState, me: PlayerId) -> Option<Action> {
-    let player = state.player(me)?;
+fn decide_power_cities(state: &GameState, bot: &mut Bot) -> Option<Action> {
+    let player = state.player(bot.id)?;
 
     let (plant_numbers, cities_powered, _) = player.optimal_firing_subset();
     let expected_income = income_for(cities_powered);
@@ -581,12 +516,11 @@ fn decide_power_cities(state: &GameState, me: PlayerId) -> Option<Action> {
     Some(Action::PowerCities { plant_numbers })
 }
 
-fn decide_power_cities_fuel(state: &GameState, me: PlayerId, hybrid_cost: u8) -> Option<Action> {
+fn decide_power_cities_fuel(state: &GameState, bot: &mut Bot, hybrid_cost: u8) -> Option<Action> {
     use powergrid_core::types::Phase;
-    let player = state.player(me)?;
+    let player = state.player(bot.id)?;
 
     if let Phase::PowerCitiesFuel { plant_numbers, .. } = &state.phase {
-        // Compute pure-fuel obligations so we know what's left for hybrids.
         let pure_coal: u8 = plant_numbers
             .iter()
             .filter_map(|&num| player.plants.iter().find(|p| p.number == num))
@@ -603,24 +537,38 @@ fn decide_power_cities_fuel(state: &GameState, me: PlayerId, hybrid_cost: u8) ->
         let _coal_avail = player.resources.coal.saturating_sub(pure_coal);
         let oil_avail = player.resources.oil.saturating_sub(pure_oil);
 
-        // Prefer oil for hybrids (conserves coal for future pure-Coal plants).
-        let oil = hybrid_cost.min(oil_avail);
-        let coal = hybrid_cost - oil;
+        // Prefer oil for hybrids to conserve coal (controlled by oil_preference weight,
+        // but since 1.0 means full oil preference, the behaviour is unchanged for default profiles).
+        let oil_used = if bot.profile.bureaucracy.oil_preference >= 0.5 {
+            hybrid_cost.min(oil_avail)
+        } else {
+            0
+        };
+        let coal = hybrid_cost - oil_used;
 
         info!(
             "PowerCitiesFuel: using {} coal + {} oil for hybrids (hybrid_cost={})",
-            coal, oil, hybrid_cost
+            coal, oil_used, hybrid_cost
         );
-        Some(Action::PowerCitiesFuel { coal, oil })
+        Some(Action::PowerCitiesFuel {
+            coal,
+            oil: oil_used,
+        })
     } else {
         None
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use powergrid_core::types::{Player, PlayerColor, PowerPlant};
+    use powergrid_core::types::{Player, PlayerColor, PlayerId, PowerPlant};
+
+    use crate::{features::auction_reserve, profile::default_registry};
 
     fn coal_plant(number: u8, cost: u8, cities: u8) -> PowerPlant {
         PowerPlant {
@@ -644,6 +592,18 @@ mod tests {
         let mut p = Player::new("bot".into(), PlayerColor::Red);
         p.money = money;
         p
+    }
+
+    fn normal_bot() -> Bot {
+        let registry = default_registry();
+        let profile = registry.normal.clone();
+        Bot::new(
+            PlayerId::nil(),
+            "test".into(),
+            PlayerColor::Red,
+            profile,
+            42,
+        )
     }
 
     #[test]
@@ -684,7 +644,6 @@ mod tests {
         let mut player = bot_with_money(50);
         player.plants.push(plant.clone());
 
-        // Drain oil market completely.
         let mut market = ResourceMarket::initial();
         market.oil = 0;
 
@@ -715,17 +674,14 @@ mod tests {
 
     #[test]
     fn degrades_gracefully_when_full_topup_unaffordable() {
-        // Plant cost=4, so full top-up = 8 coal. Player only has $5 — can still
-        // afford 1 coal at the market's cheapest slot (1 elektro each).
         let plant = coal_plant(15, 4, 3);
         let mut player = bot_with_money(5);
         player.plants.push(plant.clone());
 
-        let mut market = ResourceMarket::initial(); // 24 coal at 1 elektro each
+        let mut market = ResourceMarket::initial();
         let mut purchases = vec![];
         let mut budget = player.money;
 
-        // Top-up target: cost * 2 = 8; should buy as much as $5 allows.
         buy_for_plant(
             &plant,
             plant.cost * 2,
@@ -746,8 +702,6 @@ mod tests {
 
     #[test]
     fn hybrid_buys_cheaper_fuel_first() {
-        // Oil scarce (6 units, cheapest slot price 6) vs coal plentiful (24 units,
-        // cheapest slot price 1). Hybrid should buy coal, not oil.
         let plant = hybrid_plant(10, 3, 2);
         let mut player = bot_with_money(50);
         player.plants.push(plant.clone());
@@ -796,30 +750,33 @@ mod tests {
     fn round_one_caps_bid_at_listed_price() {
         let plant = coal_plant(15, 2, 2);
         let player = bot_with_money(50);
-        // Round 1: never pay above the listed price, regardless of how many
-        // cities the plant powers or how much money we have.
-        assert_eq!(bid_ceiling(&plant, &player, 1), 15);
+        let registry = default_registry();
+        let w = &registry.normal.auction;
+        let buy = &registry.normal.buy;
+        assert_eq!(bid_ceiling(&plant, &player, 1, w, buy), 15);
     }
 
     #[test]
     fn later_round_no_capacity_bump_means_no_premium() {
-        // Rack is full of 2-city plants; candidate is a 1-city plant — replacing
-        // the worst would not improve total capacity.
         let mut player = bot_with_money(100);
         player.plants.push(coal_plant(5, 2, 2));
         player.plants.push(coal_plant(7, 2, 2));
         player.plants.push(coal_plant(10, 2, 2));
         let candidate = coal_plant(20, 2, 1);
-        assert_eq!(bid_ceiling(&candidate, &player, 3), 20);
+        let registry = default_registry();
+        let w = &registry.normal.auction;
+        let buy = &registry.normal.buy;
+        assert_eq!(bid_ceiling(&candidate, &player, 3, w, buy), 20);
     }
 
     #[test]
     fn later_round_significant_bump_allows_small_premium() {
-        // Empty rack, candidate adds 3 cities of capacity → premium = 3 * 2 = 6
-        // on top of listed 15 = ceiling 21 (capped by affordability).
         let player = bot_with_money(100);
         let candidate = coal_plant(15, 2, 3);
-        let ceiling = bid_ceiling(&candidate, &player, 2);
+        let registry = default_registry();
+        let w = &registry.normal.auction;
+        let buy = &registry.normal.buy;
+        let ceiling = bid_ceiling(&candidate, &player, 2, w, buy);
         assert!(
             ceiling > 15 && ceiling <= 21,
             "expected a small premium above 15, got {}",
@@ -831,71 +788,93 @@ mod tests {
     fn never_bids_above_player_money() {
         let plant = coal_plant(15, 2, 3);
         let player = bot_with_money(10);
-        // Even though listed is 15, the bot only has 10. Cap result at 10.
-        assert_eq!(bid_ceiling(&plant, &player, 1), 10);
-        assert_eq!(bid_ceiling(&plant, &player, 2), 10);
-        // The randomised wrapper must also respect the money cap.
+        let registry = default_registry();
+        let w = &registry.normal.auction;
+        let buy = &registry.normal.buy;
+        assert_eq!(bid_ceiling(&plant, &player, 1, w, buy), 10);
+        assert_eq!(bid_ceiling(&plant, &player, 2, w, buy), 10);
+        let mut bot = normal_bot();
+        let max_jitter = bot.profile.max_jitter;
         for _ in 0..50 {
-            assert!(max_bid(&plant, &player, 1) <= 10);
-            assert!(max_bid(&plant, &player, 2) <= 10);
+            // Production code applies .min(player.money) after jitter; mirror that here.
+            assert!(
+                bot.maybe_jitter(bid_ceiling(&plant, &player, 1, w, buy), max_jitter)
+                    .min(player.money)
+                    <= player.money
+            );
+            assert!(
+                bot.maybe_jitter(bid_ceiling(&plant, &player, 2, w, buy), max_jitter)
+                    .min(player.money)
+                    <= player.money
+            );
         }
     }
 
     #[test]
     fn skip_auction_when_any_surplus_capacity() {
-        // Bot owns 2 cities, plants power 3 — already 1 surplus, so any new
-        // plant auction should be skipped to save cash for city builds.
         let mut player = bot_with_money(50);
         player.plants.push(coal_plant(5, 2, 3));
         player.cities.push("a".into());
         player.cities.push("b".into());
         let candidate = coal_plant(20, 2, 3);
+        let registry = default_registry();
+        let w = &registry.normal.auction;
         assert!(
-            should_skip_auction(&player, &candidate),
+            should_skip_auction(&player, &candidate, w),
             "expected to skip auction with surplus capacity (powerable=3, owned=2)"
         );
     }
 
     #[test]
     fn dont_skip_when_at_capacity() {
-        // Bot owns exactly as many cities as plants can power — needs more
-        // capacity to grow further.
         let mut player = bot_with_money(50);
         player.plants.push(coal_plant(5, 2, 2));
         player.cities.push("a".into());
         player.cities.push("b".into());
         let candidate = coal_plant(20, 2, 3);
+        let registry = default_registry();
+        let w = &registry.normal.auction;
         assert!(
-            !should_skip_auction(&player, &candidate),
+            !should_skip_auction(&player, &candidate, w),
             "expected to participate when at capacity (powerable=2, owned=2)"
         );
     }
 
     #[test]
     fn auction_reserve_protects_two_city_builds() {
-        // No existing plants, candidate is a basic coal plant cost=2: fuel
-        // reserve = 8, city reserve = 30, safety = 5 → total 43.
+        // No existing plants, candidate is a basic coal plant cost=2:
+        // fuel reserve = 2 * 4 = 8, city reserve = 30, safety = 5 → total 43.
         let player = bot_with_money(100);
         let candidate = coal_plant(15, 2, 2);
-        assert_eq!(auction_reserve(&candidate, &player), 8 + 30 + 5);
+        let registry = default_registry();
+        let w = &registry.normal.auction;
+        let buy = &registry.normal.buy;
+        assert_eq!(auction_reserve(&candidate, &player, w, buy), 8 + 30 + 5);
     }
 
     #[test]
     fn jitter_sometimes_lifts_the_ceiling() {
-        // Run max_bid many times — jitter is ~30% probability with +1..=+3, so
-        // we should observe at least one bid above the deterministic ceiling.
         let plant = coal_plant(15, 2, 2);
         let player = bot_with_money(100);
-        let base = bid_ceiling(&plant, &player, 1);
+        let registry = default_registry();
+        let w = &registry.normal.auction;
+        let buy = &registry.normal.buy;
+        let base = bid_ceiling(&plant, &player, 1, w, buy);
+
+        // With seed 42 and 200 trials, count how many jitter.
+        let mut bot = normal_bot();
+        let max_jitter = bot.profile.max_jitter;
         let mut saw_jitter = false;
         let mut saw_no_jitter = false;
         for _ in 0..200 {
-            let bid = max_bid(&plant, &player, 1);
+            let bid = bot.maybe_jitter(base, max_jitter).min(player.money);
             if bid > base {
                 saw_jitter = true;
-                assert!(bid <= base + 3, "jitter should never exceed +3");
+                assert!(
+                    bid <= base + max_jitter as u32,
+                    "jitter exceeded max_jitter"
+                );
             } else {
-                assert_eq!(bid, base);
                 saw_no_jitter = true;
             }
         }
@@ -911,16 +890,12 @@ mod tests {
 
     #[test]
     fn essential_pass_ignores_city_reserve() {
-        // Bot has $22. City reserve would be 15, leaving only $7 with old logic.
-        // With new logic the essential pass gets the full $22, so it can buy 2
-        // coal at 1 elektro each (cost 2) easily.
         let plant = coal_plant(5, 2, 1);
         let mut player = bot_with_money(22);
         player.plants.push(plant.clone());
 
         let mut market = ResourceMarket::initial();
         let mut purchases = vec![];
-        // Simulate pass-1 budget = full money (no reserve yet).
         let mut budget = player.money;
 
         buy_for_plant(
@@ -942,6 +917,43 @@ mod tests {
             "essential pass should buy at least {} coal (got {})",
             plant.cost,
             coal_bought
+        );
+    }
+
+    #[test]
+    fn softmax_temperature_zero_gives_best() {
+        // Normal profile has temperature = 0 → pure argmax.
+        let mut bot = normal_bot();
+        let candidates = vec![("a", 10.0f32), ("b", 50.0f32), ("c", 30.0f32)];
+        for _ in 0..20 {
+            let chosen = bot.sample_softmax(&candidates).unwrap();
+            assert_eq!(chosen, "b", "argmax should always pick best score");
+        }
+    }
+
+    #[test]
+    fn softmax_high_temperature_samples_non_best() {
+        let registry = default_registry();
+        let mut profile = registry.easy.clone();
+        profile.temperature = 5.0;
+        let mut bot = Bot::new(
+            PlayerId::nil(),
+            "test".into(),
+            PlayerColor::Red,
+            profile,
+            99,
+        );
+        let candidates = vec![("best", 100.0f32), ("other", 90.0f32)];
+        let mut saw_other = false;
+        for _ in 0..200 {
+            if bot.sample_softmax(&candidates).unwrap() == "other" {
+                saw_other = true;
+                break;
+            }
+        }
+        assert!(
+            saw_other,
+            "high temperature should occasionally pick non-best"
         );
     }
 }
