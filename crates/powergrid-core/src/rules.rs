@@ -121,6 +121,7 @@ fn handle_start(state: &mut GameState, actor: PlayerId) -> Result<(), ActionErro
 // ---------------------------------------------------------------------------
 
 fn begin_auction(state: &mut GameState) {
+    apply_pending_step3(state, crate::state::Step3Pending::NextRound);
     let bought = Vec::new();
     let passed = Vec::new();
     state.phase = Phase::Auction {
@@ -359,7 +360,7 @@ fn award_plant(
             cost
         ));
         // Check if purchasing this plant triggered the Step 3 card.
-        check_step3_trigger(state);
+        note_step3_trigger(state);
         state.phase = Phase::DiscardPlant {
             player: winner,
             new_plant: plant,
@@ -381,7 +382,7 @@ fn award_plant(
     ));
 
     // Check if purchasing this plant triggered the Step 3 card.
-    check_step3_trigger(state);
+    note_step3_trigger(state);
 
     bought.push(winner);
 
@@ -566,7 +567,7 @@ fn advance_auction(state: &mut GameState, bought: Vec<PlayerId>, passed: Vec<Pla
         if bought.is_empty() {
             state.market.remove_lowest();
         }
-        check_step3_trigger(state);
+        note_step3_trigger(state);
         begin_buy_resources(state);
         return;
     }
@@ -581,7 +582,7 @@ fn advance_auction(state: &mut GameState, bought: Vec<PlayerId>, passed: Vec<Pla
             if bought.is_empty() {
                 state.market.remove_lowest();
             }
-            check_step3_trigger(state);
+            note_step3_trigger(state);
             begin_buy_resources(state);
             return;
         }
@@ -600,6 +601,7 @@ fn advance_auction(state: &mut GameState, bought: Vec<PlayerId>, passed: Vec<Pla
 // ---------------------------------------------------------------------------
 
 fn begin_buy_resources(state: &mut GameState) {
+    apply_pending_step3(state, crate::state::Step3Pending::AfterAuction);
     // After the first auction, recalculate order based on plants purchased
     // (no cities exist yet, so it sorts by highest plant number).
     if state.round == 1 {
@@ -847,26 +849,58 @@ fn check_step2_trigger(state: &mut GameState) {
     if max_cities >= 7 {
         state.step = 2;
         state.market.remove_lowest();
-        check_step3_trigger(state);
+        note_step3_trigger(state);
         state.log("Step 2 begins!".to_string());
     }
 }
 
-/// If the Step 3 card was drawn during the last market refill, apply the transition:
-/// set step = 3, remove the lowest plant, shuffle the deck, restructure to 6 plants.
-fn check_step3_trigger(state: &mut GameState) {
+/// Called after any market refill that might have drawn the Step 3 card.
+/// Records a deferred trigger on `state.step3_pending` and, for Phase 4/5,
+/// immediately reshapes the market. Does NOT set `state.step = 3` — that is
+/// deferred to the next phase boundary via `apply_pending_step3`.
+fn note_step3_trigger(state: &mut GameState) {
     if !state.market.step3_triggered {
         return;
     }
     state.market.step3_triggered = false;
-    state.step = 3;
 
-    // Remove the lowest plant directly (remove_lowest() would call refill() prematurely).
+    match &state.phase {
+        Phase::Auction { .. } | Phase::DiscardPlant { .. } => {
+            // Phase 2: defer everything (market transition + step) to begin_buy_resources.
+            state.step3_pending = Some(crate::state::Step3Pending::AfterAuction);
+            state.log(
+                "Step 3 card drawn — takes effect at the start of Buy Resources.".to_string(),
+            );
+        }
+        Phase::BuildCities { .. } => {
+            // Phase 4: reshape market now; defer state.step to begin_bureaucracy.
+            apply_step3_market_transition(state);
+            state.step3_pending = Some(crate::state::Step3Pending::AfterBuilding);
+            state.log(
+                "Step 3 card drawn — takes effect at the start of Bureaucracy.".to_string(),
+            );
+        }
+        Phase::Bureaucracy { .. } => {
+            // Phase 5: reshape market now; defer state.step to next begin_auction.
+            // Current Phase 5 still uses Step 2 resupply (state.step not changed yet).
+            apply_step3_market_transition(state);
+            state.step3_pending = Some(crate::state::Step3Pending::NextRound);
+            state.log("Step 3 card drawn — takes effect at the start of next round.".to_string());
+        }
+        _ => {
+            apply_step3_market_transition(state);
+            state.step3_pending = Some(crate::state::Step3Pending::NextRound);
+        }
+    }
+}
+
+/// Applies the market-side Step 3 transition: remove lowest plant, move
+/// `below_step3` into the deck, shuffle, set `in_step3`, refill to 6.
+/// Does NOT change `state.step`.
+fn apply_step3_market_transition(state: &mut GameState) {
     if !state.market.actual.is_empty() {
         state.market.actual.remove(0);
     }
-
-    // Move the below-step3 pile into the main deck and shuffle it.
     if let Some(below) = state.market.below_step3.take() {
         state.market.deck = below;
     }
@@ -875,11 +909,22 @@ fn check_step3_trigger(state: &mut GameState) {
         None => rand::rngs::SmallRng::from_entropy(),
     };
     state.market.deck.shuffle(&mut rng);
-
-    // Switch to Step 3 mode and restructure market to 6 plants.
     state.market.in_step3 = true;
     state.market.refill();
+}
 
+/// Called at each phase boundary. If `step3_pending` matches `expect`, applies
+/// the deferred portion: `state.step = 3`, plus the market transition for the
+/// Phase-2 case (which was fully deferred).
+fn apply_pending_step3(state: &mut GameState, expect: crate::state::Step3Pending) {
+    if state.step3_pending.as_ref() != Some(&expect) {
+        return;
+    }
+    state.step3_pending = None;
+    if expect == crate::state::Step3Pending::AfterAuction {
+        apply_step3_market_transition(state);
+    }
+    state.step = 3;
     state.log("Step 3 begins!".to_string());
 }
 
@@ -899,6 +944,14 @@ fn handle_build_city(
 
     apply_single_build(state, actor, &city_id)?;
     check_end_game_trigger(state);
+    let max_cities = state
+        .players
+        .iter()
+        .map(|p| p.cities.len())
+        .max()
+        .unwrap_or(0);
+    state.market.remove_obsolete(max_cities);
+    note_step3_trigger(state);
 
     Ok(())
 }
@@ -945,7 +998,7 @@ fn handle_build_cities(
         .max()
         .unwrap_or(0);
     state.market.remove_obsolete(max_cities);
-    check_step3_trigger(state);
+    note_step3_trigger(state);
     advance_build_phase(state, remaining);
 
     Ok(())
@@ -970,6 +1023,7 @@ fn handle_done_building(state: &mut GameState, actor: PlayerId) -> Result<(), Ac
 // ---------------------------------------------------------------------------
 
 fn begin_bureaucracy(state: &mut GameState) {
+    apply_pending_step3(state, crate::state::Step3Pending::AfterBuilding);
     let remaining: Vec<PlayerId> = state.player_order.clone();
     state.phase = Phase::Bureaucracy { remaining };
 }
@@ -1194,7 +1248,7 @@ fn end_of_round(state: &mut GameState) {
     } else {
         // Steps 1 & 2: cycle the highest future-market plant to the bottom of the draw deck.
         state.market.cycle_highest_to_bottom();
-        check_step3_trigger(state);
+        note_step3_trigger(state);
     }
 
     // Replenish resource market (simplified: add back a fixed amount per resource).
@@ -3780,5 +3834,268 @@ mod tests {
         let player = state.player(p1).unwrap();
         assert_eq!(player.resources.coal, 1, "expected 1 coal remaining");
         assert_eq!(player.resources.oil, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 3 timing tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_step3_trigger_in_auction_defers_to_buy_resources() {
+        // When the Step 3 card is drawn during Phase 2 (Auction), state.step must
+        // not change until the start of Phase 3 (BuyResources).
+        let (mut state, p1, p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+        assert!(matches!(state.phase, Phase::Auction { .. }));
+
+        // Drain the draw deck so the next refill draws the Step 3 card.
+        // setup_deck already set below_step3 = Some(vec![]).
+        state.market.deck.clear();
+
+        let first = state.player_order[0];
+        let second = state.player_order[1];
+        let step_before = state.step;
+
+        // First player selects plant 4; second passes the bid → first wins.
+        apply_action(&mut state, first, Action::SelectPlant { plant_number: 4 }).unwrap();
+        apply_action(&mut state, second, Action::PassAuction).unwrap();
+        // The refill after the purchase drew the Step 3 card.
+
+        // Step must stay the same; transition deferred to BuyResources.
+        assert_eq!(
+            state.step, step_before,
+            "state.step must not change mid-auction when Step 3 card is drawn"
+        );
+        assert_eq!(
+            state.step3_pending,
+            Some(crate::state::Step3Pending::AfterAuction),
+            "step3_pending must be AfterAuction after drawing in Phase 2"
+        );
+        assert!(
+            !state.market.in_step3,
+            "market must still be in Step 2 layout during the auction"
+        );
+
+        // Second player selects the lowest available plant (auto-wins) → auction ends
+        // → BuyResources starts → pending applied.
+        let lowest = state.market.actual[0].number;
+        apply_action(&mut state, second, Action::SelectPlant { plant_number: lowest }).unwrap();
+        assert!(
+            matches!(state.phase, Phase::BuyResources { .. }),
+            "expected BuyResources; got {:?}",
+            state.phase
+        );
+        assert_eq!(state.step, 3, "Step 3 must begin at start of BuyResources");
+        assert!(state.market.in_step3, "market must be in Step 3 layout");
+        assert_eq!(state.step3_pending, None, "pending must be cleared");
+
+        let _ = (p1, p2);
+    }
+
+    #[test]
+    fn test_step3_trigger_in_building_defers_to_bureaucracy() {
+        // When the Step 3 card is drawn during Phase 4 (BuildCities), the market
+        // transition runs immediately but state.step must not change until
+        // the start of Phase 5 (Bureaucracy).
+        let (mut state, p1, p2) = two_player_build_phase();
+        state.step = 2;
+        // Mark the Step 3 card as "already drawn" on the next note_step3_trigger call.
+        state.market.below_step3 = Some(vec![]);
+        state.market.step3_triggered = true;
+
+        let first = match &state.phase {
+            Phase::BuildCities { remaining } => *remaining.first().unwrap(),
+            _ => unreachable!(),
+        };
+        let second = match &state.phase {
+            Phase::BuildCities { remaining } => *remaining.last().unwrap(),
+            _ => unreachable!(),
+        };
+
+        // First player builds a city — note_step3_trigger fires inside the handler.
+        apply_action(
+            &mut state,
+            first,
+            Action::BuildCities { city_ids: vec!["a".into()] },
+        )
+        .unwrap();
+
+        // Market transition runs immediately for Phase 4 draws.
+        assert!(
+            state.market.in_step3,
+            "market must switch to Step 3 layout immediately when card is drawn in Phase 4"
+        );
+        // But state.step must NOT yet be 3.
+        assert_eq!(
+            state.step, 2,
+            "state.step must remain 2 until Bureaucracy starts"
+        );
+        assert_eq!(
+            state.step3_pending,
+            Some(crate::state::Step3Pending::AfterBuilding),
+            "step3_pending must be AfterBuilding while still in Phase 4"
+        );
+
+        // Second player skips → phase ends → Bureaucracy starts → step becomes 3.
+        apply_action(&mut state, second, Action::DoneBuilding).unwrap();
+        assert!(
+            matches!(state.phase, Phase::Bureaucracy { .. }),
+            "expected Bureaucracy; got {:?}",
+            state.phase
+        );
+        assert_eq!(state.step, 3, "Step 3 must begin at start of Bureaucracy");
+        assert_eq!(state.step3_pending, None, "pending must be cleared");
+
+        let _ = (p1, p2);
+    }
+
+    #[test]
+    fn test_step3_trigger_in_bureaucracy_defers_to_next_round() {
+        // When the Step 3 card is drawn during Phase 5 (Bureaucracy), state.step
+        // must not change until the start of the next round. Critically, the
+        // resource replenishment in that same bureaucracy must use Step 2 rates.
+        let (mut state, p1, p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        state.phase = Phase::Bureaucracy {
+            remaining: state.player_order.clone(),
+        };
+        state.step = 2;
+        state.resources.coal = 0; // measure exact replenishment
+
+        // Deck empty so the end-of-round market cycle hits the Step 3 card.
+        state.market.deck.clear();
+        state.market.below_step3 = Some(vec![]); // Step 3 card "in play"
+        // future must be non-empty for cycle_highest_to_bottom to pop.
+        if state.market.future.is_empty() {
+            use crate::types::{PlantKind, PowerPlant};
+            state.market.future.push(PowerPlant {
+                number: 50,
+                kind: PlantKind::Fusion,
+                cost: 0,
+                cities: 6,
+            });
+        }
+
+        // Both players power cities (no cities, no resources required).
+        let power_order: Vec<PlayerId> = match &state.phase {
+            Phase::Bureaucracy { remaining } => remaining.clone(),
+            _ => unreachable!(),
+        };
+        for actor in &power_order {
+            apply_action(
+                &mut state,
+                *actor,
+                Action::PowerCities { plant_numbers: vec![] },
+            )
+            .unwrap();
+        }
+        // end_of_round has fired; begin_auction started the next round.
+
+        assert!(
+            matches!(state.phase, Phase::Auction { .. }),
+            "expected Auction for next round; got {:?}",
+            state.phase
+        );
+        assert_eq!(state.step, 3, "Step 3 must begin at start of the next round");
+        assert_eq!(state.step3_pending, None, "pending must be cleared");
+        // 2-player Step 2 replenishment rate = 4 coal; Step 3 rate = 3 coal.
+        assert_eq!(
+            state.resources.coal, 4,
+            "replenishment must use Step 2 rates (4 coal) even though Step 3 was drawn this round"
+        );
+
+        let _ = (p1, p2);
+    }
+
+    #[test]
+    fn test_step3_third_house_not_allowed_before_phase_boundary() {
+        // After the Step 3 card is noted (step3_pending = AfterBuilding), state.step
+        // is still 2. A city with 2 owners must reject a third builder — the Step 3
+        // 3-house rule must not take effect until Bureaucracy starts.
+        let (mut state, p1, p2) = two_player_build_phase();
+        state.step = 2;
+
+        // Populate city "a" with two fake owners to hit the Step-2 max.
+        let fake1 = uuid::Uuid::new_v4();
+        let fake2 = uuid::Uuid::new_v4();
+        state.map.cities.get_mut("a").unwrap().owners.extend([fake1, fake2]);
+
+        // Mark Step 3 card as drawn so the next build action notes it.
+        state.market.below_step3 = Some(vec![]);
+        state.market.step3_triggered = true;
+
+        let first = match &state.phase {
+            Phase::BuildCities { remaining } => *remaining.first().unwrap(),
+            _ => unreachable!(),
+        };
+        let second = if first == p1 { p2 } else { p1 };
+
+        // first builds city "b" — triggers the Step 3 note.
+        apply_action(
+            &mut state,
+            first,
+            Action::BuildCities { city_ids: vec!["b".into()] },
+        )
+        .unwrap();
+
+        assert_eq!(
+            state.step, 2,
+            "step must remain 2 after noting the trigger (pending = AfterBuilding)"
+        );
+        assert_eq!(
+            state.step3_pending,
+            Some(crate::state::Step3Pending::AfterBuilding)
+        );
+
+        // second tries to build in city "a" which already has 2 owners.
+        // state.step == 2 → max_per_city == 2 → must be rejected with CityFull.
+        let err = apply_action(
+            &mut state,
+            second,
+            Action::BuildCities { city_ids: vec!["a".into()] },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, ActionError::CityFull(_)),
+            "expected CityFull while step is still 2; got {err:?}"
+        );
+
+        let _ = (p1, p2);
+    }
+
+    #[test]
+    fn test_handle_build_city_single_runs_step3_check() {
+        // The single-city BuildCity action (Bug D fix) must call note_step3_trigger,
+        // matching the behaviour of the batch BuildCities path.
+        let (mut state, p1, p2) = two_player_build_phase();
+
+        state.market.below_step3 = Some(vec![]);
+        state.market.step3_triggered = true;
+
+        let first = match &state.phase {
+            Phase::BuildCities { remaining } => *remaining.first().unwrap(),
+            _ => unreachable!(),
+        };
+
+        // Single-city Action::BuildCity (not the batch variant).
+        apply_action(
+            &mut state,
+            first,
+            Action::BuildCity { city_id: "a".into() },
+        )
+        .unwrap();
+
+        assert!(
+            state.market.in_step3,
+            "market must switch to Step 3 layout even via single BuildCity action"
+        );
+        assert_eq!(
+            state.step3_pending,
+            Some(crate::state::Step3Pending::AfterBuilding),
+            "step3_pending must be set by the single-city BuildCity action"
+        );
+
+        let _ = (p1, p2);
     }
 }

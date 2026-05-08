@@ -3,6 +3,22 @@ use crate::types::{Phase, PlantMarket, Player, PlayerId, PowerPlant, ResourceMar
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Tracks when the Step 3 card was drawn so its effects can be applied at the
+/// correct phase boundary rather than immediately.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Step3Pending {
+    /// Drawn during Phase 2 (Auction). Market transition is also deferred.
+    /// Applied at the start of Phase 3 (BuyResources) the same round.
+    AfterAuction,
+    /// Drawn during Phase 4 (BuildCities). Market transition already applied.
+    /// Applied at the start of Phase 5 (Bureaucracy) the same round.
+    AfterBuilding,
+    /// Drawn during Phase 5 (Bureaucracy). Market transition already applied.
+    /// Current Bureaucracy still uses Step 2 resupply.
+    /// Applied at the start of Phase 1 (Auction) of the next round.
+    NextRound,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
     pub phase: Phase,
@@ -20,6 +36,10 @@ pub struct GameState {
     pub end_game_cities: u8,
     /// Log of recent events for display.
     pub event_log: Vec<String>,
+    /// Deferred Step 3 transition — set when the Step 3 card is drawn, cleared
+    /// when the correct phase boundary arrives and the step actually begins.
+    #[serde(default)]
+    pub step3_pending: Option<Step3Pending>,
     /// RNG seed — never sent over the wire.
     #[serde(skip)]
     pub rng_seed: Option<u64>,
@@ -62,6 +82,8 @@ pub struct GameStateView {
     pub step: u8,
     pub end_game_cities: u8,
     pub event_log: Vec<String>,
+    #[serde(default)]
+    pub step3_pending: Option<Step3Pending>,
     #[serde(default)]
     pub active_regions: Vec<String>,
 }
@@ -111,6 +133,7 @@ impl GameStateView {
             step: self.step,
             end_game_cities: self.end_game_cities,
             event_log: self.event_log,
+            step3_pending: self.step3_pending,
             rng_seed: None,
             active_regions: self.active_regions,
         }
@@ -150,6 +173,7 @@ impl GameState {
             step: 1,
             end_game_cities,
             event_log: Vec::new(),
+            step3_pending: None,
             rng_seed,
             active_regions: Vec::new(),
         }
@@ -212,6 +236,7 @@ impl GameState {
             step: self.step,
             end_game_cities: self.end_game_cities,
             event_log: self.event_log.clone(),
+            step3_pending: self.step3_pending.clone(),
             active_regions: self.active_regions.clone(),
         }
     }
