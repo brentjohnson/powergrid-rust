@@ -71,6 +71,9 @@ class PowerGridAECEnv(AECEnv):
         # Game and per-agent state (initialised in reset).
         self.game: powergrid_py.Game | None = None
         self._state_cache: dict | None = None
+        # Stable-ID ↔ game-UUID mappings, populated in reset().
+        self._id_to_uuid: dict[str, str] = {}
+        self._uuid_to_id: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # gymnasium.spaces accessors
@@ -93,14 +96,14 @@ class PowerGridAECEnv(AECEnv):
         colors = COLORS[:self.num_players]
         self.game.start(names, colors)
 
-        self.possible_agents = self.game.player_ids()
-        self.agents = list(self.possible_agents)
+        # Build stable-ID ↔ UUID mappings. possible_agents stays as the
+        # fixed placeholder list set in __init__ so wrappers that capture
+        # possible_agents at construction time see a consistent value.
+        uuids = self.game.player_ids()
+        self._id_to_uuid = {pid: uuid for pid, uuid in zip(self.possible_agents, uuids)}
+        self._uuid_to_id = {uuid: pid for pid, uuid in self._id_to_uuid.items()}
 
-        # Update space dicts to use real UUIDs.
-        obs_space = spaces.Box(low=0.0, high=1.0, shape=(OBS_SIZE,), dtype=np.float32)
-        act_space = spaces.Discrete(N_ACTIONS)
-        self._obs_spaces = {a: obs_space for a in self.possible_agents}
-        self._act_spaces = {a: act_space for a in self.possible_agents}
+        self.agents = list(self.possible_agents)
 
         self._state_cache = json.loads(self.game.state_json())
 
@@ -118,6 +121,7 @@ class PowerGridAECEnv(AECEnv):
             return
 
         agent = self.agent_selection
+        uuid = self._id_to_uuid.get(agent, agent)
 
         # Reset instantaneous rewards each step.
         self.rewards = {a: 0.0 for a in self.agents}
@@ -126,10 +130,10 @@ class PowerGridAECEnv(AECEnv):
             action = PASS_AUCTION  # shouldn't happen with wrappers
 
         state = self._state_cache
-        action_json = id_to_action_json(int(action), state, agent)
+        action_json = id_to_action_json(int(action), state, uuid)
 
         try:
-            self.game.apply(agent, action_json)
+            self.game.apply(uuid, action_json)
         except ValueError as e:
             # Invalid action: penalise and terminate.
             self.rewards[agent] = -1.0
@@ -141,7 +145,8 @@ class PowerGridAECEnv(AECEnv):
         self._state_cache = json.loads(self.game.state_json())
 
         if self.game.is_terminal():
-            winner = self.game.winner()
+            winner_uuid = self.game.winner()
+            winner = self._uuid_to_id.get(winner_uuid, winner_uuid)
             for a in self.agents:
                 self.rewards[a] = 1.0 if a == winner else -1.0
                 self.terminations[a] = True
@@ -159,7 +164,8 @@ class PowerGridAECEnv(AECEnv):
     def observe(self, agent: str) -> np.ndarray:
         if self._state_cache is None or self.game is None:
             return np.zeros(OBS_SIZE, dtype=np.float32)
-        return encode_observation(self._state_cache, agent)
+        uuid = self._id_to_uuid.get(agent, agent)
+        return encode_observation(self._state_cache, uuid)
 
     def render(self) -> str | None:
         if self._state_cache is None:
@@ -180,7 +186,8 @@ class PowerGridAECEnv(AECEnv):
     # ------------------------------------------------------------------
 
     def _next_agent(self) -> str:
-        actor = self.game.current_actor() if self.game else None
+        actor_uuid = self.game.current_actor() if self.game else None
+        actor = self._uuid_to_id.get(actor_uuid, actor_uuid) if actor_uuid else None
         if actor and actor in self.agents:
             return actor
         # Fallback: first non-terminated agent.
@@ -192,10 +199,11 @@ class PowerGridAECEnv(AECEnv):
     def _build_mask(self, agent: str) -> np.ndarray:
         if self.game is None:
             return np.zeros(N_ACTIONS, dtype=np.int8)
-        move_info_json = self.game.legal_move_info(agent)
+        uuid = self._id_to_uuid.get(agent, agent)
+        move_info_json = self.game.legal_move_info(uuid)
         move_info = json.loads(move_info_json)
         state = self._state_cache or {}
-        return mask_from_info(move_info, state, agent)
+        return mask_from_info(move_info, state, uuid)
 
     def _shape_rewards(self, agent: str) -> None:
         """Optional per-step reward shaping (delta cities × small bonus)."""

@@ -8,22 +8,79 @@ Usage:
 import argparse
 import os
 
+import numpy as np
 import supersuit as ss
+from pettingzoo.utils.conversions import turn_based_aec_to_parallel
 from sb3_contrib import MaskablePPO
-from sb3_contrib.common.wrappers import ActionMasker
+from stable_baselines3.common.vec_env import VecEnvWrapper
+from supersuit.vector.markov_vector_wrapper import MarkovVectorEnv
 
 from powergrid_env import PowerGridAECEnv
 
 
-def mask_fn(env):
-    return env.infos[env.agent_selection].get("action_mask")
+class ActionMaskVecEnv(VecEnvWrapper):
+    """Bridges supersuit's vec env to MaskablePPO's action_masks() protocol.
+
+    MaskablePPO discovers masking via has_attr("action_masks") and retrieves
+    masks via env_method("action_masks"). Supersuit's ConcatVecEnv doesn't
+    implement either; this wrapper intercepts infos from each step/reset and
+    exposes the masks through the expected interface.
+    """
+
+    def __init__(self, venv):
+        super().__init__(venv)
+        self._masks = np.ones((venv.num_envs, self.action_space.n), dtype=np.int8)
+
+    def reset(self):
+        obs = self.venv.reset()
+        infos = getattr(self.venv, "reset_infos", None) or []
+        self._update_masks(infos)
+        return obs
+
+    def step_wait(self):
+        obs, rewards, dones, infos = self.venv.step_wait()
+        self._update_masks(infos)
+        return obs, rewards, dones, infos
+
+    def _update_masks(self, infos):
+        for i, info in enumerate(infos):
+            mask = info.get("action_mask") if isinstance(info, dict) else None
+            if mask is not None:
+                self._masks[i] = mask
+
+    def action_masks(self):
+        return self._masks.copy()
+
+    def has_attr(self, attr_name):
+        if attr_name == "action_masks":
+            return True
+        try:
+            return self.venv.has_attr(attr_name)
+        except AttributeError:
+            return False
+
+    def env_method(self, method_name, *method_args, indices=None, **method_kwargs):
+        if method_name == "action_masks":
+            masks = self._masks
+            if indices is not None:
+                return [masks[i] for i in indices]
+            return list(masks)
+        try:
+            return self.venv.env_method(
+                method_name, *method_args, indices=indices, **method_kwargs
+            )
+        except AttributeError:
+            raise AttributeError(f"env_method: {method_name} not supported")
 
 
 def make_env(num_players: int, seed: int):
     raw = PowerGridAECEnv(num_players=num_players, seed=seed, reward_shaping=False)
-    # PettingZoo → Gymnasium (single vectorised learner, parameter sharing).
-    vec = ss.pettingzoo_env_to_vec_env_v1(raw)
+    parallel = turn_based_aec_to_parallel(raw)
+    # black_death=True feeds zero obs/rewards for terminated agents so the
+    # vectorised env can keep running until all agents are done.
+    vec = MarkovVectorEnv(parallel, black_death=True)
     vec = ss.concat_vec_envs_v1(vec, 1, base_class="stable_baselines3")
+    vec = ActionMaskVecEnv(vec)
     return vec
 
 
@@ -44,9 +101,7 @@ def main():
         "MlpPolicy",
         vec_env,
         verbose=1,
-        seed=args.seed,
         device=args.device,
-        tensorboard_log=os.path.join(args.run_dir, "tb"),
     )
     model.learn(total_timesteps=args.total_timesteps)
     model.save(os.path.join(args.run_dir, "final_model"))
