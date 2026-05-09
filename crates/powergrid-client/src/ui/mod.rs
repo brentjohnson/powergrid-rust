@@ -12,7 +12,7 @@ mod room_browser;
 mod top_panel;
 
 use egui::{Color32, RichText};
-use powergrid_core::types::Phase;
+use powergrid_core::types::{Phase, PlayerColor, PlayerId};
 
 use crate::{
     local::LocalConfig,
@@ -45,6 +45,13 @@ pub fn ui_system(
         state.menu_open = !state.menu_open;
     }
 
+    if matches!(state.screen, Screen::Game)
+        && !ctx.wants_keyboard_input()
+        && ctx.input(|i| i.key_pressed(egui::Key::Space))
+    {
+        state.city_graph_open = !state.city_graph_open;
+    }
+
     let mut action = UiAction::None;
 
     match state.screen {
@@ -68,11 +75,42 @@ pub fn ui_system(
         }
     }
 
+    if state.city_graph_open {
+        if let Some(gs) = state.game_state.clone() {
+            if !state.city_history.is_empty() {
+                let players_info: Vec<(PlayerId, PlayerColor)> =
+                    gs.players.iter().map(|p| (p.id, p.color)).collect();
+                egui::Window::new("CITIES")
+                    .collapsible(false)
+                    .resizable(false)
+                    .movable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                    .default_width(560.0)
+                    .show(ctx, |ui| {
+                        theme::neon_frame().show(ui, |ui| {
+                            top_panel::city_history_graph(
+                                ui,
+                                &state.city_history,
+                                &players_info,
+                                gs.end_game_cities,
+                                &gs,
+                            );
+                        });
+                    });
+            } else {
+                state.city_graph_open = false;
+            }
+        } else {
+            state.city_graph_open = false;
+        }
+    }
+
     if state.menu_open {
         egui::Window::new("MENU")
             .collapsible(false)
             .resizable(false)
             .movable(false)
+            .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
                 ui.add_space(8.0);

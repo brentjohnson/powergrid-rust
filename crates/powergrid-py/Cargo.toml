@@ -1,0 +1,16 @@
+[package]
+name = "powergrid-py"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "powergrid_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.28", features = ["extension-module"] }
+powergrid-core = { path = "../powergrid-core" }
+powergrid-bot-strategy = { path = "../powergrid-bot-strategy" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }

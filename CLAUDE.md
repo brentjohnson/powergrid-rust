@@ -39,6 +39,13 @@ cargo run -p powergrid-bot -- --name BotB --color blue
 
 # Docker (lobby + postgres)
 docker compose up --build
+
+# RL environment (Python — run from python/ directory)
+make develop                                     # build PyO3 crate + install Python package
+pytest tests/                                    # run 29 Python tests (~12 s)
+python scripts/train_vs_bots.py                  # MaskablePPO vs Rust bots
+python scripts/train_selfplay.py                 # self-play
+python scripts/play_game.py --all-bots --render  # watch a rollout
 ```
 
 ## Workflow
@@ -48,7 +55,7 @@ When making architectural or structural changes, update CLAUDE.md accordingly.
 
 ## Architecture
 
-Seven-crate Cargo workspace:
+Eight-crate Cargo workspace:
 
 ```
 crates/
@@ -59,11 +66,20 @@ crates/
   powergrid-server/        # legacy single-game axum WS server; also embeddable as a lib
   powergrid-lobby/         # production multi-game server: auth, rooms, in-process bots, PostgreSQL
   powergrid-client/        # Bevy/egui GUI — online (lobby) or local play (in-process session)
+  powergrid-py/            # PyO3 extension module for the Python RL environment
 assets/
   maps/germany.toml        # canonical map asset, embedded at compile time via powergrid-core
+python/                    # PettingZoo RL environment (see docs/rl-environment.md)
+  src/powergrid_env/       # Python package: AECEnv, encoding, policies
+  scripts/                 # training and rollout scripts
+  tests/                   # 29 Python tests
+  pyproject.toml           # hatchling build; maturin builds the Rust extension separately
+  Makefile                 # make develop = build Rust + install Python
 ```
 
-Dependency graph: core ← bot-strategy ← {bot, session} ← {server, lobby, client}.
+Dependency graph (Rust): core ← bot-strategy ← {bot, session, powergrid-py} ← {server, lobby, client}.
+
+`powergrid-py` depends only on `powergrid-core` and `powergrid-bot-strategy` — no server, lobby, or async runtime.
 
 ### powergrid-core
 
@@ -156,6 +172,17 @@ Bevy + egui GUI client. Supports two modes: **online** (connects to `powergrid-l
 - `theme.rs` — custom egui visual theme.
 
 Run with `cargo run -p powergrid-client` or `cargo run -p powergrid-client --features dev` for fast incremental rebuilds.
+
+### powergrid-py
+
+PyO3 extension module (Python 3.14, pyo3 0.28). Exposes the game engine to the Python RL environment without any network layer.
+
+- `src/lib.rs` — `Game` pyclass with methods: `start(names, colors)`, `apply(actor, action_json)`, `state_json()`, `current_actor()`, `legal_move_info(actor)`, `bot_decide(actor, difficulty)`, `city_ids()`, `is_terminal()`, `winner()`.
+- `legal_move_info` returns a JSON blob encoding every legal move for the given actor — used by the Python env to build `info["action_mask"]` without re-implementing game rules.
+- Built with `maturin develop --release` from the `python/` directory (see `python/Makefile`).
+- crate-type = `["cdylib"]` — produces a `.so` wheel, not a binary.
+
+See [docs/rl-environment.md](docs/rl-environment.md) for the full Python API and training workflow.
 
 ### Protocol
 

@@ -111,6 +111,8 @@ pub struct AppState {
 
     // ESC menu overlay
     pub menu_open: bool,
+    // City history graph overlay (Space)
+    pub city_graph_open: bool,
 
     // Window mode (kept in sync with the actual viewport)
     pub fullscreen: bool,
@@ -197,6 +199,7 @@ impl AppState {
             last_recorded_round: 0,
             room_list_last_refresh: f64::NEG_INFINITY,
             menu_open: false,
+            city_graph_open: false,
             fullscreen,
             local_name: "You".to_string(),
             local_color: PlayerColor::Red,

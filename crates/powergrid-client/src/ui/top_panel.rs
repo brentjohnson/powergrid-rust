@@ -127,26 +127,6 @@ pub(super) fn top_panel_contents(
                 resource_market_grid(ui, &gs.resources);
             });
         });
-
-        ui.add_space(8.0);
-
-        // Cities graph
-        if !state.city_history.is_empty() {
-            let players_info: Vec<(PlayerId, PlayerColor)> =
-                gs.players.iter().map(|p| (p.id, p.color)).collect();
-            ui.vertical(|ui| {
-                section_header(ui, "CITIES");
-                theme::neon_frame().show(ui, |ui| {
-                    city_history_graph(
-                        ui,
-                        &state.city_history,
-                        &players_info,
-                        gs.end_game_cities,
-                        &gs,
-                    );
-                });
-            });
-        }
     });
 }
 
@@ -440,17 +420,17 @@ fn resource_market_grid(ui: &mut Ui, market: &ResourceMarket) {
     }
 }
 
-fn city_history_graph(
+pub(super) fn city_history_graph(
     ui: &mut Ui,
     history: &[CitySnapshot],
     players_info: &[(PlayerId, PlayerColor)],
     end_game_cities: u8,
     gs: &GameStateView,
 ) {
-    const PAD_L: f32 = 14.0; // left padding for y-axis label
-    const PAD_B: f32 = 10.0; // bottom padding for x-axis label
-    const H: f32 = 114.0; // plot area height — sized to match plant market
-    const DOT_R: f32 = 2.0;
+    const PAD_L: f32 = 26.0;
+    const PAD_B: f32 = 18.0;
+    const H: f32 = 342.0;
+    const DOT_R: f32 = 4.0;
     const STEP2_CITIES: usize = 7;
 
     let w = (ui.available_width() - PAD_L).max(100.0);
@@ -502,14 +482,14 @@ fn city_history_graph(
         egui::pos2(ox - 2.0, oy),
         Align2::RIGHT_TOP,
         format!("{max_cities}"),
-        FontId::monospace(7.0),
+        FontId::monospace(13.0),
         theme::TEXT_DIM,
     );
     painter.text(
         egui::pos2(ox - 2.0, oy + H),
         Align2::RIGHT_BOTTOM,
         "0",
-        FontId::monospace(7.0),
+        FontId::monospace(13.0),
         theme::TEXT_DIM,
     );
 
@@ -518,7 +498,7 @@ fn city_history_graph(
         egui::pos2(ox, oy + H + PAD_B),
         Align2::LEFT_BOTTOM,
         "1",
-        FontId::monospace(7.0),
+        FontId::monospace(13.0),
         theme::TEXT_DIM,
     );
     if rounds > 1 {
@@ -526,7 +506,7 @@ fn city_history_graph(
             egui::pos2(ox + w, oy + H + PAD_B),
             Align2::RIGHT_BOTTOM,
             format!("{}", rounds + 1),
-            FontId::monospace(7.0),
+            FontId::monospace(13.0),
             theme::TEXT_DIM,
         );
     }
@@ -549,7 +529,7 @@ fn city_history_graph(
         egui::pos2(ox - 2.0, step2_y),
         Align2::RIGHT_CENTER,
         "S2",
-        FontId::monospace(6.0),
+        FontId::monospace(11.0),
         step2_color,
     );
 
@@ -569,7 +549,7 @@ fn city_history_graph(
         egui::pos2(ox - 2.0, end_y),
         Align2::RIGHT_CENTER,
         "E",
-        FontId::monospace(6.0),
+        FontId::monospace(11.0),
         end_color,
     );
 
@@ -593,7 +573,7 @@ fn city_history_graph(
 
         // Draw line segments
         for pair in points.windows(2) {
-            painter.line_segment([pair[0], pair[1]], Stroke::new(1.5, color));
+            painter.line_segment([pair[0], pair[1]], Stroke::new(2.5, color));
         }
 
         // Draw dots
@@ -609,7 +589,7 @@ fn city_history_graph(
                 let proj_y = oy + H - (proj_count as f32 / max_cities as f32) * H;
                 let proj_pt = egui::pos2(proj_x, proj_y);
                 let dim = dim_color(color);
-                painter.line_segment([last_pt, proj_pt], Stroke::new(1.5, dim));
+                painter.line_segment([last_pt, proj_pt], Stroke::new(2.5, dim));
                 painter.circle_filled(proj_pt, DOT_R, dim);
             }
         }

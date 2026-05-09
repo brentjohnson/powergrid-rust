@@ -112,3 +112,17 @@ The lobby server requires a `DATABASE_URL` pointing at a PostgreSQL instance. Th
 curl http://localhost:3000/health
 # → ok
 ```
+
+## Reinforcement Learning
+
+A [PettingZoo 1.26.1](https://pettingzoo.farama.org/) environment wraps the game engine for training neural-network agents. The bridge is a PyO3 Rust extension — no WebSocket server required.
+
+```bash
+cd python
+make develop                                       # build Rust extension + install Python package
+python scripts/train_vs_bots.py                    # train MaskablePPO vs Rust strategy bots
+python scripts/train_selfplay.py --num-players 4   # self-play across all seats
+python scripts/play_game.py --all-bots --render    # watch a game
+```
+
+See [docs/rl-environment.md](docs/rl-environment.md) for the full API, action/observation encoding, and training instructions.
