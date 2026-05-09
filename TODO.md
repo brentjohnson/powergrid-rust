@@ -110,6 +110,9 @@
 * IMPROVEMENT: Randomize initial order
 * IMPROVEMENT: Show remaining money when doing resources or cities?
 * IMPROVEMENT: Implement dependabot on the repo
+* IMPROVEMENT: Add option for SQLite DB for easier hosting
+* IMPROVEMENT: Move graph to an overlay/slide-out and add more graphs (control center)
+* IMPROVEMENT: Splash screen w/image
 * DEBUG: log more info
 * DEBUG: dump state for diagnostics
 * DEBUG: view hidden info (deck)

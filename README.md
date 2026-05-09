@@ -1,6 +1,6 @@
 # Powergrid
 
-A multiplayer implementation of the Power Grid board game, playable over a local network. One player runs the server; everyone connects with the native GUI client.
+A multiplayer implementation of the Power Grid board game. Play locally against bots, online via a lobby server, or on a local network with friends.
 
 ## Download
 
@@ -8,39 +8,49 @@ Grab the latest binaries from the [Releases](../../releases/latest) page.
 
 | File | Platform | Use |
 |---|---|---|
-| `powergrid-server-linux-x86_64` | Linux (x86_64) | Server |
-| `powergrid-server-linux-aarch64` | Linux (ARM64) | Server |
-| `powergrid-client-linux-x86_64` | Linux (x86_64) | Client |
+| `powergrid-client-linux-x86_64` | Linux (x86_64) | Client (all play modes) |
+| `powergrid-server-linux-x86_64` | Linux (x86_64) | LAN server (optional) |
+| `powergrid-server-linux-aarch64` | Linux (ARM64) | LAN server (optional) |
 
-## Quickstart (2+ players on a local network)
+## Play Modes
 
-### 1. Start the server
+### Local Play (no server required)
 
-One player hosts the server. The Germany map is built in — no extra files needed.
+Launch the client and choose **LOCAL PLAY** from the main menu. Configure your name, color, and bot opponents (up to 5 bots, each with Easy/Normal/Hard difficulty), then click **Start**.
+
+No network connection or account needed.
+
+### Online Play (lobby server)
+
+Choose **ONLINE PLAY** from the main menu. You'll be prompted to log in or register an account. The client connects to `powergrid.onyxoryx.net` by default.
+
+Once logged in:
+1. Enter a room name and click **Create Room** or **Join Room**.
+2. Add bots or wait for other players to join.
+3. The room creator clicks **Start Game** once at least 2 players are in the room.
+
+### LAN Play (self-hosted server)
+
+One player runs the legacy server — no database required. Others connect with the client.
+
+#### 1. Start the server
 
 ```bash
-# Linux — make executable, then run
 chmod +x powergrid-server-linux-x86_64
 ./powergrid-server-linux-x86_64
 ```
 
-The server listens on port `3000`. Find your local IP address (e.g. `192.168.1.10`) — other players will need it to connect.
+The server listens on port `3000`. Find your local IP address (e.g. `192.168.1.10`) — other players will use it to connect.
 
-### 2. Connect
+#### 2. Connect with the client
 
-Launch the client. On the connect screen, fill in:
+Launch the client. On the login screen, the server field defaults to `powergrid.onyxoryx.net` — change it to your LAN server's IP and port before logging in.
 
-| Field | Value |
-|---|---|
-| Server URL | `ws://localhost:3000/ws` (same machine) or `ws://<host-ip>:3000/ws` (over network) |
-| Your Name | Enter your name |
-| Color | Pick a color |
+Alternatively, use CLI flags to point at your LAN server:
 
-Click **Connect** to join the lobby.
-
-### 3. Start the game
-
-The first player to connect is the host. Once at least 2 players have joined, the host clicks **Start Game**.
+```bash
+./powergrid-client --server 192.168.1.10 --port 3000
+```
 
 ## Game Phases
 
@@ -53,9 +63,20 @@ Each round proceeds through these phases:
 
 The game ends when a player connects enough cities to trigger the end condition. The player who powers the most cities wins.
 
-## Server Configuration
+## Client CLI Flags
 
-The server is configured via environment variables:
+```
+--server <host>     Server hostname (default: powergrid.onyxoryx.net)
+--port <port>       Server port (default: 3000)
+--color <color>     Auto-select player color on connect
+                      Choices: red, blue, green, yellow, purple, white
+--room <name>       Auto-create/join this room on connect
+-w, --windowed      Run in a window instead of borderless fullscreen
+```
+
+## LAN Server Configuration
+
+The legacy server is configured via environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -69,28 +90,21 @@ Example:
 PORT=8080 MAP_FILE=my_map.toml RUST_LOG=info ./powergrid-server-linux-x86_64
 ```
 
-## Client CLI Flags
-
-```
---url <ws://host:3000/ws>   Server to connect to
---name <name>               Your player name
---color <color>             Your player color (auto-connects when all three are set)
---windowed                  Run in a window instead of borderless fullscreen
-```
-
 ## Maps
 
 Maps are TOML files that define cities and connections. The included map is **Germany**, embedded at compile time. To use a custom map, set `MAP_FILE=/path/to/map.toml` when starting the server.
 
 A map file contains `[[cities]]` entries (id, name, region) and `[[connections]]` entries (from, to, cost).
 
-## Docker
+## Docker (lobby server)
 
-To run the server in Docker:
+Runs the full lobby server with PostgreSQL:
 
 ```bash
 docker compose up --build
 ```
+
+The lobby server requires a `DATABASE_URL` pointing at a PostgreSQL instance. The Docker Compose file configures this automatically.
 
 ## Health Check
 
