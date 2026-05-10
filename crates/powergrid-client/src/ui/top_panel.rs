@@ -12,7 +12,7 @@ use crate::{
     ws::WsChannels,
 };
 
-use super::helpers::{dim_color, section_header, send};
+use super::helpers::{dim_color, send, vertical_labeled_section};
 use super::phase_tracker::phase_tracker;
 
 pub(super) fn top_panel_contents(
@@ -45,87 +45,73 @@ pub(super) fn top_panel_contents(
         ui.add_space(8.0);
 
         // Plant market
-        ui.vertical(|ui| {
-            section_header(ui, "PLANT MARKET");
-            theme::neon_frame().show(ui, |ui| {
-                ui.horizontal_top(|ui| {
-                    if gs.step >= 3 {
-                        // Step 3: two columns of 3, all plants purchasable, no labels.
-                        let mid = gs.market.actual.len().div_ceil(2);
-                        let (left, right) = gs.market.actual.split_at(mid);
-                        ui.vertical(|ui| {
-                            plant_column(
-                                ui,
-                                left,
-                                channels,
-                                &gs.phase,
-                                my_id,
-                                &gs.player_order,
-                                room,
-                            );
-                        });
-                        ui.add_space(8.0);
-                        ui.vertical(|ui| {
-                            plant_column(
-                                ui,
-                                right,
-                                channels,
-                                &gs.phase,
-                                my_id,
-                                &gs.player_order,
-                                room,
-                            );
-                        });
-                    } else {
-                        // Steps 1 & 2: ACTUAL and FUTURE columns.
-                        ui.vertical(|ui| {
-                            ui.label(
-                                RichText::new("ACTUAL")
-                                    .color(theme::TEXT_DIM)
-                                    .small()
-                                    .monospace(),
-                            );
-                            plant_column(
-                                ui,
-                                &gs.market.actual,
-                                channels,
-                                &gs.phase,
-                                my_id,
-                                &gs.player_order,
-                                room,
-                            );
-                        });
-                        ui.add_space(8.0);
-                        ui.vertical(|ui| {
-                            ui.label(
-                                RichText::new("FUTURE")
-                                    .color(theme::TEXT_DIM)
-                                    .small()
-                                    .monospace(),
-                            );
-                            plant_column(
-                                ui,
-                                &gs.market.future,
-                                channels,
-                                &gs.phase,
-                                my_id,
-                                &gs.player_order,
-                                room,
-                            );
-                        });
-                    }
-                });
+        vertical_labeled_section(ui, "PLANT MARKET", |ui| {
+            ui.horizontal_top(|ui| {
+                if gs.step >= 3 {
+                    // Step 3: two columns of 3, all plants purchasable, no labels.
+                    let mid = gs.market.actual.len().div_ceil(2);
+                    let (left, right) = gs.market.actual.split_at(mid);
+                    ui.vertical(|ui| {
+                        plant_column(ui, left, channels, &gs.phase, my_id, &gs.player_order, room);
+                    });
+                    ui.add_space(8.0);
+                    ui.vertical(|ui| {
+                        plant_column(
+                            ui,
+                            right,
+                            channels,
+                            &gs.phase,
+                            my_id,
+                            &gs.player_order,
+                            room,
+                        );
+                    });
+                } else {
+                    // Steps 1 & 2: ACTUAL and FUTURE columns.
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new("ACTUAL")
+                                .color(theme::TEXT_DIM)
+                                .small()
+                                .monospace(),
+                        );
+                        plant_column(
+                            ui,
+                            &gs.market.actual,
+                            channels,
+                            &gs.phase,
+                            my_id,
+                            &gs.player_order,
+                            room,
+                        );
+                    });
+                    ui.add_space(8.0);
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new("FUTURE")
+                                .color(theme::TEXT_DIM)
+                                .small()
+                                .monospace(),
+                        );
+                        plant_column(
+                            ui,
+                            &gs.market.future,
+                            channels,
+                            &gs.phase,
+                            my_id,
+                            &gs.player_order,
+                            room,
+                        );
+                    });
+                }
             });
         });
 
         ui.add_space(8.0);
 
         // Resource market
-        ui.vertical(|ui| {
-            section_header(ui, "RESOURCE MARKET");
-            theme::neon_frame().show(ui, |ui| {
-                resource_market_grid(ui, &gs.resources);
-            });
+        vertical_labeled_section(ui, "RESOURCE MARKET", |ui| {
+            resource_market_grid(ui, &gs.resources);
         });
     });
 }

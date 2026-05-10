@@ -121,17 +121,14 @@ pub(super) fn phase_tracker(ui: &mut Ui, gs: &GameStateView) {
         });
     };
 
-    ui.vertical(|ui| {
-        super::helpers::section_header(ui, "PHASE TRACKING");
-        theme::neon_frame().show(ui, |ui| {
-            ui.horizontal(|ui| {
-                render_phase(ui, Dp::Auction, "AUCTION");
-                render_phase(ui, Dp::Resource, "RESOURCES");
-            });
-            ui.horizontal(|ui| {
-                render_phase(ui, Dp::Build, "BUILD");
-                render_phase(ui, Dp::Bureaucracy, "BUREAUCRACY");
-            });
+    super::helpers::vertical_labeled_section(ui, "PHASE TRACKING", |ui| {
+        ui.horizontal(|ui| {
+            render_phase(ui, Dp::Auction, "AUCTION");
+            render_phase(ui, Dp::Resource, "RESOURCES");
+        });
+        ui.horizontal(|ui| {
+            render_phase(ui, Dp::Build, "BUILD");
+            render_phase(ui, Dp::Bureaucracy, "BUREAUCRACY");
         });
     });
 }
