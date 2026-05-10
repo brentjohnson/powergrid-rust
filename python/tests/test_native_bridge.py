@@ -1,0 +1,147 @@
+"""
+Parity tests: Rust-native obs/mask/apply_action_id must produce the same results
+as the existing Python reference implementations (encode_observation, mask_from_info,
+id_to_action_json + game.apply).
+"""
+
+import json
+import numpy as np
+import pytest
+
+import powergrid_py
+from powergrid_env.encoding import encode_observation, mask_from_info, id_to_action_json
+from powergrid_env.constants import COLORS
+
+
+def make_game(num_players: int = 4, seed: int = 42) -> tuple:
+    """Return (game, player_ids, state_dict) after start()."""
+    game = powergrid_py.Game(num_players, seed)
+    names = [f"agent_{i}" for i in range(num_players)]
+    colors = COLORS[:num_players]
+    game.start(names, colors)
+    state = json.loads(game.state_json())
+    player_ids = game.player_ids()
+    return game, player_ids, state
+
+
+# ---------------------------------------------------------------------------
+# Observation parity
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("num_players", [2, 3, 4])
+@pytest.mark.parametrize("seat", [0, 1])
+def test_observation_matches_python(num_players: int, seat: int):
+    if seat >= num_players:
+        pytest.skip("seat out of range")
+    game, player_ids, state = make_game(num_players)
+    actor = player_ids[seat]
+
+    rust_obs = np.asarray(game.observation(actor), dtype=np.float32)
+    py_obs = encode_observation(state, actor)
+
+    np.testing.assert_array_almost_equal(
+        rust_obs, py_obs, decimal=5,
+        err_msg=f"observation mismatch for seat={seat}, num_players={num_players}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Action mask parity
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("num_players", [2, 3, 4])
+def test_action_mask_matches_python(num_players: int):
+    game, player_ids, state = make_game(num_players)
+    actor = player_ids[0]  # first bidder in auction
+
+    rust_mask = np.asarray(game.action_mask(actor), dtype=np.int8)
+
+    move_info = json.loads(game.legal_move_info(actor))
+    py_mask = mask_from_info(move_info, state, actor)
+
+    np.testing.assert_array_equal(
+        rust_mask, py_mask,
+        err_msg=f"action mask mismatch for num_players={num_players}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# apply_action_id parity: same result as apply(id_to_action_json(...))
+# ---------------------------------------------------------------------------
+
+def test_apply_action_id_select_plant():
+    game, player_ids, state = make_game(4)
+    actor = player_ids[0]
+
+    # Find a legal select_plant action.
+    move_info = json.loads(game.legal_move_info(actor))
+    slots = move_info.get("select_plant_slots", [])
+    if not slots:
+        pytest.skip("no selectable plants in auction")
+
+    from powergrid_env.constants import SELECT_PLANT_BASE
+    action_id = SELECT_PLANT_BASE + slots[0]
+
+    # Reference: apply via JSON
+    game_ref, player_ids_ref, state_ref = make_game(4)
+    action_json = id_to_action_json(action_id, state_ref, player_ids_ref[0])
+    game_ref.apply(player_ids_ref[0], action_json)
+    ref_state = json.loads(game_ref.state_json())
+
+    # Fast: apply via action_id
+    game.apply_action_id(actor, action_id)
+    fast_state = json.loads(game.state_json())
+
+    # Market and phase should agree.
+    assert fast_state["phase"] == ref_state["phase"], "phase mismatch"
+    assert fast_state["market"]["actual"] == ref_state["market"]["actual"], "market mismatch"
+
+
+# ---------------------------------------------------------------------------
+# step_self_play integration
+# ---------------------------------------------------------------------------
+
+def test_step_self_play_runs_full_game():
+    rng = np.random.default_rng(seed=7)
+    game = powergrid_py.Game(2, 7)
+    game.start(["a", "b"], COLORS[:2])
+    actor = game.current_actor()
+    mask0 = np.asarray(game.action_mask(actor), dtype=np.uint8)
+
+    steps = 0
+    terminal = False
+    total_reward = 0.0
+    current_mask = mask0
+    while not terminal and steps < 10_000:
+        legal = np.where(current_mask)[0]
+        assert len(legal) > 0, "empty mask at non-terminal step"
+        action = int(rng.choice(legal))
+        obs, mask, reward, terminal = game.step_self_play(action)
+        obs = np.asarray(obs)
+        current_mask = np.asarray(mask, dtype=np.uint8)
+        total_reward += reward
+        steps += 1
+
+    assert terminal, f"game did not finish within {steps} steps"
+    assert total_reward in (1.0, -1.0), f"unexpected final reward {total_reward}"
+    assert obs.shape == (405,)
+
+
+def test_step_self_play_obs_matches_observation():
+    """Obs returned by step_self_play must match game.observation(next_actor)."""
+    game = powergrid_py.Game(2, 13)
+    game.start(["a", "b"], COLORS[:2])
+    actor = game.current_actor()
+    mask = np.asarray(game.action_mask(actor), dtype=np.uint8)
+    action = int(np.where(mask)[0][0])
+
+    obs_from_step, mask_from_step, reward, terminal = game.step_self_play(action)
+
+    if not terminal:
+        next_actor = game.current_actor()
+        state = json.loads(game.state_json())
+        obs_ref = encode_observation(state, next_actor)
+        np.testing.assert_array_almost_equal(
+            np.asarray(obs_from_step), obs_ref, decimal=5,
+            err_msg="obs from step_self_play doesn't match game.observation(next_actor)",
+        )
