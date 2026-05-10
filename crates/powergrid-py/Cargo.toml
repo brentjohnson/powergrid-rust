@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.28", features = ["extension-module"] }
+numpy = "0.28"
 powergrid-core = { path = "../powergrid-core" }
 powergrid-bot-strategy = { path = "../powergrid-bot-strategy" }
 serde = { workspace = true }
