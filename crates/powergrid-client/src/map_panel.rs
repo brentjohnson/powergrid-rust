@@ -13,10 +13,11 @@ use crate::{state::AppState, theme};
 const IMG_W: f32 = 1869.0;
 const IMG_H: f32 = 2593.0;
 
-/// Fraction of displayed image width used as hit-test radius for city clicks.
-const CITY_HIT_FRAC: f32 = 0.030;
-/// Fraction of displayed image width used as draw radius for city dots.
+/// Fraction of displayed image width used as draw radius for city house indicators.
 const CITY_R_FRAC: f32 = 0.011;
+/// Half-width / half-height of the city rectangle in fractional image coords (zoom-invariant).
+const CITY_RECT_HALF_W_FRAC: f32 = CITY_R_FRAC * 3.6;
+const CITY_RECT_HALF_H_FRAC: f32 = CITY_R_FRAC * 2.0;
 
 // ---------------------------------------------------------------------------
 // Public entry point
@@ -76,9 +77,9 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
                     continue;
                 }
                 if let (Some(cx), Some(cy)) = (city.x, city.y) {
-                    let dx = xp - cx;
-                    let dy = yp - cy;
-                    if dx * dx + dy * dy <= CITY_HIT_FRAC * CITY_HIT_FRAC {
+                    let dx = (xp - cx).abs();
+                    let dy = (yp - cy).abs();
+                    if dx <= CITY_RECT_HALF_W_FRAC && dy <= CITY_RECT_HALF_H_FRAC {
                         clicked_city = Some(city_id.clone());
                         break;
                     }
@@ -235,6 +236,18 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
             let spacing = city_r * 2.3;
             let total_w = spacing * 2.0; // 3 slots → 2 gaps
 
+            // Rectangle background — covers connection lines passing through the city.
+            let hw = CITY_RECT_HALF_W_FRAC * img_w * state.map_zoom;
+            let hh = CITY_RECT_HALF_H_FRAC * img_w * state.map_zoom;
+            let rect = egui::Rect::from_center_size(center, egui::vec2(hw * 2.0, hh * 2.0));
+            painter.rect_filled(rect, 4.0, Color32::from_rgba_unmultiplied(18, 22, 28, 235));
+            let border_color = if is_selected {
+                Color32::from_rgba_unmultiplied(0, 230, 255, 220)
+            } else {
+                Color32::from_rgba_unmultiplied(70, 80, 90, 160)
+            };
+            painter.rect_stroke(rect, 4.0, Stroke::new(1.0, border_color), egui::StrokeKind::Inside);
+
             // Animated selection glow matching the lightning edge style.
             if is_selected {
                 crate::effects::draw_selected_city_glow(
@@ -253,9 +266,11 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]);
 
+            // Houses sit in the upper half of the rect.
+            let house_y = center.y - city_r * 0.4;
             for slot in 0usize..3 {
                 let x = center.x + (slot as f32 * spacing) - total_w / 2.0;
-                let pos = Pos2::new(x, center.y);
+                let pos = Pos2::new(x, house_y);
 
                 if slot < owners.len() {
                     // Filled: white border + player color house.
@@ -298,6 +313,22 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
                     ));
                 }
             }
+
+            // City name label below the houses.
+            let label_y = center.y + city_r * 1.1;
+            let font_size = (city_r * 1.4).clamp(10.0, 22.0);
+            let label_color = if is_my_build_turn {
+                Color32::from_rgba_unmultiplied(200, 220, 200, 255)
+            } else {
+                Color32::from_rgba_unmultiplied(130, 150, 130, 200)
+            };
+            painter.text(
+                Pos2::new(center.x, label_y),
+                egui::Align2::CENTER_CENTER,
+                &city.name,
+                egui::FontId::proportional(font_size),
+                label_color,
+            );
         }
     }
 }
