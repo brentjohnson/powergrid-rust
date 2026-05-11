@@ -19,6 +19,7 @@ import argparse
 import os
 
 from sb3_contrib import MaskablePPO
+from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from powergrid_env import PowerGridSelfPlayEnv
@@ -41,6 +42,12 @@ def main():
                         help="PyTorch device. 'cpu' is usually fastest for the default "
                              "tiny 2×64 MLP; 'auto' picks GPU if available.")
     parser.add_argument("--run-dir", default="runs/selfplay")
+    parser.add_argument("--resume-from", default=None,
+                        help="Path to a saved MaskablePPO .zip (without .zip suffix) "
+                             "to continue training from. If unset, training starts fresh.")
+    parser.add_argument("--save-freq", type=int, default=50_000,
+                        help="Save an intermediate checkpoint every N vec-env steps. "
+                             "0 disables.")
     args = parser.parse_args()
 
     os.makedirs(args.run_dir, exist_ok=True)
@@ -52,17 +59,34 @@ def main():
     # Default PPO (n_epochs=10, batch=64) does 1280 mini-batch updates per
     # rollout; these settings do 64 (8192/512 * 4 epochs), giving ~3s/iter
     # instead of ~18s/iter with no significant quality loss in practice.
-    model = MaskablePPO(
-        "MlpPolicy",
-        vec_env,
-        verbose=1,
-        seed=args.seed,
-        device=args.device,
-        n_steps=512,
-        batch_size=512,
-        n_epochs=4,
+    if args.resume_from:
+        model = MaskablePPO.load(args.resume_from, env=vec_env, device=args.device)
+        print(f"Resumed from {args.resume_from} at {model.num_timesteps} timesteps")
+    else:
+        model = MaskablePPO(
+            "MlpPolicy",
+            vec_env,
+            verbose=1,
+            seed=args.seed,
+            device=args.device,
+            n_steps=512,
+            batch_size=512,
+            n_epochs=4,
+        )
+
+    callbacks = []
+    if args.save_freq > 0:
+        callbacks.append(CheckpointCallback(
+            save_freq=args.save_freq,
+            save_path=args.run_dir,
+            name_prefix="ckpt",
+        ))
+
+    model.learn(
+        total_timesteps=args.total_timesteps,
+        callback=callbacks or None,
+        reset_num_timesteps=not bool(args.resume_from),
     )
-    model.learn(total_timesteps=args.total_timesteps)
     model.save(os.path.join(args.run_dir, "final_model"))
     print(f"Saved to {args.run_dir}/final_model")
     vec_env.close()
