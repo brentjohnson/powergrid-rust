@@ -11,7 +11,7 @@ mod right_panel;
 mod room_browser;
 mod top_panel;
 
-use egui::{Color32, RichText};
+use egui::RichText;
 use powergrid_core::types::{Phase, PlayerColor, PlayerId};
 
 use crate::{
@@ -71,7 +71,7 @@ pub fn ui_system(
             room_browser::room_browser_screen(ctx, state, channels);
         }
         Screen::Game => {
-            game_screen(ctx, state, channels, &mut action);
+            game_screen(ctx, state, channels);
         }
     }
 
@@ -164,12 +164,7 @@ pub fn ui_system(
 // Game screen
 // ---------------------------------------------------------------------------
 
-fn game_screen(
-    ctx: &egui::Context,
-    state: &mut AppState,
-    channels: Option<&WsChannels>,
-    _action: &mut UiAction,
-) {
+fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: Option<&WsChannels>) {
     let Some(gs) = state.game_state.clone() else {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.centered_and_justified(|ui| {
@@ -192,12 +187,7 @@ fn game_screen(
 
     egui::TopBottomPanel::top("top_panel")
         .exact_height(180.0)
-        .frame(
-            egui::Frame::NONE
-                .fill(theme::BG_DEEP)
-                .stroke(egui::Stroke::new(1.0, theme::NEON_CYAN_DARK))
-                .inner_margin(egui::Margin::same(6)),
-        )
+        .frame(theme::panel_frame(6))
         .show(ctx, |ui| {
             top_panel::top_panel_contents(ui, gs.clone(), state, channels, my_id);
         });
@@ -205,12 +195,7 @@ fn game_screen(
     egui::SidePanel::left("player_panel")
         .resizable(false)
         .exact_width(220.0)
-        .frame(
-            egui::Frame::NONE
-                .fill(theme::BG_DEEP)
-                .stroke(egui::Stroke::new(1.0, theme::NEON_CYAN_DARK))
-                .inner_margin(egui::Margin::same(0)),
-        )
+        .frame(theme::panel_frame(0))
         .show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add_space(6.0);
@@ -221,12 +206,7 @@ fn game_screen(
     egui::SidePanel::right("info_panel")
         .resizable(false)
         .exact_width(400.0)
-        .frame(
-            egui::Frame::NONE
-                .fill(theme::BG_DEEP)
-                .stroke(egui::Stroke::new(1.0, theme::NEON_CYAN_DARK))
-                .inner_margin(egui::Margin::same(0)),
-        )
+        .frame(theme::panel_frame(0))
         .show(ctx, |ui| {
             let half_height = ui.available_height() / 2.0;
 
@@ -244,7 +224,7 @@ fn game_screen(
     egui::CentralPanel::default()
         .frame(
             egui::Frame::NONE
-                .fill(Color32::from_rgb(2, 4, 8))
+                .fill(theme::BG_MAP)
                 .inner_margin(egui::Margin::same(0)),
         )
         .show(ctx, |ui| {

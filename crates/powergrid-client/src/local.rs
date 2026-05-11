@@ -107,14 +107,6 @@ pub fn start_local_session(cfg: LocalConfig) -> (WsChannels, LocalHandle) {
         let session_arc = Arc::clone(&session_arc);
         let event_tx = event_tx.clone();
         std::thread::spawn(move || {
-            tracing_subscriber::fmt()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::try_from_default_env()
-                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-                )
-                .try_init()
-                .ok();
-
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()

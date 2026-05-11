@@ -7,7 +7,10 @@ use powergrid_core::{
 };
 use std::collections::HashMap;
 
-use crate::{state::AppState, theme};
+use crate::{
+    state::{player_color_to_egui, AppState},
+    theme,
+};
 
 /// Original map image dimensions (germany.png is 1869 × 2593).
 const IMG_W: f32 = 1869.0;
@@ -115,8 +118,8 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
     // Base connection lines (all map edges)
     {
         let conn_stroke_w = (city_r * 0.12).max(0.8);
-        let conn_color = Color32::from_rgba_unmultiplied(90, 80, 65, 180);
-        let conn_glow = Color32::from_rgba_unmultiplied(180, 160, 120, 60);
+        let conn_color = theme::map_conn_color();
+        let conn_glow = theme::map_conn_glow();
         let mut drawn = std::collections::HashSet::<(String, String)>::new();
         for (from_id, neighbors) in &map.edges {
             for (to_id, cost) in neighbors {
@@ -160,7 +163,7 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
                                 egui::Align2::CENTER_CENTER,
                                 cost.to_string(),
                                 egui::FontId::monospace(font_size),
-                                Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+                                Color32::from_black_alpha(180),
                             );
                         }
                         painter.text(
@@ -168,7 +171,7 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
                             egui::Align2::CENTER_CENTER,
                             cost.to_string(),
                             egui::FontId::monospace(font_size),
-                            Color32::from_rgba_unmultiplied(255, 240, 160, 255),
+                            theme::MAP_CONN_COST_LABEL,
                         );
                     }
                 }
@@ -226,7 +229,7 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
             if !game_state.is_city_active(city_id, &map) {
                 painter.add(egui::Shape::convex_polygon(
                     house_points(center, city_r * 0.5),
-                    Color32::from_rgba_unmultiplied(60, 60, 60, 100),
+                    theme::map_city_inactive_house(),
                     Stroke::NONE,
                 ));
                 continue;
@@ -240,12 +243,12 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
             let hw = CITY_RECT_HALF_W_FRAC * img_w * state.map_zoom;
             let hh = CITY_RECT_HALF_H_FRAC * img_w * state.map_zoom;
             let rect = egui::Rect::from_center_size(center, egui::vec2(hw * 2.0, hh * 2.0));
-            painter.rect_filled(rect, 4.0, Color32::from_rgba_unmultiplied(18, 22, 28, 235));
+            painter.rect_filled(rect, 4.0, theme::map_city_bg());
             if !is_selected {
                 painter.rect_stroke(
                     rect,
                     4.0,
-                    Stroke::new(1.0, Color32::from_rgba_unmultiplied(70, 80, 90, 160)),
+                    Stroke::new(1.0, theme::map_city_border()),
                     egui::StrokeKind::Inside,
                 );
             }
@@ -280,26 +283,26 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
                     if is_selected {
                         painter.add(egui::Shape::convex_polygon(
                             house_points(pos, city_r),
-                            Color32::from_rgba_unmultiplied(0, 150, 210, 150),
-                            Stroke::new(2.0, Color32::from_rgba_unmultiplied(0, 230, 255, 255)),
+                            theme::map_slot_active_fill(),
+                            Stroke::new(2.0, theme::MAP_SLOT_ACTIVE_BORDER),
                         ));
                     } else {
-                        let (r, g, b) = if is_my_build_turn {
-                            (120, 180, 165)
+                        let stroke_color = if is_my_build_turn {
+                            theme::TEXT_MID
                         } else {
-                            (60, 100, 90)
+                            theme::TEXT_DIM
                         };
                         painter.add(egui::Shape::convex_polygon(
                             house_points(pos, city_r),
                             Color32::TRANSPARENT,
-                            Stroke::new(1.2, Color32::from_rgb(r, g, b)),
+                            Stroke::new(1.2, stroke_color),
                         ));
                     }
                 } else {
                     // Locked: tiny faint house indicating the slot exists.
                     painter.add(egui::Shape::convex_polygon(
                         house_points(pos, city_r * 0.45),
-                        Color32::from_rgba_unmultiplied(60, 100, 90, 40),
+                        theme::map_slot_locked(),
                         Stroke::NONE,
                     ));
                 }
@@ -309,9 +312,9 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
             let label_y = center.y + city_r * 1.1;
             let font_size = (city_r * 1.4).clamp(10.0, 22.0);
             let label_color = if is_my_build_turn {
-                Color32::from_rgba_unmultiplied(200, 220, 200, 255)
+                theme::MAP_CITY_LABEL_ACTIVE
             } else {
-                Color32::from_rgba_unmultiplied(130, 150, 130, 200)
+                theme::map_city_label_dim()
             };
             painter.text(
                 Pos2::new(center.x, label_y),
@@ -371,8 +374,4 @@ fn image_layout(rect: Rect) -> (f32, f32, f32, f32) {
         (IMG_W * s, rect.height())
     };
     (w, h, (rect.width() - w) / 2.0, (rect.height() - h) / 2.0)
-}
-
-fn player_color_to_egui(color: PlayerColor) -> Color32 {
-    crate::state::player_color_to_egui(color)
 }

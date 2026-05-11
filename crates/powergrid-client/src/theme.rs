@@ -24,6 +24,81 @@ pub const TEXT_DIM: Color32 = Color32::from_rgb(60, 100, 90);
 pub const BORDER_PANEL: Color32 = NEON_CYAN_DARK;
 
 // ---------------------------------------------------------------------------
+// Resource market
+// ---------------------------------------------------------------------------
+
+pub const RES_COAL: Color32 = Color32::from_rgb(150, 100, 55);
+pub const RES_OIL: Color32 = Color32::from_rgb(110, 110, 140);
+pub const RES_GARBAGE: Color32 = Color32::from_rgb(200, 170, 20);
+pub const RES_URANIUM: Color32 = Color32::from_rgb(200, 30, 30);
+
+// ---------------------------------------------------------------------------
+// Map overlays (opaque as const, translucent as fn)
+// ---------------------------------------------------------------------------
+
+pub const BG_MAP: Color32 = Color32::from_rgb(2, 4, 8);
+pub const MAP_CONN_COST_LABEL: Color32 = Color32::from_rgb(255, 240, 160);
+pub const MAP_SLOT_ACTIVE_BORDER: Color32 = Color32::from_rgb(0, 230, 255);
+pub const MAP_CITY_LABEL_ACTIVE: Color32 = Color32::from_rgb(200, 220, 200);
+
+pub fn map_conn_color() -> Color32 {
+    Color32::from_rgba_unmultiplied(90, 80, 65, 180)
+}
+pub fn map_conn_glow() -> Color32 {
+    Color32::from_rgba_unmultiplied(180, 160, 120, 60)
+}
+pub fn map_city_inactive_house() -> Color32 {
+    Color32::from_rgba_unmultiplied(60, 60, 60, 100)
+}
+pub fn map_city_bg() -> Color32 {
+    Color32::from_rgba_unmultiplied(18, 22, 28, 235)
+}
+pub fn map_city_border() -> Color32 {
+    Color32::from_rgba_unmultiplied(70, 80, 90, 160)
+}
+pub fn map_slot_active_fill() -> Color32 {
+    Color32::from_rgba_unmultiplied(0, 150, 210, 150)
+}
+pub fn map_slot_locked() -> Color32 {
+    Color32::from_rgba_unmultiplied(60, 100, 90, 40)
+}
+pub fn map_city_label_dim() -> Color32 {
+    Color32::from_rgba_unmultiplied(130, 150, 130, 200)
+}
+
+// ---------------------------------------------------------------------------
+// Power plant card kinds
+// ---------------------------------------------------------------------------
+
+pub const CARD_COAL: Color32 = Color32::from_rgb(140, 90, 45);
+pub const CARD_OIL: Color32 = Color32::from_rgb(100, 100, 120);
+pub const CARD_COAL_OIL: Color32 = Color32::from_rgb(120, 95, 55);
+pub const CARD_GARBAGE: Color32 = Color32::from_rgb(190, 175, 30);
+pub const CARD_URANIUM: Color32 = Color32::from_rgb(220, 40, 60);
+pub const CARD_WIND: Color32 = Color32::from_rgb(0, 200, 170);
+pub const CARD_FUSION: Color32 = Color32::from_rgb(180, 100, 255);
+
+// ---------------------------------------------------------------------------
+// City-history graph indicators
+// ---------------------------------------------------------------------------
+
+pub fn city_graph_step2() -> Color32 {
+    Color32::from_rgba_unmultiplied(180, 180, 60, 180)
+}
+pub fn city_graph_end() -> Color32 {
+    Color32::from_rgba_unmultiplied(220, 80, 80, 200)
+}
+
+// ---------------------------------------------------------------------------
+// Heading / label font sizes
+// ---------------------------------------------------------------------------
+
+pub const HEADING_XL: f32 = 42.0;
+pub const HEADING_L: f32 = 32.0;
+pub const HEADING_M: f32 = 20.0;
+pub const LABEL_S: f32 = 14.0;
+
+// ---------------------------------------------------------------------------
 // Apply theme to egui context
 // ---------------------------------------------------------------------------
 
@@ -115,4 +190,11 @@ pub fn neon_frame_bright() -> egui::Frame {
         .stroke(Stroke::new(1.5, NEON_CYAN_DIM))
         .inner_margin(egui::Margin::same(8))
         .corner_radius(CornerRadius::same(3))
+}
+
+pub fn panel_frame(inner_margin: i8) -> egui::Frame {
+    egui::Frame::NONE
+        .fill(BG_DEEP)
+        .stroke(Stroke::new(1.0, NEON_CYAN_DARK))
+        .inner_margin(egui::Margin::same(inner_margin))
 }

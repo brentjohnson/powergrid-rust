@@ -23,13 +23,13 @@ pub(super) fn local_setup_screen(ctx: &egui::Context, state: &mut AppState, acti
 
                 ui.label(
                     RichText::new("LOCAL PLAY")
-                        .size(32.0)
+                        .size(theme::HEADING_L)
                         .color(theme::NEON_CYAN)
                         .monospace(),
                 );
                 ui.label(
                     RichText::new("OFFLINE · BOT OPPONENTS")
-                        .size(14.0)
+                        .size(theme::LABEL_S)
                         .color(theme::TEXT_DIM)
                         .monospace(),
                 );

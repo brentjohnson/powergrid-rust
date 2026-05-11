@@ -31,7 +31,7 @@ pub(super) fn lobby_screen(
                 ui.add_space(40.0);
                 ui.label(
                     RichText::new("GRID LOBBY")
-                        .size(32.0)
+                        .size(theme::HEADING_L)
                         .color(theme::NEON_CYAN)
                         .monospace(),
                 );

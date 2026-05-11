@@ -186,10 +186,10 @@ fn replenish_rates(step: u8, n: usize) -> (u8, u8, u8, u8) {
 }
 
 fn step_replenish_columns(ui: &mut Ui, current_step: u8, n_players: usize) {
-    let coal_color = Color32::from_rgb(150, 100, 55);
-    let oil_color = Color32::from_rgb(110, 110, 140);
-    let garb_color = Color32::from_rgb(200, 170, 20);
-    let uran_color = Color32::from_rgb(200, 30, 30);
+    let coal_color = theme::RES_COAL;
+    let oil_color = theme::RES_OIL;
+    let garb_color = theme::RES_GARBAGE;
+    let uran_color = theme::RES_URANIUM;
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
@@ -302,10 +302,10 @@ fn resource_market_grid(ui: &mut Ui, market: &ResourceMarket) {
     let ox = rect.min.x;
     let oy = rect.min.y;
 
-    let coal_color = Color32::from_rgb(150, 100, 55);
-    let oil_color = Color32::from_rgb(110, 110, 140);
-    let garb_color = Color32::from_rgb(200, 170, 20);
-    let uran_color = Color32::from_rgb(200, 30, 30);
+    let coal_color = theme::RES_COAL;
+    let oil_color = theme::RES_OIL;
+    let garb_color = theme::RES_GARBAGE;
+    let uran_color = theme::RES_URANIUM;
 
     // ── COG price header ($1 on left = cheapest, $8 on right = most expensive) ──
     for g in 0..8usize {
@@ -499,7 +499,7 @@ pub(super) fn city_history_graph(
 
     // Draw Step 2 indicator line at 7 cities
     let step2_y = oy + H - (STEP2_CITIES as f32 / max_cities as f32) * H;
-    let step2_color = Color32::from_rgba_unmultiplied(180, 180, 60, 180);
+    let step2_color = theme::city_graph_step2();
     let dash_len = 4.0_f32;
     let gap_len = 3.0_f32;
     let mut x = ox;
@@ -521,7 +521,7 @@ pub(super) fn city_history_graph(
 
     // Draw end game indicator line
     let end_y = oy + H - (end_game_cities as f32 / max_cities as f32) * H;
-    let end_color = Color32::from_rgba_unmultiplied(220, 80, 80, 200);
+    let end_color = theme::city_graph_end();
     let mut x = ox;
     while x < ox + w {
         let x_end = (x + dash_len).min(ox + w);

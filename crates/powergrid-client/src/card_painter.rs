@@ -16,13 +16,13 @@ pub const CARD_H: f32 = 26.0;
 
 fn kind_color(kind: PlantKind) -> Color32 {
     match kind {
-        PlantKind::Coal => Color32::from_rgb(140, 90, 45),
-        PlantKind::Oil => Color32::from_rgb(100, 100, 120),
-        PlantKind::CoalOrOil => Color32::from_rgb(120, 95, 55),
-        PlantKind::Garbage => Color32::from_rgb(190, 175, 30),
-        PlantKind::Uranium => Color32::from_rgb(220, 40, 60),
-        PlantKind::Wind => Color32::from_rgb(0, 200, 170),
-        PlantKind::Fusion => Color32::from_rgb(180, 100, 255),
+        PlantKind::Coal => theme::CARD_COAL,
+        PlantKind::Oil => theme::CARD_OIL,
+        PlantKind::CoalOrOil => theme::CARD_COAL_OIL,
+        PlantKind::Garbage => theme::CARD_GARBAGE,
+        PlantKind::Uranium => theme::CARD_URANIUM,
+        PlantKind::Wind => theme::CARD_WIND,
+        PlantKind::Fusion => theme::CARD_FUSION,
     }
 }
 

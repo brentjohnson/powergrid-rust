@@ -21,13 +21,13 @@ pub(super) fn main_menu_screen(ctx: &egui::Context, state: &mut AppState, action
 
                 ui.label(
                     RichText::new("POWER GRID")
-                        .size(42.0)
+                        .size(theme::HEADING_XL)
                         .color(theme::NEON_CYAN)
                         .monospace(),
                 );
                 ui.label(
                     RichText::new("REIMAGINED")
-                        .size(20.0)
+                        .size(theme::HEADING_M)
                         .color(theme::NEON_CYAN_DIM)
                         .monospace(),
                 );

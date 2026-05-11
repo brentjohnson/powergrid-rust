@@ -61,7 +61,7 @@ impl PowerGridApp {
 }
 
 impl eframe::App for PowerGridApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Per-frame polling: drain background thread results before drawing.
         state::process_auth_events(&mut self.state);
         ws::process_ws_events(&mut self.state, self.ws.as_ref());
@@ -115,9 +115,5 @@ impl eframe::App for PowerGridApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
-
-        // Drop session channels when disconnected and not pending a reconnect.
-        // (The WS worker reconnects automatically; only clear on an explicit exit.)
-        let _ = frame; // frame unused but required by trait
     }
 }

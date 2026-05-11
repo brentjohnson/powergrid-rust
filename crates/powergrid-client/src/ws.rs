@@ -198,7 +198,7 @@ pub fn process_ws_events(state: &mut crate::state::AppState, channels: Option<&W
                     state.logout();
                 }
                 ServerMessage::Welcome { .. } => {
-                    // Only sent by the legacy standalone server; not used in lobby protocol.
+                    // legacy standalone server only; the lobby protocol never sends this
                 }
                 ServerMessage::RoomJoined { room, your_id, map } => {
                     state.my_id = Some(your_id);
@@ -224,7 +224,9 @@ pub fn process_ws_events(state: &mut crate::state::AppState, channels: Option<&W
                 ServerMessage::LobbyError { message } => {
                     state.error_message = Some(message);
                 }
-                ServerMessage::Event { .. } => {}
+                ServerMessage::Event { .. } => {
+                    // event log is populated from gs.event_log in StateUpdate; no client-side dispatch needed
+                }
             },
             WsEvent::Disconnected => {
                 state.connected = false;

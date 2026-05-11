@@ -731,7 +731,7 @@ pub(super) fn action_panel(
                 .unwrap_or("UNKNOWN");
             ui.label(
                 RichText::new(format!("GRID CONTROLLED BY: {name}"))
-                    .size(20.0)
+                    .size(theme::HEADING_M)
                     .color(theme::NEON_GREEN)
                     .monospace(),
             );
