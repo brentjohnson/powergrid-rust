@@ -21,9 +21,8 @@ def main():
     parser.add_argument("--bot-difficulty", default="normal", choices=["easy", "normal", "hard"])
     parser.add_argument("--total-timesteps", type=int, default=500_000)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--device", default="cpu",
-                        help="PyTorch device. 'cpu' is usually fastest for the default "
-                             "tiny 2×64 MLP; 'auto' picks GPU if available.")
+    parser.add_argument("--device", default="auto",
+                        help="PyTorch device ('auto', 'cpu', 'cuda'). 'auto' picks GPU if available.")
     parser.add_argument("--run-dir", default="runs/vs_bots")
     parser.add_argument("--resume-from", default=None,
                         help="Path to a saved MaskablePPO .zip (without .zip suffix) "
