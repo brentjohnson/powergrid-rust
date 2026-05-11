@@ -10,58 +10,56 @@ pub fn city_seed(city_id: &str) -> u64 {
     h.finish()
 }
 
-/// Animated selection indicator for a city cluster during BuildCities.
-/// Draws pulsing rings + orbiting sparks in the same electric-cyan palette as lightning edges.
-/// `city_r` is the per-slot house radius used in map_panel.
-pub fn draw_selected_city_glow(painter: &Painter, center: Pos2, city_r: f32, t: f64, seed: u64) {
-    let seed_phase = (seed % 1000) as f64 * (std::f64::consts::TAU / 1000.0);
-    let pulse = ((t * 3.0 + seed_phase).sin() * 0.5 + 0.5) as f32;
-    let pulse2 = 1.0 - pulse;
+/// Animated box highlight for a selected city during BuildCities.
+/// Draws a pulsing cyan tint, a bright border, and particles circling the perimeter.
+/// Call this AFTER all city content (houses, label) so particles render on top.
+pub fn draw_selected_city_box_highlight(painter: &Painter, rect: egui::Rect, t: f64, seed: u64) {
+    let seed_offset = (seed % 1000) as f64 / 1000.0;
 
-    // Soft area glow behind the whole cluster
-    let glow_a = (pulse * 50.0 + 15.0) as u8;
-    painter.circle_filled(
-        center,
-        city_r * 4.2,
-        Color32::from_rgba_unmultiplied(0, 200, 255, glow_a),
+    // Subtle pulsing cyan tint over the box
+    let fill_pulse = ((t * 2.5 + seed_offset * std::f64::consts::TAU).sin() * 0.5 + 0.5) as f32;
+    let fill_a = (fill_pulse * 25.0 + 12.0) as u8;
+    painter.rect_filled(
+        rect,
+        4.0,
+        Color32::from_rgba_unmultiplied(0, 200, 255, fill_a),
     );
 
-    // Primary ring — pulsing size and alpha, matching lightning halo colour
-    let ring_a = (pulse * 180.0 + 70.0) as u8;
-    painter.circle_stroke(
-        center,
-        city_r * 3.4 + pulse * city_r * 0.35,
-        Stroke::new(
-            (city_r * 0.25).max(1.5),
-            Color32::from_rgba_unmultiplied(0, 210, 255, ring_a),
-        ),
+    // Bright 2px border, gently pulsing alpha
+    let border_pulse = ((t * 3.0 + seed_offset * std::f64::consts::TAU).sin() * 0.5 + 0.5) as f32;
+    let border_a = (border_pulse * 55.0 + 165.0) as u8;
+    painter.rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(2.0, Color32::from_rgba_unmultiplied(0, 225, 255, border_a)),
+        egui::StrokeKind::Inside,
     );
 
-    // Secondary ring — counter-phase so one is always visible
-    let ring2_a = (pulse2 * 90.0 + 20.0) as u8;
-    painter.circle_stroke(
-        center,
-        city_r * 4.1 + pulse2 * city_r * 0.3,
-        Stroke::new(
-            (city_r * 0.12).max(0.8),
-            Color32::from_rgba_unmultiplied(0, 220, 255, ring2_a),
-        ),
-    );
+    // Particles circling the perimeter clockwise
+    const N: usize = 6;
+    const SPEED: f64 = 0.22; // full lap every ~4.5 s
 
-    // Orbiting spark dots — same style as lightning edge sparks
-    const NUM_SPARKS: usize = 5;
-    for k in 0..NUM_SPARKS {
-        let angle = t * 1.8 + k as f64 * std::f64::consts::TAU / NUM_SPARKS as f64 + seed_phase;
-        if (t * 7.0 + k as f64 * 2.1 + seed_phase).sin() > 0.1 {
-            let orbit_r = city_r * 3.7;
-            let sp = Pos2::new(
-                center.x + orbit_r * angle.cos() as f32,
-                center.y + orbit_r * angle.sin() as f32,
-            );
-            let sr = (city_r * 0.28).max(1.5);
-            painter.circle_filled(sp, sr, Color32::from_rgba_unmultiplied(180, 240, 255, 200));
-            painter.circle_filled(sp, sr * 0.4, Color32::WHITE);
-        }
+    let w = rect.width() as f64;
+    let h = rect.height() as f64;
+    let perimeter = 2.0 * (w + h);
+
+    for k in 0..N {
+        let phase = (t * SPEED + k as f64 / N as f64 + seed_offset) % 1.0;
+        let arc = phase * perimeter;
+
+        let pos = if arc < w {
+            Pos2::new(rect.left() + arc as f32, rect.top())
+        } else if arc < w + h {
+            Pos2::new(rect.right(), rect.top() + (arc - w) as f32)
+        } else if arc < 2.0 * w + h {
+            Pos2::new(rect.right() - (arc - w - h) as f32, rect.bottom())
+        } else {
+            Pos2::new(rect.left(), rect.bottom() - (arc - 2.0 * w - h) as f32)
+        };
+
+        let r = 2.5_f32;
+        painter.circle_filled(pos, r, Color32::from_rgba_unmultiplied(180, 240, 255, 210));
+        painter.circle_filled(pos, r * 0.4, Color32::WHITE);
     }
 }
 

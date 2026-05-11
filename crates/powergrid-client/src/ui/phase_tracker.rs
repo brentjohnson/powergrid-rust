@@ -87,32 +87,22 @@ pub(super) fn phase_tracker(ui: &mut Ui, gs: &GameStateView) {
                                     }
                                     Phase::BuyResources { remaining }
                                     | Phase::BuildCities { remaining }
-                                    | Phase::Bureaucracy { remaining } => {
-                                        !remaining.contains(pid)
-                                    }
+                                    | Phase::Bureaucracy { remaining } => !remaining.contains(pid),
                                     _ => false,
                                 }
                             };
 
                             if let Some(p) = gs.player(*pid) {
                                 let base = player_color_to_egui(p.color);
-                                let is_past = current_idx
-                                    .map_or(false, |ci| phase_idx(*dp) < ci);
+                                let is_past = current_idx.is_some_and(|ci| phase_idx(*dp) < ci);
                                 let dimmed = is_past || is_completed;
 
                                 let size = egui::Vec2::splat(16.0);
-                                let (rect, _) = ui.allocate_exact_size(
-                                    size,
-                                    egui::Sense::hover(),
-                                );
+                                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
                                 if ui.is_rect_visible(rect) {
                                     let painter = ui.painter();
                                     if is_active {
-                                        painter.rect_filled(
-                                            rect,
-                                            2.0,
-                                            dim_color(base),
-                                        );
+                                        painter.rect_filled(rect, 2.0, dim_color(base));
                                         painter.rect_stroke(
                                             rect,
                                             2.0,

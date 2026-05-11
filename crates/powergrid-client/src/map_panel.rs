@@ -241,21 +241,12 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
             let hh = CITY_RECT_HALF_H_FRAC * img_w * state.map_zoom;
             let rect = egui::Rect::from_center_size(center, egui::vec2(hw * 2.0, hh * 2.0));
             painter.rect_filled(rect, 4.0, Color32::from_rgba_unmultiplied(18, 22, 28, 235));
-            let border_color = if is_selected {
-                Color32::from_rgba_unmultiplied(0, 230, 255, 220)
-            } else {
-                Color32::from_rgba_unmultiplied(70, 80, 90, 160)
-            };
-            painter.rect_stroke(rect, 4.0, Stroke::new(1.0, border_color), egui::StrokeKind::Inside);
-
-            // Animated selection glow matching the lightning edge style.
-            if is_selected {
-                crate::effects::draw_selected_city_glow(
-                    &painter,
-                    center,
-                    city_r,
-                    t,
-                    crate::effects::city_seed(city_id),
+            if !is_selected {
+                painter.rect_stroke(
+                    rect,
+                    4.0,
+                    Stroke::new(1.0, Color32::from_rgba_unmultiplied(70, 80, 90, 160)),
+                    egui::StrokeKind::Inside,
                 );
             }
 
@@ -329,6 +320,16 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
                 egui::FontId::proportional(font_size),
                 label_color,
             );
+
+            // Animated box highlight drawn last so particles appear on top of content.
+            if is_selected {
+                crate::effects::draw_selected_city_box_highlight(
+                    &painter,
+                    rect,
+                    t,
+                    crate::effects::city_seed(city_id),
+                );
+            }
         }
     }
 }
