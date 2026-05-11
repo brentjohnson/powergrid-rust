@@ -16,10 +16,8 @@ import argparse
 import json
 import numpy as np
 
-import powergrid_py  # type: ignore[import]
-
+from sb3_contrib import MaskablePPO
 from powergrid_env import PowerGridAECEnv, RandomPolicy, RustBotPolicy
-from powergrid_env.encoding import encode_observation, mask_from_info
 
 
 def main():
@@ -29,7 +27,7 @@ def main():
     parser.add_argument("--model", default=None, help="Path to a MaskablePPO checkpoint")
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--all-bots", action="store_true", help="All seats use Rust bot")
-    parser.add_argument("--difficulty", default="normal")
+    parser.add_argument("--bot-difficulty", default="normal", choices=["easy", "normal", "hard"])
     args = parser.parse_args()
 
     env = PowerGridAECEnv(
@@ -39,14 +37,12 @@ def main():
     )
     env.reset(seed=args.seed)
 
-    # Load optional model for seat 0.
     model = None
     if args.model:
-        from sb3_contrib import MaskablePPO
         model = MaskablePPO.load(args.model)
         print(f"Loaded model from {args.model}")
 
-    bot_policy = RustBotPolicy(difficulty=args.difficulty)
+    bot_policy = RustBotPolicy(difficulty=args.bot_difficulty)
     random_policy = RandomPolicy()
 
     step_count = 0
@@ -57,22 +53,13 @@ def main():
             action = None
         else:
             mask = info.get("action_mask", np.ones(env.action_space(agent).n, dtype=np.int8))
-            if args.all_bots:
-                action_json = env.game.bot_decide(uuid, args.difficulty)
-                if action_json is None:
-                    action = 0
-                else:
-                    from powergrid_env.encoding import action_json_to_id
-                    state = json.loads(env.game.state_json())
-                    action = action_json_to_id(action_json, state, uuid)
-            elif model and agent == env.possible_agents[0]:
+            if model and not args.all_bots and agent == env.possible_agents[0]:
                 action, _ = model.predict(obs, action_masks=mask, deterministic=True)
+            elif args.all_bots or model:
+                state = json.loads(env.game.state_json())
+                action = bot_policy.act(env.game, uuid, state, obs, mask)
             else:
-                action = bot_policy.act(
-                    env.game, uuid,
-                    json.loads(env.game.state_json()),
-                    obs, mask,
-                )
+                action = random_policy.act(obs, mask)
 
         env.step(action)
         step_count += 1

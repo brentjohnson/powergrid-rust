@@ -55,14 +55,15 @@ def main():
     env_fns = [make_env(args.num_players, args.seed + i) for i in range(args.num_envs)]
     vec_env = DummyVecEnv(env_fns)
 
-    # n_epochs/batch_size are the dominant cost on CPU.
-    # Default PPO (n_epochs=10, batch=64) does 1280 mini-batch updates per
-    # rollout; these settings do 64 (8192/512 * 4 epochs), giving ~3s/iter
-    # instead of ~18s/iter with no significant quality loss in practice.
     if args.resume_from:
         model = MaskablePPO.load(args.resume_from, env=vec_env, device=args.device)
+        model.tensorboard_log = os.path.join(args.run_dir, "tb")
         print(f"Resumed from {args.resume_from} at {model.num_timesteps} timesteps")
     else:
+        # n_epochs/batch_size are the dominant cost on CPU.
+        # Default PPO (n_epochs=10, batch=64) does 1280 mini-batch updates per
+        # rollout; these settings do 64 (8192/512 * 4 epochs), giving ~3s/iter
+        # instead of ~18s/iter with no significant quality loss in practice.
         model = MaskablePPO(
             "MlpPolicy",
             vec_env,
@@ -72,6 +73,7 @@ def main():
             n_steps=512,
             batch_size=512,
             n_epochs=4,
+            tensorboard_log=os.path.join(args.run_dir, "tb"),
         )
 
     callbacks = []

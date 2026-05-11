@@ -8,8 +8,6 @@ Usage:
 import argparse
 import os
 
-import gymnasium as gym
-import numpy as np
 from sb3_contrib import MaskablePPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 
@@ -23,14 +21,15 @@ def main():
     parser.add_argument("--bot-difficulty", default="normal", choices=["easy", "normal", "hard"])
     parser.add_argument("--total-timesteps", type=int, default=500_000)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--device", default="auto")
+    parser.add_argument("--device", default="cpu",
+                        help="PyTorch device. 'cpu' is usually fastest for the default "
+                             "tiny 2×64 MLP; 'auto' picks GPU if available.")
     parser.add_argument("--run-dir", default="runs/vs_bots")
     parser.add_argument("--resume-from", default=None,
                         help="Path to a saved MaskablePPO .zip (without .zip suffix) "
                              "to continue training from. If unset, training starts fresh.")
     parser.add_argument("--save-freq", type=int, default=50_000,
-                        help="Save an intermediate checkpoint every N env steps. "
-                             "0 disables.")
+                        help="Save an intermediate checkpoint every N env steps. 0 disables.")
     args = parser.parse_args()
 
     os.makedirs(args.run_dir, exist_ok=True)
@@ -45,6 +44,7 @@ def main():
 
     if args.resume_from:
         model = MaskablePPO.load(args.resume_from, env=env, device=args.device)
+        model.tensorboard_log = os.path.join(args.run_dir, "tb")
         print(f"Resumed from {args.resume_from} at {model.num_timesteps} timesteps")
     else:
         model = MaskablePPO(
