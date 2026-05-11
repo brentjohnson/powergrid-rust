@@ -14,7 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # supersuit requires Python dev headers to build tinyscaler — install manually if needed.
-train = ["stable-baselines3>=2.4.0", "sb3-contrib>=2.4.0", "torch>=2.4"]
+train = ["stable-baselines3>=2.4.0", "sb3-contrib>=2.4.0", "torch>=2.4", "tensorboard>=2.0"]
 dev   = ["pytest>=8.0", "ruff>=0.4"]
 
 [tool.hatch.build.targets.wheel]

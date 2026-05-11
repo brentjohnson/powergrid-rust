@@ -52,23 +52,24 @@ def main():
     step_count = 0
     for agent in env.agent_iter():
         obs, reward, terminated, truncated, info = env.last()
+        uuid = env._id_to_uuid.get(agent, agent)
         if terminated or truncated:
             action = None
         else:
             mask = info.get("action_mask", np.ones(env.action_space(agent).n, dtype=np.int8))
             if args.all_bots:
-                action_json = env.game.bot_decide(agent, args.difficulty)
+                action_json = env.game.bot_decide(uuid, args.difficulty)
                 if action_json is None:
                     action = 0
                 else:
                     from powergrid_env.encoding import action_json_to_id
                     state = json.loads(env.game.state_json())
-                    action = action_json_to_id(action_json, state, agent)
+                    action = action_json_to_id(action_json, state, uuid)
             elif model and agent == env.possible_agents[0]:
                 action, _ = model.predict(obs, action_masks=mask, deterministic=True)
             else:
                 action = bot_policy.act(
-                    env.game, agent,
+                    env.game, uuid,
                     json.loads(env.game.state_json()),
                     obs, mask,
                 )

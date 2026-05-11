@@ -152,6 +152,10 @@ class PowerGridSingleAgentEnv(gym.Env):
             except ValueError:
                 break
 
+    def action_masks(self) -> np.ndarray:
+        """Called by MaskablePPO via env_method('action_masks')."""
+        return self._build_mask()
+
     def _build_mask(self) -> np.ndarray:
         if self.game is None or self._learner_id is None:
             return np.zeros(N_ACTIONS, dtype=np.int8)
