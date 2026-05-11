@@ -32,103 +32,104 @@ pub(super) fn phase_tracker(ui: &mut Ui, gs: &GameStateView) {
         (Dp::Bureaucracy, "BUREAUCRACY"),
     ];
 
-    // Measure the widest label to use as a fixed column width
-    let col_width = phases
-        .iter()
-        .map(|(_, label)| {
-            ui.fonts_mut(|f| {
-                f.layout_no_wrap(
-                    label.to_string(),
-                    egui::FontId::monospace(ui.style().text_styles[&egui::TextStyle::Small].size),
-                    egui::Color32::WHITE,
-                )
-                .size()
-                .x
-            })
-        })
-        .fold(0.0_f32, f32::max)
-        + ui.spacing().item_spacing.x * 2.0
-        + 4.0;
+    let phase_idx = |dp: Dp| match dp {
+        Dp::Auction => 0u8,
+        Dp::Resource => 1,
+        Dp::Build => 2,
+        Dp::Bureaucracy => 3,
+    };
+    let current_idx = current.map(phase_idx);
 
-    let render_phase = |ui: &mut Ui, dp: Dp, label: &str| {
-        let is_current = current == Some(dp);
+    super::helpers::vertical_labeled_section(ui, "PHASE TRACKING", |ui| {
+        egui::Grid::new("phase_tracker_grid")
+            .num_columns(2)
+            .spacing([8.0, 2.0])
+            .show(ui, |ui| {
+                for (dp, label) in &phases {
+                    let is_current = current == Some(*dp);
 
-        let player_ids: Vec<PlayerId> = if dp == Dp::Auction {
-            gs.player_order.clone()
-        } else {
-            gs.player_order.iter().rev().cloned().collect()
-        };
+                    let label_color = if is_current {
+                        theme::NEON_AMBER
+                    } else {
+                        theme::TEXT_DIM
+                    };
+                    ui.label(RichText::new(*label).color(label_color).small().monospace());
 
-        let phase_active: Option<PlayerId> = if !is_current {
-            None
-        } else {
-            match &gs.phase {
-                Phase::Auction {
-                    current_bidder_idx, ..
-                } => gs.player_order.get(*current_bidder_idx).copied(),
-                Phase::BuyResources { remaining } | Phase::BuildCities { remaining } => {
-                    remaining.first().copied()
-                }
-                Phase::Bureaucracy { .. } => None,
-                _ => None,
-            }
-        };
+                    let player_ids: Vec<PlayerId> = if *dp == Dp::Auction {
+                        gs.player_order.clone()
+                    } else {
+                        gs.player_order.iter().rev().cloned().collect()
+                    };
 
-        ui.vertical(|ui| {
-            ui.set_width(col_width);
-
-            let label_color = if is_current {
-                theme::NEON_AMBER
-            } else {
-                theme::TEXT_DIM
-            };
-            ui.label(RichText::new(label).color(label_color).small().monospace());
-
-            ui.horizontal(|ui| {
-                for pid in &player_ids {
-                    let is_active = phase_active == Some(*pid);
-                    let is_completed = if !is_current {
-                        false
+                    let phase_active: Option<PlayerId> = if !is_current {
+                        None
                     } else {
                         match &gs.phase {
-                            Phase::Auction { bought, passed, .. } => {
-                                bought.contains(pid) || passed.contains(pid)
-                            }
+                            Phase::Auction {
+                                current_bidder_idx, ..
+                            } => gs.player_order.get(*current_bidder_idx).copied(),
                             Phase::BuyResources { remaining }
-                            | Phase::BuildCities { remaining }
-                            | Phase::Bureaucracy { remaining } => !remaining.contains(pid),
-                            _ => false,
+                            | Phase::BuildCities { remaining } => remaining.first().copied(),
+                            Phase::Bureaucracy { .. } => None,
+                            _ => None,
                         }
                     };
 
-                    if let Some(p) = gs.player(*pid) {
-                        let base = player_color_to_egui(p.color);
-                        let color = if !is_current || is_completed {
-                            dim_color(base)
-                        } else {
-                            base
-                        };
-                        let square_text = if is_active { "▣" } else { "■" };
-                        ui.label(
-                            RichText::new(square_text)
-                                .color(color)
-                                .monospace()
-                                .size(20.0),
-                        );
-                    }
+                    ui.horizontal(|ui| {
+                        for pid in &player_ids {
+                            let is_active = phase_active == Some(*pid);
+                            let is_completed = if !is_current {
+                                false
+                            } else {
+                                match &gs.phase {
+                                    Phase::Auction { bought, passed, .. } => {
+                                        bought.contains(pid) || passed.contains(pid)
+                                    }
+                                    Phase::BuyResources { remaining }
+                                    | Phase::BuildCities { remaining }
+                                    | Phase::Bureaucracy { remaining } => {
+                                        !remaining.contains(pid)
+                                    }
+                                    _ => false,
+                                }
+                            };
+
+                            if let Some(p) = gs.player(*pid) {
+                                let base = player_color_to_egui(p.color);
+                                let is_past = current_idx
+                                    .map_or(false, |ci| phase_idx(*dp) < ci);
+                                let dimmed = is_past || is_completed;
+
+                                let size = egui::Vec2::splat(16.0);
+                                let (rect, _) = ui.allocate_exact_size(
+                                    size,
+                                    egui::Sense::hover(),
+                                );
+                                if ui.is_rect_visible(rect) {
+                                    let painter = ui.painter();
+                                    if is_active {
+                                        painter.rect_filled(
+                                            rect,
+                                            2.0,
+                                            dim_color(base),
+                                        );
+                                        painter.rect_stroke(
+                                            rect,
+                                            2.0,
+                                            egui::Stroke::new(2.0, base),
+                                            egui::StrokeKind::Outside,
+                                        );
+                                    } else {
+                                        let fill = if dimmed { dim_color(base) } else { base };
+                                        painter.rect_filled(rect, 2.0, fill);
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    ui.end_row();
                 }
             });
-        });
-    };
-
-    super::helpers::vertical_labeled_section(ui, "PHASE TRACKING", |ui| {
-        ui.horizontal(|ui| {
-            render_phase(ui, Dp::Auction, "AUCTION");
-            render_phase(ui, Dp::Resource, "RESOURCES");
-        });
-        ui.horizontal(|ui| {
-            render_phase(ui, Dp::Build, "BUILD");
-            render_phase(ui, Dp::Bureaucracy, "BUREAUCRACY");
-        });
     });
 }
