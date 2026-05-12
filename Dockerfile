@@ -19,6 +19,8 @@ COPY crates/powergrid-server/Cargo.toml crates/powergrid-server/Cargo.toml
 RUN mkdir -p crates/powergrid-server/src && echo '' > crates/powergrid-server/src/lib.rs && echo 'fn main(){}' > crates/powergrid-server/src/main.rs
 COPY crates/powergrid-client/Cargo.toml crates/powergrid-client/Cargo.toml
 RUN mkdir -p crates/powergrid-client/src && echo 'fn main(){}' > crates/powergrid-client/src/main.rs
+COPY crates/powergrid-py/Cargo.toml crates/powergrid-py/Cargo.toml
+RUN mkdir -p crates/powergrid-py/src && echo '' > crates/powergrid-py/src/lib.rs
 
 RUN cargo build --release -p powergrid-lobby
 
