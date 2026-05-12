@@ -403,6 +403,22 @@ pub(super) fn action_panel(
                     );
                 }
 
+                let has_fuel_plants =
+                    player.is_some_and(|p| p.plants.iter().any(|pl| pl.kind.needs_resources()));
+                if has_fuel_plants {
+                    ui.horizontal(|ui| {
+                        if ui.add(neon_button("[ 1 SET ]", theme::NEON_CYAN)).clicked() {
+                            state.fill_cart_for_sets(1);
+                        }
+                        if ui
+                            .add(neon_button("[ 2 SETS ]", theme::NEON_CYAN))
+                            .clicked()
+                        {
+                            state.fill_cart_for_sets(2);
+                        }
+                    });
+                }
+
                 let unaffordable = state.resource_cart_cost.is_some_and(|c| c > my_money);
                 ui.horizontal(|ui| {
                     if ui

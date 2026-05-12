@@ -4,7 +4,7 @@ use powergrid_core::{
     actions::RoomSummary,
     connection_cost,
     map::Map,
-    types::{BotDifficulty, Phase, PlayerColor, PlayerId, Resource},
+    types::{BotDifficulty, Phase, PlantKind, PlayerColor, PlayerId, Resource, ResourceMarket},
     GameStateView,
 };
 use std::{
@@ -426,6 +426,41 @@ impl AppState {
         };
     }
 
+    /// Set the cart amount for a single resource to exactly `target`, replacing any
+    /// existing amount for that resource. `add_to_cart` is reused so market availability
+    /// and storage capacity are still enforced; the cart will be capped accordingly.
+    pub fn set_cart_amount(&mut self, resource: Resource, target: u8) {
+        self.resource_cart.remove(&resource);
+        for _ in 0..target {
+            let before = self.resource_cart.get(&resource).copied().unwrap_or(0);
+            self.add_to_cart(resource);
+            let after = self.resource_cart.get(&resource).copied().unwrap_or(0);
+            if after == before {
+                break;
+            }
+        }
+        self.refresh_resource_preview();
+    }
+
+    /// Replace the cart with enough resources to fire all fuel-burning plants `sets` times.
+    /// Accounts for already-owned resources. Cheaper resource wins for hybrid plants.
+    pub fn fill_cart_for_sets(&mut self, sets: u8) {
+        let Some(state) = &self.game_state else {
+            return;
+        };
+        let Some(my_id) = self.my_id else { return };
+        let Some(player) = state.player(my_id) else {
+            return;
+        };
+        let targets = compute_set_cart(player, &state.resources, sets);
+        self.clear_cart();
+        for (resource, amount) in targets {
+            for _ in 0..amount {
+                self.add_to_cart(resource);
+            }
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Build preview
     // -----------------------------------------------------------------------
@@ -606,6 +641,135 @@ fn heap_permutations<T: Clone>(arr: &mut Vec<T>, k: usize, cb: &mut impl FnMut(&
 }
 
 // ---------------------------------------------------------------------------
+// Resource set computation
+// ---------------------------------------------------------------------------
+
+/// Compute how many of each resource to add to the cart to fire all plants `sets` times.
+///
+/// Algorithm:
+/// 1. Dedicated plants (Coal/Oil/Garbage/Uranium): buy `sets * cost - owned`, capped by market.
+/// 2. Hybrid (CoalOrOil) plants: after dedicated buys are simulated, pick the cheaper of coal
+///    or oil for each remaining unit, tie-breaking to oil.
+///
+/// Returns a deterministic `Vec<(Resource, u8)>` in Coal/Oil/Garbage/Uranium order.
+/// Amounts are advisory — the caller should still run them through `add_to_cart` to
+/// enforce storage capacity and market constraints.
+fn compute_set_cart(
+    player: &powergrid_core::types::Player,
+    market: &ResourceMarket,
+    sets: u8,
+) -> Vec<(Resource, u8)> {
+    let coal_only_need: u8 = player
+        .plants
+        .iter()
+        .filter(|p| p.kind == PlantKind::Coal)
+        .map(|p| p.cost.saturating_mul(sets))
+        .fold(0u8, |a, b| a.saturating_add(b));
+    let oil_only_need: u8 = player
+        .plants
+        .iter()
+        .filter(|p| p.kind == PlantKind::Oil)
+        .map(|p| p.cost.saturating_mul(sets))
+        .fold(0u8, |a, b| a.saturating_add(b));
+    let garbage_need: u8 = player
+        .plants
+        .iter()
+        .filter(|p| p.kind == PlantKind::Garbage)
+        .map(|p| p.cost.saturating_mul(sets))
+        .fold(0u8, |a, b| a.saturating_add(b));
+    let uranium_need: u8 = player
+        .plants
+        .iter()
+        .filter(|p| p.kind == PlantKind::Uranium)
+        .map(|p| p.cost.saturating_mul(sets))
+        .fold(0u8, |a, b| a.saturating_add(b));
+    let hybrid_need: u8 = player
+        .plants
+        .iter()
+        .filter(|p| p.kind == PlantKind::CoalOrOil)
+        .map(|p| p.cost.saturating_mul(sets))
+        .fold(0u8, |a, b| a.saturating_add(b));
+
+    let mut sim_market = market.clone();
+    let mut sim_player = player.clone();
+    let mut result: HashMap<Resource, u8> = HashMap::new();
+
+    // Buy the hard-requirement amount for each dedicated resource, capped by what the
+    // simulated market + storage allow.
+    for (resource, need) in [
+        (Resource::Coal, coal_only_need),
+        (Resource::Oil, oil_only_need),
+        (Resource::Garbage, garbage_need),
+        (Resource::Uranium, uranium_need),
+    ] {
+        let owned = sim_player.resources.get(resource);
+        let want = need.saturating_sub(owned);
+        if want == 0 {
+            continue;
+        }
+        let cap = want.min(sim_market.available(resource));
+        // Walk down from cap to find the largest block the player can store.
+        for n in (1..=cap).rev() {
+            if sim_player.can_add_resource(resource, n) {
+                *result.entry(resource).or_insert(0) += n;
+                sim_market.take(resource, n);
+                sim_player.resources.add(resource, n);
+                break;
+            }
+        }
+    }
+
+    // Determine how much hybrid fuel is still needed after dedicated plants are covered.
+    let leftover_coal = sim_player.resources.coal.saturating_sub(coal_only_need);
+    let leftover_oil = sim_player.resources.oil.saturating_sub(oil_only_need);
+    let hybrid_remaining = hybrid_need.saturating_sub(leftover_coal.saturating_add(leftover_oil));
+
+    // For each remaining hybrid unit, pick the cheaper of coal or oil.
+    for _ in 0..hybrid_remaining {
+        let coal_ok = sim_market.available(Resource::Coal) >= 1
+            && sim_player.can_add_resource(Resource::Coal, 1);
+        let oil_ok = sim_market.available(Resource::Oil) >= 1
+            && sim_player.can_add_resource(Resource::Oil, 1);
+        if !coal_ok && !oil_ok {
+            break;
+        }
+        let coal_price = if coal_ok {
+            sim_market.price(Resource::Coal, 1).unwrap_or(u32::MAX)
+        } else {
+            u32::MAX
+        };
+        let oil_price = if oil_ok {
+            sim_market.price(Resource::Oil, 1).unwrap_or(u32::MAX)
+        } else {
+            u32::MAX
+        };
+        // Tie-break to oil (matches the bot strategy convention).
+        let pick = if oil_price <= coal_price {
+            Resource::Oil
+        } else {
+            Resource::Coal
+        };
+        *result.entry(pick).or_insert(0) += 1;
+        sim_market.take(pick, 1);
+        sim_player.resources.add(pick, 1);
+    }
+
+    // Return in canonical Coal/Oil/Garbage/Uranium order.
+    [
+        Resource::Coal,
+        Resource::Oil,
+        Resource::Garbage,
+        Resource::Uranium,
+    ]
+    .iter()
+    .filter_map(|&r| {
+        let amt = result.get(&r).copied().unwrap_or(0);
+        (amt > 0).then_some((r, amt))
+    })
+    .collect()
+}
+
+// ---------------------------------------------------------------------------
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 
@@ -720,5 +884,106 @@ pub fn player_color_to_egui(color: PlayerColor) -> egui::Color32 {
         PlayerColor::Yellow => egui::Color32::from_rgb(240, 200, 20),
         PlayerColor::Purple => egui::Color32::from_rgb(150, 30, 200),
         PlayerColor::White => egui::Color32::from_rgb(240, 240, 240),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use powergrid_core::types::{Player, PlayerColor, PlayerResources, PlantKind, PowerPlant};
+
+    fn make_plant(kind: PlantKind, cost: u8) -> PowerPlant {
+        PowerPlant {
+            number: 10,
+            kind,
+            cost,
+            cities: 2,
+        }
+    }
+
+    fn make_player(plants: Vec<PowerPlant>, resources: PlayerResources) -> Player {
+        let mut p = Player::new("test".to_string(), PlayerColor::Red);
+        p.plants = plants;
+        p.resources = resources;
+        p
+    }
+
+    #[test]
+    fn single_coal_plant_no_stock() {
+        let player = make_player(vec![make_plant(PlantKind::Coal, 3)], PlayerResources::default());
+        let market = ResourceMarket::initial();
+        let result = compute_set_cart(&player, &market, 1);
+        assert_eq!(result, vec![(Resource::Coal, 3)]);
+    }
+
+    #[test]
+    fn single_coal_plant_two_sets() {
+        let player = make_player(vec![make_plant(PlantKind::Coal, 2)], PlayerResources::default());
+        let market = ResourceMarket::initial();
+        let result = compute_set_cart(&player, &market, 2);
+        // 2 sets = plant.cost * 2 = 4
+        assert_eq!(result, vec![(Resource::Coal, 4)]);
+    }
+
+    #[test]
+    fn coal_plant_with_partial_stock_subtracts_owned() {
+        let resources = PlayerResources { coal: 2, ..Default::default() };
+        let player = make_player(vec![make_plant(PlantKind::Coal, 3)], resources);
+        let market = ResourceMarket::initial();
+        let result = compute_set_cart(&player, &market, 1);
+        // Needs 3, has 2, so buy 1.
+        assert_eq!(result, vec![(Resource::Coal, 1)]);
+    }
+
+    #[test]
+    fn hybrid_plant_picks_cheaper_resource() {
+        // No dedicated coal/oil plants; one hybrid.
+        // Initial market: coal=24 (cheapest slot price $1/unit), oil=18 (cheapest slot price $3/unit).
+        // Coal is cheaper, so both units should come from coal.
+        let player = make_player(vec![make_plant(PlantKind::CoalOrOil, 2)], PlayerResources::default());
+        let market = ResourceMarket::initial();
+        let result = compute_set_cart(&player, &market, 1);
+        assert_eq!(result, vec![(Resource::Coal, 2)]);
+    }
+
+    #[test]
+    fn hybrid_plant_picks_oil_when_cheaper() {
+        // Make coal scarce (expensive) so oil wins.
+        let player = make_player(vec![make_plant(PlantKind::CoalOrOil, 2)], PlayerResources::default());
+        let market = ResourceMarket {
+            coal: 3, // slots 0-2, price $8/unit
+            oil: 24, // slots 0-23, price $1/unit at slot 23
+            garbage: 6,
+            uranium: 2,
+        };
+        let result = compute_set_cart(&player, &market, 1);
+        assert_eq!(result, vec![(Resource::Oil, 2)]);
+    }
+
+    #[test]
+    fn hybrid_plant_falls_back_to_coal_when_oil_depleted() {
+        let player = make_player(vec![make_plant(PlantKind::CoalOrOil, 2)], PlayerResources::default());
+        let market = ResourceMarket {
+            coal: 24,
+            oil: 0, // exhausted
+            garbage: 6,
+            uranium: 2,
+        };
+        let result = compute_set_cart(&player, &market, 1);
+        assert_eq!(result, vec![(Resource::Coal, 2)]);
+    }
+
+    #[test]
+    fn dedicated_plants_satisfied_first_then_hybrid_uses_leftovers() {
+        // Coal plant (cost 2) + hybrid (cost 1). Player already has 3 coal.
+        // After satisfying coal-only need (2), leftover_coal=1 covers the hybrid, so no buying needed.
+        let resources = PlayerResources { coal: 3, ..Default::default() };
+        let player = make_player(
+            vec![make_plant(PlantKind::Coal, 2), make_plant(PlantKind::CoalOrOil, 1)],
+            resources,
+        );
+        let market = ResourceMarket::initial();
+        let result = compute_set_cart(&player, &market, 1);
+        assert!(result.is_empty(), "all needs covered by existing stock");
     }
 }

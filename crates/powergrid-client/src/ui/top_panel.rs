@@ -1,9 +1,10 @@
-use egui::{Align2, Color32, FontId, Rect, RichText, Sense, Stroke, Ui};
+use egui::{Align2, Color32, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui};
 use powergrid_core::{
     actions::Action,
-    types::{Phase, PlayerColor, PlayerId, ResourceMarket},
+    types::{Phase, PlayerColor, PlayerId, Resource, ResourceMarket},
     GameStateView,
 };
+use std::collections::HashMap;
 
 use crate::{
     card_painter,
@@ -18,11 +19,14 @@ use super::phase_tracker::phase_tracker;
 pub(super) fn top_panel_contents(
     ui: &mut Ui,
     gs: GameStateView,
-    state: &AppState,
+    state: &mut AppState,
     channels: Option<&WsChannels>,
     my_id: PlayerId,
 ) {
-    let room = state.current_room.as_deref();
+    let room = state.current_room.clone();
+    let room = room.as_deref();
+    let my_buy_turn = matches!(&gs.phase, Phase::BuyResources { remaining }
+        if remaining.first() == Some(&my_id));
     ui.horizontal(|ui| {
         // Round / Step header
         ui.vertical(|ui| {
@@ -109,10 +113,14 @@ pub(super) fn top_panel_contents(
 
         ui.add_space(8.0);
 
-        // Resource market
-        vertical_labeled_section(ui, "RESOURCE MARKET", |ui| {
-            resource_market_grid(ui, &gs.resources);
+        // Resource market — clickable during the player's own BuyResources turn
+        let cart_snapshot = state.resource_cart.clone();
+        let click = vertical_labeled_section(ui, "RESOURCE MARKET", |ui| {
+            resource_market_grid(ui, &gs.resources, &cart_snapshot, my_buy_turn)
         });
+        if let Some((resource, amount)) = click {
+            state.set_cart_amount(resource, amount);
+        }
     });
 }
 
@@ -258,28 +266,36 @@ fn step_replenish_columns(ui: &mut Ui, current_step: u8, n_players: usize) {
     });
 }
 
-fn resource_market_grid(ui: &mut Ui, market: &ResourceMarket) {
-    const SQ: f32 = 14.0; // square size (height and base width)
-    const INNER_GAP: f32 = 2.0; // gap between squares within a COG price group
-    const GROUP_GAP: f32 = 8.0; // gap between price groups (COG) or uranium slots
-    const URAN_W: f32 = 24.0; // uranium slot width (slightly wider to fit price labels)
-    const LABEL_W: f32 = 36.0; // width of row labels (COAL, OIL, etc.)
-    const HEADER_H: f32 = 20.0; // height of price label header row
+/// Render the resource market grid.
+///
+/// When `clickable` is true (the player's BuyResources turn), clicking a square sets the
+/// cart for that resource to "buy all from cheapest up to and including this square". Squares
+/// that are currently in the cart are drawn as an outline instead of a filled box.
+///
+/// Returns `Some((resource, amount))` if the player clicked a square.
+fn resource_market_grid(
+    ui: &mut Ui,
+    market: &ResourceMarket,
+    cart: &HashMap<Resource, u8>,
+    clickable: bool,
+) -> Option<(Resource, u8)> {
+    const SQ: f32 = 14.0;
+    const INNER_GAP: f32 = 2.0;
+    const GROUP_GAP: f32 = 8.0;
+    const URAN_W: f32 = 24.0;
+    const LABEL_W: f32 = 36.0;
+    const HEADER_H: f32 = 20.0;
     const ROW_H: f32 = SQ;
-    const ROW_GAP: f32 = 4.0; // gap between resource rows
-    const SECTION_GAP: f32 = 12.0; // gap between COG section and uranium section
+    const ROW_GAP: f32 = 4.0;
+    const SECTION_GAP: f32 = 12.0;
 
-    // COG: 8 price groups × 3 slots each
-    let cog_group_w = 3.0 * SQ + 2.0 * INNER_GAP; // 26px per group
-    let cog_total_w = 8.0 * cog_group_w + 7.0 * GROUP_GAP; // 208+35 = 243px
-
-    // Uranium: 12 individual slots, each treated as its own group
-    let uran_total_w = 12.0 * URAN_W + 11.0 * GROUP_GAP; // 132+55 = 187px
+    let cog_group_w = 3.0 * SQ + 2.0 * INNER_GAP;
+    let cog_total_w = 8.0 * cog_group_w + 7.0 * GROUP_GAP;
+    let uran_total_w = 12.0 * URAN_W + 11.0 * GROUP_GAP;
 
     let content_w = cog_total_w.max(uran_total_w);
     let total_w = LABEL_W + content_w;
 
-    // Total height: COG header + 3 rows + uranium header + uranium row
     let total_h = HEADER_H
         + ROW_GAP
         + ROW_H
@@ -292,10 +308,11 @@ fn resource_market_grid(ui: &mut Ui, market: &ResourceMarket) {
         + ROW_GAP
         + ROW_H;
 
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(total_w, total_h), Sense::hover());
+    let sense = if clickable { Sense::click() } else { Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(total_w, total_h), sense);
 
     if !ui.is_rect_visible(rect) {
-        return;
+        return None;
     }
 
     let painter = ui.painter();
@@ -323,17 +340,28 @@ fn resource_market_grid(ui: &mut Ui, market: &ResourceMarket) {
 
     // ── COG rows (coal, oil, garbage) ──
     // Price table: index 0 = most expensive ($8), index 23 = cheapest ($1).
-    // `count` resources occupy indices 0..(count-1).
-    // Display pos 0 (leftmost, $1) maps to array index (total-1 - display_pos).
+    // `count` resources occupy array indices 0..(count-1).
+    // Display pos 0 (leftmost, $1) maps to array_idx = total-1-display_pos.
     // Slot is filled when array_idx < count.
-    let cog_rows: &[(&str, Color32, u8, usize)] = &[
-        ("COAL", coal_color, market.coal, 24),
-        ("OIL", oil_color, market.oil, 24),
-        ("GARB", garb_color, market.garbage, 24),
+    // Cart-selected slots are the cheapest `cart_amount` filled squares:
+    //   display_pos in [total-count, total-count+cart_amount-1].
+    let cog_rows: &[(&str, Color32, u8, usize, Resource)] = &[
+        ("COAL", coal_color, market.coal, 24, Resource::Coal),
+        ("OIL", oil_color, market.oil, 24, Resource::Oil),
+        ("GARB", garb_color, market.garbage, 24, Resource::Garbage),
     ];
 
-    for (i, (label, color, count, total)) in cog_rows.iter().enumerate() {
+    let mut click_result: Option<(Resource, u8)> = None;
+    let clicked_pos = if response.clicked() {
+        response.interact_pointer_pos()
+    } else {
+        None
+    };
+
+    for (i, (label, color, count, total, resource)) in cog_rows.iter().enumerate() {
         let row_y = oy + HEADER_H + ROW_GAP + i as f32 * (ROW_H + ROW_GAP);
+        let cart_amount = cart.get(resource).copied().unwrap_or(0) as usize;
+        let cheapest_filled = total.saturating_sub(*count as usize); // first filled display_pos
 
         painter.text(
             egui::pos2(ox + LABEL_W - 2.0, row_y + ROW_H / 2.0),
@@ -347,25 +375,57 @@ fn resource_market_grid(ui: &mut Ui, market: &ResourceMarket) {
             let gx = ox + LABEL_W + g as f32 * (cog_group_w + GROUP_GAP);
             for s in 0..3usize {
                 let display_pos = g * 3 + s;
-                let array_idx = (total - 1) - display_pos;
+                let array_idx = total - 1 - display_pos;
                 let filled = array_idx < *count as usize;
+                let in_cart = filled
+                    && display_pos >= cheapest_filled
+                    && display_pos < cheapest_filled + cart_amount;
+
                 let sq_x = gx + s as f32 * (SQ + INNER_GAP);
-                let sq_rect = Rect::from_min_size(egui::pos2(sq_x, row_y), egui::vec2(SQ, ROW_H));
-                painter.rect_filled(
-                    sq_rect,
-                    1.0,
-                    if filled { *color } else { dim_color(*color) },
-                );
+                let sq_rect =
+                    Rect::from_min_size(egui::pos2(sq_x, row_y), egui::vec2(SQ, ROW_H));
+
+                if in_cart {
+                    painter.rect_stroke(sq_rect, 1.0, Stroke::new(1.5, *color), StrokeKind::Inside);
+                } else if filled {
+                    painter.rect_filled(sq_rect, 1.0, *color);
+                } else {
+                    painter.rect_filled(sq_rect, 1.0, dim_color(*color));
+                }
+            }
+        }
+
+        // Click detection — only fires for this row's y-band.
+        if let Some(pos) = clicked_pos {
+            if pos.y >= row_y && pos.y < row_y + ROW_H {
+                'cog_click: for g in 0..8usize {
+                    let gx = ox + LABEL_W + g as f32 * (cog_group_w + GROUP_GAP);
+                    for s in 0..3usize {
+                        let display_pos = g * 3 + s;
+                        let sq_x = gx + s as f32 * (SQ + INNER_GAP);
+                        if pos.x >= sq_x && pos.x < sq_x + SQ {
+                            let filled = (total - 1 - display_pos) < *count as usize;
+                            let amount = if filled {
+                                (display_pos.saturating_sub(cheapest_filled) + 1) as u8
+                            } else {
+                                0u8
+                            };
+                            click_result = Some((*resource, amount));
+                            break 'cog_click;
+                        }
+                    }
+                }
             }
         }
     }
 
     // ── Uranium section ──
-    // Price table (cheap→expensive display): [1,2,3,4,5,6,7,8,10,12,14,16]
-    // Array index 0 = $16, index 11 = $1.
-    // Display pos i (0=cheapest) maps to array index 11-i.
+    // Array index 0 = $16, index 11 = $1.  Display pos 0=cheapest ($1) → array 11.
     let usec_y = oy + HEADER_H + ROW_GAP + 3.0 * (ROW_H + ROW_GAP) + SECTION_GAP;
     let uran_prices: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16];
+    let uran_count = market.uranium as usize;
+    let uran_cart = cart.get(&Resource::Uranium).copied().unwrap_or(0) as usize;
+    let uran_cheapest_filled = 12usize.saturating_sub(uran_count);
 
     for (i, &price) in uran_prices.iter().enumerate() {
         let sx = ox + LABEL_W + i as f32 * (URAN_W + GROUP_GAP);
@@ -390,20 +450,34 @@ fn resource_market_grid(ui: &mut Ui, market: &ResourceMarket) {
     );
 
     for i in 0..12usize {
-        let array_idx = 11 - i; // display 0 ($1) maps to array 11
-        let filled = array_idx < market.uranium as usize;
+        let array_idx = 11 - i;
+        let filled = array_idx < uran_count;
+        let in_cart = filled
+            && i >= uran_cheapest_filled
+            && i < uran_cheapest_filled + uran_cart;
+
         let sx = ox + LABEL_W + i as f32 * (URAN_W + GROUP_GAP);
-        let sq_rect = Rect::from_min_size(egui::pos2(sx, uran_row_y), egui::vec2(URAN_W, ROW_H));
-        painter.rect_filled(
-            sq_rect,
-            1.0,
-            if filled {
-                uran_color
-            } else {
-                dim_color(uran_color)
-            },
-        );
+        let sq_rect =
+            Rect::from_min_size(egui::pos2(sx, uran_row_y), egui::vec2(URAN_W, ROW_H));
+
+        if in_cart {
+            painter.rect_stroke(sq_rect, 1.0, Stroke::new(1.5, uran_color), StrokeKind::Inside);
+        } else if filled {
+            painter.rect_filled(sq_rect, 1.0, uran_color);
+        } else {
+            painter.rect_filled(sq_rect, 1.0, dim_color(uran_color));
+        }
+
+        if let Some(pos) = clicked_pos {
+            if sq_rect.contains(pos) {
+                let amount = i.saturating_sub(uran_cheapest_filled) + 1;
+                let amount = if filled { amount as u8 } else { 0u8 };
+                click_result = Some((Resource::Uranium, amount));
+            }
+        }
     }
+
+    click_result
 }
 
 pub(super) fn city_history_graph(
