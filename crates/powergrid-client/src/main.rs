@@ -3,6 +3,7 @@ mod card_painter;
 mod effects;
 mod local;
 mod map_panel;
+mod peer_hints;
 mod state;
 mod theme;
 mod ui;
@@ -86,6 +87,17 @@ impl eframe::App for PowerGridApp {
         // Keep the app responsive while a session or auth request is in flight.
         if self.ws.is_some() || self.state.auth_in_flight {
             ctx.request_repaint_after(Duration::from_millis(50));
+        }
+
+        // Emit peer hints when local selection changes (debounced 150 ms).
+        if let (Some(ws), Some(room)) = (self.ws.as_ref(), self.state.current_room.clone()) {
+            let now = ctx.input(|i| i.time);
+            let cart = self.state.resource_cart.clone();
+            let cities = self.state.selected_build_cities.clone();
+            let edges = self.state.build_preview.edges.clone();
+            if let Some(hint) = self.state.hint_tracker.update(&cart, &cities, &edges, now) {
+                ws.send_hint(room, hint);
+            }
         }
 
         // Draw UI and collect deferred actions.

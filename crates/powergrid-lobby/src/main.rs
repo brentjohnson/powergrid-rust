@@ -1,6 +1,7 @@
 mod auth;
 mod db;
 mod driver;
+mod hint_handler;
 mod lobby_handler;
 mod room_handler;
 mod rooms;

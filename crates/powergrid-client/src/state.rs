@@ -1,4 +1,7 @@
-use crate::auth::{AuthPendingSlot, SavedCredentials};
+use crate::{
+    auth::{AuthPendingSlot, SavedCredentials},
+    peer_hints::{LocalHintTracker, PeerHints},
+};
 use egui::Vec2;
 use powergrid_core::{
     actions::RoomSummary,
@@ -122,6 +125,11 @@ pub struct AppState {
     pub local_color: PlayerColor,
     /// Per-bot difficulty for local play. Length = number of bots (1–5).
     pub local_bots: Vec<BotDifficulty>,
+
+    // Peer hint display (received from other clients)
+    pub peer_hints: PeerHints,
+    // Tracks local selection changes for outgoing hint emission
+    pub hint_tracker: LocalHintTracker,
 }
 
 impl AppState {
@@ -208,6 +216,8 @@ impl AppState {
                 BotDifficulty::Normal,
                 BotDifficulty::Normal,
             ],
+            peer_hints: PeerHints::default(),
+            hint_tracker: LocalHintTracker::new(),
         }
     }
 
@@ -333,6 +343,16 @@ impl AppState {
         if !still_bureaucracy {
             self.power_selected_plants.clear();
             self.power_selected_initialised = false;
+        }
+
+        // Clear peer hints when the phase changes (stale selections from the previous phase).
+        let phase_changed = self
+            .game_state
+            .as_ref()
+            .map(|gs| std::mem::discriminant(&gs.phase) != std::mem::discriminant(&view.phase))
+            .unwrap_or(true);
+        if phase_changed {
+            self.peer_hints.clear();
         }
 
         // Record city counts when the round number advances (or on first state).
@@ -890,7 +910,7 @@ pub fn player_color_to_egui(color: PlayerColor) -> egui::Color32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use powergrid_core::types::{Player, PlayerColor, PlayerResources, PlantKind, PowerPlant};
+    use powergrid_core::types::{PlantKind, Player, PlayerColor, PlayerResources, PowerPlant};
 
     fn make_plant(kind: PlantKind, cost: u8) -> PowerPlant {
         PowerPlant {
@@ -910,7 +930,10 @@ mod tests {
 
     #[test]
     fn single_coal_plant_no_stock() {
-        let player = make_player(vec![make_plant(PlantKind::Coal, 3)], PlayerResources::default());
+        let player = make_player(
+            vec![make_plant(PlantKind::Coal, 3)],
+            PlayerResources::default(),
+        );
         let market = ResourceMarket::initial();
         let result = compute_set_cart(&player, &market, 1);
         assert_eq!(result, vec![(Resource::Coal, 3)]);
@@ -918,7 +941,10 @@ mod tests {
 
     #[test]
     fn single_coal_plant_two_sets() {
-        let player = make_player(vec![make_plant(PlantKind::Coal, 2)], PlayerResources::default());
+        let player = make_player(
+            vec![make_plant(PlantKind::Coal, 2)],
+            PlayerResources::default(),
+        );
         let market = ResourceMarket::initial();
         let result = compute_set_cart(&player, &market, 2);
         // 2 sets = plant.cost * 2 = 4
@@ -927,7 +953,10 @@ mod tests {
 
     #[test]
     fn coal_plant_with_partial_stock_subtracts_owned() {
-        let resources = PlayerResources { coal: 2, ..Default::default() };
+        let resources = PlayerResources {
+            coal: 2,
+            ..Default::default()
+        };
         let player = make_player(vec![make_plant(PlantKind::Coal, 3)], resources);
         let market = ResourceMarket::initial();
         let result = compute_set_cart(&player, &market, 1);
@@ -940,7 +969,10 @@ mod tests {
         // No dedicated coal/oil plants; one hybrid.
         // Initial market: coal=24 (cheapest slot price $1/unit), oil=18 (cheapest slot price $3/unit).
         // Coal is cheaper, so both units should come from coal.
-        let player = make_player(vec![make_plant(PlantKind::CoalOrOil, 2)], PlayerResources::default());
+        let player = make_player(
+            vec![make_plant(PlantKind::CoalOrOil, 2)],
+            PlayerResources::default(),
+        );
         let market = ResourceMarket::initial();
         let result = compute_set_cart(&player, &market, 1);
         assert_eq!(result, vec![(Resource::Coal, 2)]);
@@ -949,7 +981,10 @@ mod tests {
     #[test]
     fn hybrid_plant_picks_oil_when_cheaper() {
         // Make coal scarce (expensive) so oil wins.
-        let player = make_player(vec![make_plant(PlantKind::CoalOrOil, 2)], PlayerResources::default());
+        let player = make_player(
+            vec![make_plant(PlantKind::CoalOrOil, 2)],
+            PlayerResources::default(),
+        );
         let market = ResourceMarket {
             coal: 3, // slots 0-2, price $8/unit
             oil: 24, // slots 0-23, price $1/unit at slot 23
@@ -962,7 +997,10 @@ mod tests {
 
     #[test]
     fn hybrid_plant_falls_back_to_coal_when_oil_depleted() {
-        let player = make_player(vec![make_plant(PlantKind::CoalOrOil, 2)], PlayerResources::default());
+        let player = make_player(
+            vec![make_plant(PlantKind::CoalOrOil, 2)],
+            PlayerResources::default(),
+        );
         let market = ResourceMarket {
             coal: 24,
             oil: 0, // exhausted
@@ -977,9 +1015,15 @@ mod tests {
     fn dedicated_plants_satisfied_first_then_hybrid_uses_leftovers() {
         // Coal plant (cost 2) + hybrid (cost 1). Player already has 3 coal.
         // After satisfying coal-only need (2), leftover_coal=1 covers the hybrid, so no buying needed.
-        let resources = PlayerResources { coal: 3, ..Default::default() };
+        let resources = PlayerResources {
+            coal: 3,
+            ..Default::default()
+        };
         let player = make_player(
-            vec![make_plant(PlantKind::Coal, 2), make_plant(PlantKind::CoalOrOil, 1)],
+            vec![
+                make_plant(PlantKind::Coal, 2),
+                make_plant(PlantKind::CoalOrOil, 1),
+            ],
             resources,
         );
         let market = ResourceMarket::initial();

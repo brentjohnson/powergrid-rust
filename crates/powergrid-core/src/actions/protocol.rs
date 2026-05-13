@@ -2,6 +2,7 @@ use crate::types::{BotDifficulty, PlayerId};
 use serde::{Deserialize, Serialize};
 
 use super::game::Action;
+use super::hints::HintPayload;
 
 /// Messages sent from the server to clients.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +33,11 @@ pub enum ServerMessage {
     },
     /// Sent to a client when they leave a room.
     RoomLeft { room: String },
+    /// Ephemeral peer selection hint relayed from another client in the same room.
+    PeerHint {
+        player_id: PlayerId,
+        hint: HintPayload,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -48,6 +54,8 @@ pub enum ClientMessage {
     Lobby(LobbyAction),
     /// In-game action, scoped to a named room.
     Room { room: String, action: Action },
+    /// Ephemeral selection hint (cart, city picks, etc.) — not a game action.
+    RoomHint { room: String, hint: HintPayload },
 }
 
 /// Lobby-level actions not routed through `apply_action`.

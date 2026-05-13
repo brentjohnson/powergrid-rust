@@ -2,6 +2,7 @@
 /// with zoom/pan and interactive overlays (resource slots, city markers, build edges).
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui};
 use powergrid_core::{
+    actions::HintPayload,
     types::{Phase, PlayerColor, PlayerId},
     GameStateView,
 };
@@ -184,7 +185,7 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
         crate::effects::keep_animating(ui.ctx());
     }
 
-    // Build preview edges — animated lightning bolts
+    // Build preview edges — animated lightning bolts (local player)
     if !state.build_preview.edges.is_empty() {
         let stroke_w = (city_r * 0.6).max(2.0);
         for (from_id, to_id) in &state.build_preview.edges {
@@ -216,6 +217,63 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
             }
         }
         crate::effects::keep_animating(ui.ctx());
+    }
+
+    // Peer build route edges
+    {
+        let peer_edge_w = (city_r * 0.35).max(1.2);
+        let mut any_peer_edges = false;
+        for (pid, hint) in &state.peer_hints.hints {
+            if let HintPayload::BuildSelection { edges, .. } = hint {
+                if edges.is_empty() {
+                    continue;
+                }
+                let peer_color = player_colors
+                    .get(pid)
+                    .copied()
+                    .map(player_color_to_egui)
+                    .unwrap_or(Color32::GRAY);
+                let alpha = ((t * 2.5).sin() * 0.3 + 0.7) as f32;
+                let edge_color = Color32::from_rgba_unmultiplied(
+                    peer_color.r(),
+                    peer_color.g(),
+                    peer_color.b(),
+                    (alpha * 180.0) as u8,
+                );
+                for (from_id, to_id) in edges {
+                    let fc = map.cities.get(from_id);
+                    let tc = map.cities.get(to_id);
+                    if let (
+                        Some(powergrid_core::map::City {
+                            x: Some(fx),
+                            y: Some(fy),
+                            ..
+                        }),
+                        Some(powergrid_core::map::City {
+                            x: Some(tx),
+                            y: Some(ty),
+                            ..
+                        }),
+                    ) = (fc, tc)
+                    {
+                        let fp = to_screen(*fx, *fy);
+                        let tp = to_screen(*tx, *ty);
+                        painter.line_segment(
+                            [fp, tp],
+                            Stroke::new(peer_edge_w * 2.5, {
+                                let c = peer_color;
+                                Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 40)
+                            }),
+                        );
+                        painter.line_segment([fp, tp], Stroke::new(peer_edge_w, edge_color));
+                    }
+                }
+                any_peer_edges = true;
+            }
+        }
+        if any_peer_edges {
+            crate::effects::keep_animating(ui.ctx());
+        }
     }
 
     // City markers — always show 3 slots (one per game step).
@@ -251,6 +309,37 @@ pub fn draw(ui: &mut Ui, state: &mut AppState, game_state: &GameStateView, my_id
                     Stroke::new(1.0, theme::map_city_border()),
                     egui::StrokeKind::Inside,
                 );
+            }
+
+            // Peer city selection rings — drawn outside the local rect, one ring per peer
+            for (offset_idx, (pid, _)) in state
+                .peer_hints
+                .hints
+                .iter()
+                .filter(|(_, h)| matches!(h, HintPayload::BuildSelection { cities, .. } if cities.contains(city_id)))
+                .enumerate()
+            {
+                let peer_color = player_colors
+                    .get(pid)
+                    .copied()
+                    .map(player_color_to_egui)
+                    .unwrap_or(Color32::GRAY);
+                let expand = 3.0 + offset_idx as f32 * 3.5;
+                let ring_rect = rect.expand(expand);
+                let pulse = ((t * 2.8 + crate::effects::city_seed(city_id) as f64 / 1000.0).sin() * 0.5 + 0.5) as f32;
+                let ring_a = (pulse * 120.0 + 100.0) as u8;
+                painter.rect_stroke(
+                    ring_rect,
+                    5.0,
+                    Stroke::new(1.5, Color32::from_rgba_unmultiplied(
+                        peer_color.r(),
+                        peer_color.g(),
+                        peer_color.b(),
+                        ring_a,
+                    )),
+                    egui::StrokeKind::Inside,
+                );
+                crate::effects::keep_animating(ui.ctx());
             }
 
             // Owners come from city_owners in the view (map.cities[].owners kept in sync too).

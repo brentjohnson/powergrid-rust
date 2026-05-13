@@ -1,6 +1,6 @@
 use crossbeam_channel::{Receiver, Sender};
 use futures_util::{SinkExt, StreamExt};
-use powergrid_core::actions::{Action, ClientMessage, LobbyAction, ServerMessage};
+use powergrid_core::actions::{Action, ClientMessage, HintPayload, LobbyAction, ServerMessage};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
@@ -36,6 +36,14 @@ impl WsChannels {
                 })
                 .ok();
         }
+    }
+
+    /// Send an ephemeral selection hint. In local play the channel still accepts it;
+    /// the local driver silently ignores non-Room messages.
+    pub fn send_hint(&self, room: String, hint: HintPayload) {
+        self.action_tx
+            .send(ClientMessage::RoomHint { room, hint })
+            .ok();
     }
 }
 
@@ -205,11 +213,15 @@ pub fn process_ws_events(state: &mut crate::state::AppState, channels: Option<&W
                     state.current_room = Some(room.clone());
                     state.map = Some(Arc::new(*map));
                     state.error_message = None;
+                    state.peer_hints.clear();
+                    state.hint_tracker.reset();
                 }
                 ServerMessage::RoomLeft { .. } => {
                     state.current_room = None;
                     state.game_state = None;
                     state.screen = crate::state::Screen::RoomBrowser;
+                    state.peer_hints.clear();
+                    state.hint_tracker.reset();
                     channels.send_lobby(LobbyAction::ListRooms);
                 }
                 ServerMessage::RoomList { rooms } => {
@@ -227,12 +239,19 @@ pub fn process_ws_events(state: &mut crate::state::AppState, channels: Option<&W
                 ServerMessage::Event { .. } => {
                     // event log is populated from gs.event_log in StateUpdate; no client-side dispatch needed
                 }
+                ServerMessage::PeerHint { player_id, hint } => {
+                    if state.my_id != Some(player_id) {
+                        state.peer_hints.set(player_id, hint);
+                    }
+                }
             },
             WsEvent::Disconnected => {
                 state.connected = false;
                 state.current_room = None;
                 state.game_state = None;
                 state.map = None;
+                state.peer_hints.clear();
+                state.hint_tracker.reset();
             }
         }
     }

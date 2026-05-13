@@ -1,5 +1,6 @@
 use crate::{
     db::Db,
+    hint_handler::handle_room_hint,
     lobby_handler::{handle_lobby_action, leave_room},
     room_handler::handle_room_action,
     rooms::RoomManager,
@@ -146,6 +147,9 @@ pub async fn handle_socket(
             }
             ClientMessage::Room { room, action } => {
                 handle_room_action(room, action, &conn, &manager, bot_delay).await;
+            }
+            ClientMessage::RoomHint { room, hint } => {
+                handle_room_hint(room, hint, &conn, &manager).await;
             }
         }
     }

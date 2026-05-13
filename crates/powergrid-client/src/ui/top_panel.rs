@@ -1,6 +1,6 @@
 use egui::{Align2, Color32, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui};
 use powergrid_core::{
-    actions::Action,
+    actions::{Action, HintPayload},
     types::{Phase, PlayerColor, PlayerId, Resource, ResourceMarket},
     GameStateView,
 };
@@ -115,8 +115,26 @@ pub(super) fn top_panel_contents(
 
         // Resource market — clickable during the player's own BuyResources turn
         let cart_snapshot = state.resource_cart.clone();
+        // Collect peer carts (BuyResources hints from other players)
+        let peer_carts: Vec<(Color32, HashMap<Resource, u8>)> = state
+            .peer_hints
+            .hints
+            .iter()
+            .filter_map(|(pid, hint)| {
+                if let HintPayload::Cart { items } = hint {
+                    let color = gs
+                        .player(*pid)
+                        .map(|p| player_color_to_egui(p.color))
+                        .unwrap_or(Color32::GRAY);
+                    let cart: HashMap<Resource, u8> = items.iter().cloned().collect();
+                    Some((color, cart))
+                } else {
+                    None
+                }
+            })
+            .collect();
         let click = vertical_labeled_section(ui, "RESOURCE MARKET", |ui| {
-            resource_market_grid(ui, &gs.resources, &cart_snapshot, my_buy_turn)
+            resource_market_grid(ui, &gs.resources, &cart_snapshot, &peer_carts, my_buy_turn)
         });
         if let Some((resource, amount)) = click {
             state.set_cart_amount(resource, amount);
@@ -277,6 +295,7 @@ fn resource_market_grid(
     ui: &mut Ui,
     market: &ResourceMarket,
     cart: &HashMap<Resource, u8>,
+    peer_carts: &[(Color32, HashMap<Resource, u8>)],
     clickable: bool,
 ) -> Option<(Resource, u8)> {
     const SQ: f32 = 14.0;
@@ -308,7 +327,11 @@ fn resource_market_grid(
         + ROW_GAP
         + ROW_H;
 
-    let sense = if clickable { Sense::click() } else { Sense::hover() };
+    let sense = if clickable {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
     let (rect, response) = ui.allocate_exact_size(egui::vec2(total_w, total_h), sense);
 
     if !ui.is_rect_visible(rect) {
@@ -382,8 +405,7 @@ fn resource_market_grid(
                     && display_pos < cheapest_filled + cart_amount;
 
                 let sq_x = gx + s as f32 * (SQ + INNER_GAP);
-                let sq_rect =
-                    Rect::from_min_size(egui::pos2(sq_x, row_y), egui::vec2(SQ, ROW_H));
+                let sq_rect = Rect::from_min_size(egui::pos2(sq_x, row_y), egui::vec2(SQ, ROW_H));
 
                 if in_cart {
                     painter.rect_stroke(sq_rect, 1.0, Stroke::new(1.5, *color), StrokeKind::Inside);
@@ -391,6 +413,22 @@ fn resource_market_grid(
                     painter.rect_filled(sq_rect, 1.0, *color);
                 } else {
                     painter.rect_filled(sq_rect, 1.0, dim_color(*color));
+                }
+
+                // Peer cart overlays: outer border in each peer's color
+                for (peer_color, peer_cart) in peer_carts {
+                    let peer_amount = peer_cart.get(resource).copied().unwrap_or(0) as usize;
+                    let peer_in_cart = filled
+                        && display_pos >= cheapest_filled
+                        && display_pos < cheapest_filled + peer_amount;
+                    if peer_in_cart {
+                        painter.rect_stroke(
+                            sq_rect.expand(1.5),
+                            2.0,
+                            Stroke::new(1.0, *peer_color),
+                            StrokeKind::Outside,
+                        );
+                    }
                 }
             }
         }
@@ -452,20 +490,37 @@ fn resource_market_grid(
     for i in 0..12usize {
         let array_idx = 11 - i;
         let filled = array_idx < uran_count;
-        let in_cart = filled
-            && i >= uran_cheapest_filled
-            && i < uran_cheapest_filled + uran_cart;
+        let in_cart = filled && i >= uran_cheapest_filled && i < uran_cheapest_filled + uran_cart;
 
         let sx = ox + LABEL_W + i as f32 * (URAN_W + GROUP_GAP);
-        let sq_rect =
-            Rect::from_min_size(egui::pos2(sx, uran_row_y), egui::vec2(URAN_W, ROW_H));
+        let sq_rect = Rect::from_min_size(egui::pos2(sx, uran_row_y), egui::vec2(URAN_W, ROW_H));
 
         if in_cart {
-            painter.rect_stroke(sq_rect, 1.0, Stroke::new(1.5, uran_color), StrokeKind::Inside);
+            painter.rect_stroke(
+                sq_rect,
+                1.0,
+                Stroke::new(1.5, uran_color),
+                StrokeKind::Inside,
+            );
         } else if filled {
             painter.rect_filled(sq_rect, 1.0, uran_color);
         } else {
             painter.rect_filled(sq_rect, 1.0, dim_color(uran_color));
+        }
+
+        // Peer cart overlays for uranium
+        for (peer_color, peer_cart) in peer_carts {
+            let peer_uran = peer_cart.get(&Resource::Uranium).copied().unwrap_or(0) as usize;
+            let peer_in_cart =
+                filled && i >= uran_cheapest_filled && i < uran_cheapest_filled + peer_uran;
+            if peer_in_cart {
+                painter.rect_stroke(
+                    sq_rect.expand(1.5),
+                    2.0,
+                    Stroke::new(1.0, *peer_color),
+                    StrokeKind::Outside,
+                );
+            }
         }
 
         if let Some(pos) = clicked_pos {
