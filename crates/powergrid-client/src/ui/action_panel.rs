@@ -75,12 +75,19 @@ pub(super) fn action_panel(
                     } else if passed.contains(&p.id) {
                         ("PASSED".to_string(), theme::TEXT_DIM)
                     } else if let Some(bid) = active_bid {
+                        let last_bid = state.auction_last_bids.get(&p.id).copied();
                         if bid.highest_bidder == p.id {
                             (format!("BID ${}  ◀ leading", bid.amount), theme::NEON_AMBER)
                         } else if bid.remaining_bidders.first() == Some(&p.id) {
-                            ("▶ to bid".to_string(), theme::NEON_CYAN)
+                            match last_bid {
+                                Some(a) => (format!("▶ to bid  ${a}"), theme::NEON_CYAN),
+                                None => ("▶ to bid".to_string(), theme::NEON_CYAN),
+                            }
                         } else if bid.remaining_bidders.contains(&p.id) {
-                            ("in".to_string(), theme::TEXT_MID)
+                            match last_bid {
+                                Some(a) => (format!("in  ${a}"), theme::TEXT_MID),
+                                None => ("in".to_string(), theme::TEXT_MID),
+                            }
                         } else {
                             ("passed bid".to_string(), theme::TEXT_DIM)
                         }

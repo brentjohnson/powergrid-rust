@@ -79,22 +79,26 @@
 * During power cities, select which cities
 * BUG: Phase three started in the middle of auction
 
+# v0.9.0
+
+* Resource buying: button to add "1 set" or "2 sets" to cart
+* Click on resoure market squares to add to cart
+
 
 # To do...
 
+* Show on map where other people are placing cities
+* Sound when it's your turn
+* Switch plants to Recharged version (random start) - add option at game start of OG/Recharge
 * Highlight nominated plant in the market
 * Windows version not full screen (no window frame)
-* Resource buying: button to add "1 set" or "2 sets" to cart
 * add resource icons to right of plant
 * Add "capacity" to player card (how many you could power) - where resource are
-* Click on resoure market squares to add to cart
-* Show on map where other people are placing cities
 * USA map
 * Check payouts based on players
 * Show payouts
 * Ding when it's your turn
 * Reset password?
-* Switch plants to Recharged version (random start) - add option at game start of OG/Recharge
 * Scrollable event log
 
 * REFACTOR: continue with PR 2 and PR 3 in architecture plan (at beginning of the week)

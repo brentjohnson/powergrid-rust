@@ -93,6 +93,12 @@ pub struct AppState {
     // Auction
     pub bid_amount: u32,
     pub bid_plant_number: Option<u8>,
+    /// Last committed bid amount per player for the currently auctioned plant.
+    /// Derived from sequential StateUpdates — when active_bid.highest_bidder changes,
+    /// we record (highest_bidder, amount). Cleared on plant change or auction end.
+    pub auction_last_bids: HashMap<PlayerId, u32>,
+    /// Tracks which plant the `auction_last_bids` map applies to.
+    pub auction_last_plant: Option<u8>,
 
     // Resource-discard phase (hybrid shared-slot overflow)
     pub discard_coal: u8,
@@ -120,6 +126,9 @@ pub struct AppState {
     // Window mode (kept in sync with the actual viewport)
     pub fullscreen: bool,
 
+    // When true, skip all disk reads/writes for credentials and preferences.
+    pub no_preferences: bool,
+
     // Local play setup
     pub local_name: String,
     pub local_color: PlayerColor,
@@ -141,7 +150,11 @@ impl AppState {
         let selected_color = cli.color.unwrap_or(PlayerColor::Red);
 
         // Load saved credentials; always start on MainMenu but seed auth fields for Online play.
-        let saved = crate::auth::load_credentials(&server_name, port);
+        let saved = if cli.no_preferences {
+            None
+        } else {
+            crate::auth::load_credentials(&server_name, port)
+        };
         let (auth_token, auth_username, auth_user_id) = if let Some(ref c) = saved {
             (
                 Some(c.token.clone()),
@@ -154,11 +167,12 @@ impl AppState {
         let screen = Screen::MainMenu;
 
         // CLI --windowed overrides saved preference; otherwise use saved (default: fullscreen).
-        let prefs = crate::auth::load_preferences();
         let fullscreen = if cli.windowed {
             false
+        } else if cli.no_preferences {
+            crate::auth::UserPreferences::default().fullscreen
         } else {
-            prefs.fullscreen
+            crate::auth::load_preferences().fullscreen
         };
 
         Self {
@@ -198,6 +212,8 @@ impl AppState {
             resource_cart_cost: None,
             bid_amount: 0,
             bid_plant_number: None,
+            auction_last_bids: HashMap::new(),
+            auction_last_plant: None,
             discard_coal: 0,
             discard_oil: 0,
             power_fuel_coal: 0,
@@ -209,6 +225,7 @@ impl AppState {
             menu_open: false,
             city_graph_open: false,
             fullscreen,
+            no_preferences: cli.no_preferences,
             local_name: "You".to_string(),
             local_color: PlayerColor::Red,
             local_bots: vec![
@@ -227,8 +244,10 @@ impl AppState {
 
     /// Apply a successful auth result: store credentials and advance to Connect screen.
     pub fn apply_auth_success(&mut self, creds: SavedCredentials) {
-        if let Err(e) = crate::auth::save_credentials(&creds) {
-            tracing::warn!("Failed to save credentials: {e}");
+        if !self.no_preferences {
+            if let Err(e) = crate::auth::save_credentials(&creds) {
+                tracing::warn!("Failed to save credentials: {e}");
+            }
         }
         self.auth_token = Some(creds.token);
         self.auth_username = Some(creds.username);
@@ -261,8 +280,10 @@ impl AppState {
 
     /// Clear all auth state and return to Login screen.
     pub fn logout(&mut self) {
-        if let Err(e) = crate::auth::clear_credentials(&self.server_name, self.port) {
-            tracing::warn!("Failed to clear credentials: {e}");
+        if !self.no_preferences {
+            if let Err(e) = crate::auth::clear_credentials(&self.server_name, self.port) {
+                tracing::warn!("Failed to clear credentials: {e}");
+            }
         }
         self.auth_token = None;
         self.auth_username = None;
@@ -343,6 +364,26 @@ impl AppState {
         if !still_bureaucracy {
             self.power_selected_plants.clear();
             self.power_selected_initialised = false;
+        }
+
+        // Track per-player committed bid amounts for the current auction.
+        // Only the highest_bidder changes each round, so we accumulate entries over time.
+        match &view.phase {
+            Phase::Auction {
+                active_bid: Some(bid),
+                ..
+            } => {
+                if self.auction_last_plant != Some(bid.plant_number) {
+                    self.auction_last_bids.clear();
+                    self.auction_last_plant = Some(bid.plant_number);
+                }
+                self.auction_last_bids
+                    .insert(bid.highest_bidder, bid.amount);
+            }
+            _ => {
+                self.auction_last_bids.clear();
+                self.auction_last_plant = None;
+            }
         }
 
         // Clear peer hints when the phase changes (stale selections from the previous phase).
@@ -800,6 +841,7 @@ pub struct CliArgs {
     /// Auto-create/join this room name on connect (for CLI-driven testing).
     pub room: Option<String>,
     pub windowed: bool,
+    pub no_preferences: bool,
 }
 
 impl CliArgs {
@@ -810,6 +852,7 @@ impl CliArgs {
         let mut port = None;
         let mut room = None;
         let mut windowed = false;
+        let mut no_preferences = false;
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -818,13 +861,14 @@ impl CliArgs {
                         "Usage: powergrid-client [options]
 
 Options:
-  --color <color>   Auto-select player color on connect
-                      Choices: red, blue, green, yellow, purple, white
-  --server <host>   Server hostname to connect to
-  --port <port>     Server port
-  --room <name>     Auto-create/join this room on connect
-  -w, --windowed    Run in windowed mode (default: borderless fullscreen)
-  -h, --help        Show this help message"
+  --color <color>       Auto-select player color on connect
+                          Choices: red, blue, green, yellow, purple, white
+  --server <host>       Server hostname to connect to
+  --port <port>         Server port
+  --room <name>         Auto-create/join this room on connect
+  -w, --windowed        Run in windowed mode (default: borderless fullscreen)
+  -n, --no-preferences  Don't load or save credentials/preferences (for testing)
+  -h, --help            Show this help message"
                     );
                     std::process::exit(0);
                 }
@@ -853,6 +897,7 @@ Options:
                 }
                 "--room" => room = args.next(),
                 "-w" | "--windowed" => windowed = true,
+                "-n" | "--no-preferences" => no_preferences = true,
                 other => eprintln!("Unknown argument: {other}"),
             }
         }
@@ -863,6 +908,7 @@ Options:
             port,
             room,
             windowed,
+            no_preferences,
         }
     }
 }

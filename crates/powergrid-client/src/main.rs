@@ -117,10 +117,12 @@ impl eframe::App for PowerGridApp {
             }
             UiAction::ToggleFullscreen => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.state.fullscreen));
-                if let Err(e) = auth::save_preferences(&auth::UserPreferences {
-                    fullscreen: self.state.fullscreen,
-                }) {
-                    tracing::warn!("Failed to save preferences: {e}");
+                if !self.state.no_preferences {
+                    if let Err(e) = auth::save_preferences(&auth::UserPreferences {
+                        fullscreen: self.state.fullscreen,
+                    }) {
+                        tracing::warn!("Failed to save preferences: {e}");
+                    }
                 }
             }
             UiAction::Exit => {
