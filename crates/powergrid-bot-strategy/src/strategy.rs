@@ -269,13 +269,13 @@ fn decide_discard(state: &GameState, bot: &mut Bot, new_plant: &PowerPlant) -> O
 
 fn decide_discard_resource(state: &GameState, bot: &mut Bot, drop_total: u8) -> Option<Action> {
     let player = state.player(bot.id)?;
-    let coal = drop_total.min(player.resources.coal);
-    let oil = drop_total - coal;
+    let gas = drop_total.min(player.resources.gas);
+    let oil = drop_total - gas;
     info!(
-        "DiscardResource: dropping {} coal and {} oil (drop_total={})",
-        coal, oil, drop_total
+        "DiscardResource: dropping {} gas and {} oil (drop_total={})",
+        gas, oil, drop_total
     );
-    Some(Action::DiscardResource { coal, oil })
+    Some(Action::DiscardResource { gas, oil })
 }
 
 // ---------------------------------------------------------------------------
@@ -340,30 +340,30 @@ fn buy_for_plant(
                 try_buy(Resource::Oil, want, market, player, budget, purchases);
             }
         }
-        PlantKind::CoalOrOil => {
-            let combined = player.resources.coal.saturating_add(player.resources.oil);
+        PlantKind::GasOrOil => {
+            let combined = player.resources.gas.saturating_add(player.resources.oil);
             let want = target.saturating_sub(combined);
             if want == 0 {
                 return;
             }
             // Prefer the fuel type with more market supply; tie-break to oil.
-            let prefer_oil = market.available(Resource::Oil) >= market.available(Resource::Coal);
+            let prefer_oil = market.available(Resource::Oil) >= market.available(Resource::Gas);
             let (first, second) = if prefer_oil {
-                (Resource::Oil, Resource::Coal)
+                (Resource::Oil, Resource::Gas)
             } else {
-                (Resource::Coal, Resource::Oil)
+                (Resource::Gas, Resource::Oil)
             };
             try_buy(first, want, market, player, budget, purchases);
-            let combined = player.resources.coal.saturating_add(player.resources.oil);
+            let combined = player.resources.gas.saturating_add(player.resources.oil);
             let remaining = target.saturating_sub(combined);
             if remaining > 0 {
                 try_buy(second, remaining, market, player, budget, purchases);
             }
         }
-        PlantKind::Garbage => {
-            let want = target.saturating_sub(player.resources.garbage);
+        PlantKind::Gas => {
+            let want = target.saturating_sub(player.resources.gas);
             if want > 0 {
-                try_buy(Resource::Garbage, want, market, player, budget, purchases);
+                try_buy(Resource::Gas, want, market, player, budget, purchases);
             }
         }
         PlantKind::Uranium => {
@@ -372,7 +372,7 @@ fn buy_for_plant(
                 try_buy(Resource::Uranium, want, market, player, budget, purchases);
             }
         }
-        PlantKind::Wind | PlantKind::Fusion => {}
+        PlantKind::Wind => {}
     }
 }
 
@@ -521,10 +521,10 @@ fn decide_power_cities_fuel(state: &GameState, bot: &mut Bot, hybrid_cost: u8) -
     let player = state.player(bot.id)?;
 
     if let Phase::PowerCitiesFuel { plant_numbers, .. } = &state.phase {
-        let pure_coal: u8 = plant_numbers
+        let pure_gas: u8 = plant_numbers
             .iter()
             .filter_map(|&num| player.plants.iter().find(|p| p.number == num))
-            .filter(|p| p.kind == PlantKind::Coal)
+            .filter(|p| p.kind == PlantKind::Gas)
             .map(|p| p.cost)
             .sum();
         let pure_oil: u8 = plant_numbers
@@ -534,26 +534,22 @@ fn decide_power_cities_fuel(state: &GameState, bot: &mut Bot, hybrid_cost: u8) -
             .map(|p| p.cost)
             .sum();
 
-        let _coal_avail = player.resources.coal.saturating_sub(pure_coal);
+        let _gas_avail = player.resources.gas.saturating_sub(pure_gas);
         let oil_avail = player.resources.oil.saturating_sub(pure_oil);
 
-        // Prefer oil for hybrids to conserve coal (controlled by oil_preference weight,
-        // but since 1.0 means full oil preference, the behaviour is unchanged for default profiles).
+        // Prefer oil for hybrids to conserve gas (controlled by oil_preference weight).
         let oil_used = if bot.profile.bureaucracy.oil_preference >= 0.5 {
             hybrid_cost.min(oil_avail)
         } else {
             0
         };
-        let coal = hybrid_cost - oil_used;
+        let gas = hybrid_cost - oil_used;
 
         info!(
-            "PowerCitiesFuel: using {} coal + {} oil for hybrids (hybrid_cost={})",
-            coal, oil_used, hybrid_cost
+            "PowerCitiesFuel: using {} gas + {} oil for hybrids (hybrid_cost={})",
+            gas, oil_used, hybrid_cost
         );
-        Some(Action::PowerCitiesFuel {
-            coal,
-            oil: oil_used,
-        })
+        Some(Action::PowerCitiesFuel { gas, oil: oil_used })
     } else {
         None
     }
@@ -582,7 +578,7 @@ mod tests {
     fn hybrid_plant(number: u8, cost: u8, cities: u8) -> PowerPlant {
         PowerPlant {
             number,
-            kind: PlantKind::CoalOrOil,
+            kind: PlantKind::GasOrOil,
             cost,
             cities,
         }
@@ -639,13 +635,14 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_coal_for_hybrid_when_oil_empty() {
+    fn falls_back_to_gas_for_hybrid_when_oil_empty() {
         let plant = hybrid_plant(10, 3, 2);
         let mut player = bot_with_money(50);
         player.plants.push(plant.clone());
 
         let mut market = ResourceMarket::initial();
         market.oil = 0;
+        market.gas = 24;
 
         let mut purchases = vec![];
         let mut budget = player.money;
@@ -659,16 +656,16 @@ mod tests {
             &mut purchases,
         );
 
-        let coal_bought: u8 = purchases
+        let gas_bought: u8 = purchases
             .iter()
-            .filter(|(r, _)| *r == Resource::Coal)
+            .filter(|(r, _)| *r == Resource::Gas)
             .map(|(_, n)| n)
             .sum();
         assert!(
-            coal_bought >= plant.cost,
-            "expected >= {} coal as fallback, got {}",
+            gas_bought >= plant.cost,
+            "expected >= {} gas as fallback, got {}",
             plant.cost,
-            coal_bought
+            gas_bought
         );
     }
 
@@ -706,9 +703,10 @@ mod tests {
         let mut player = bot_with_money(50);
         player.plants.push(plant.clone());
 
+        // Make gas plentiful (cheap) and oil scarce (expensive) → hybrid should prefer gas.
         let mut market = ResourceMarket::initial();
         market.oil = 6;
-        market.coal = 24;
+        market.gas = 24;
 
         let mut purchases = vec![];
         let mut budget = player.money;
@@ -722,9 +720,9 @@ mod tests {
             &mut purchases,
         );
 
-        let coal_bought: u8 = purchases
+        let gas_bought: u8 = purchases
             .iter()
-            .filter(|(r, _)| *r == Resource::Coal)
+            .filter(|(r, _)| *r == Resource::Gas)
             .map(|(_, n)| n)
             .sum();
         let oil_bought: u8 = purchases
@@ -733,15 +731,15 @@ mod tests {
             .map(|(_, n)| n)
             .sum();
         assert!(
-            coal_bought >= plant.cost,
-            "expected to buy >= {} coal (cheaper), got {} coal and {} oil",
+            gas_bought >= plant.cost,
+            "expected to buy >= {} gas (cheaper), got {} gas and {} oil",
             plant.cost,
-            coal_bought,
+            gas_bought,
             oil_bought
         );
         assert_eq!(
             oil_bought, 0,
-            "should not buy oil when coal is cheaper (got {} oil)",
+            "should not buy oil when gas is cheaper (got {} oil)",
             oil_bought
         );
     }

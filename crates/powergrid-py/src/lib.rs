@@ -109,16 +109,16 @@ struct LegalMoveInfo {
     buyable_resources: Vec<u8>,
     /// Bitmasks 0..7 over the actor's first 3 plants (sorted by number).
     power_subsets: Vec<u8>,
-    /// Valid coal amounts to drop in DiscardResource (oil = drop_total - coal).
-    discard_resource_coal: Vec<u8>,
-    /// Valid coal amounts to use in PowerCitiesFuel (oil = hybrid_cost - coal).
-    fuel_coal: Vec<u8>,
+    /// Valid gas amounts to drop in DiscardResource (oil = drop_total - gas).
+    discard_resource_gas: Vec<u8>,
+    /// Valid gas amounts to use in PowerCitiesFuel (oil = hybrid_cost - gas).
+    fuel_gas: Vec<u8>,
 }
 
 fn is_subset_feasible(plants: &[PowerPlant], resources: &PlayerResources, mask: u8) -> bool {
     let mut coal = resources.coal;
     let mut oil = resources.oil;
-    let mut garbage = resources.garbage;
+    let mut gas = resources.gas;
     let mut uranium = resources.uranium;
 
     // Pass 1: satisfy pure-fuel plants.
@@ -139,11 +139,11 @@ fn is_subset_feasible(plants: &[PowerPlant], resources: &PlayerResources, mask: 
                 }
                 oil -= plant.cost;
             }
-            PlantKind::Garbage => {
-                if garbage < plant.cost {
+            PlantKind::Gas => {
+                if gas < plant.cost {
                     return false;
                 }
-                garbage -= plant.cost;
+                gas -= plant.cost;
             }
             PlantKind::Uranium => {
                 if uranium < plant.cost {
@@ -151,22 +151,22 @@ fn is_subset_feasible(plants: &[PowerPlant], resources: &PlayerResources, mask: 
                 }
                 uranium -= plant.cost;
             }
-            PlantKind::Wind | PlantKind::Fusion | PlantKind::CoalOrOil => {}
+            PlantKind::Wind | PlantKind::GasOrOil => {}
         }
     }
 
-    // Pass 2: satisfy CoalOrOil hybrid plants with remaining fuel.
+    // Pass 2: satisfy GasOrOil hybrid plants with remaining fuel.
     for (i, plant) in plants.iter().enumerate().take(3) {
-        if mask & (1 << i) == 0 || plant.kind != PlantKind::CoalOrOil {
+        if mask & (1 << i) == 0 || plant.kind != PlantKind::GasOrOil {
             continue;
         }
-        let available = coal + oil;
+        let available = gas + oil;
         if available < plant.cost {
             return false;
         }
         let use_oil = plant.cost.min(oil);
         oil -= use_oil;
-        coal -= plant.cost - use_oil;
+        gas -= plant.cost - use_oil;
     }
 
     true
@@ -253,10 +253,10 @@ fn compute_legal_move_info(state: &GameState, actor_id: PlayerId) -> LegalMoveIn
             ..
         } => {
             if *res_player == actor_id {
-                for coal in 0..=*drop_total {
-                    let oil = drop_total - coal;
-                    if coal <= player.resources.coal && oil <= player.resources.oil {
-                        info.discard_resource_coal.push(coal);
+                for gas in 0..=*drop_total {
+                    let oil = drop_total - gas;
+                    if gas <= player.resources.gas && oil <= player.resources.oil {
+                        info.discard_resource_gas.push(gas);
                     }
                 }
             }
@@ -268,7 +268,7 @@ fn compute_legal_move_info(state: &GameState, actor_id: PlayerId) -> LegalMoveIn
                 for (ri, &resource) in [
                     Resource::Coal,
                     Resource::Oil,
-                    Resource::Garbage,
+                    Resource::Gas,
                     Resource::Uranium,
                 ]
                 .iter()
@@ -324,10 +324,10 @@ fn compute_legal_move_info(state: &GameState, actor_id: PlayerId) -> LegalMoveIn
             ..
         } => {
             if *fuel_player == actor_id {
-                for coal in 0..=*hybrid_cost {
-                    let oil = hybrid_cost - coal;
-                    if coal <= player.resources.coal && oil <= player.resources.oil {
-                        info.fuel_coal.push(coal);
+                for gas in 0..=*hybrid_cost {
+                    let oil = hybrid_cost - gas;
+                    if gas <= player.resources.gas && oil <= player.resources.oil {
+                        info.fuel_gas.push(gas);
                     }
                 }
             }
@@ -349,11 +349,10 @@ fn plant_kind_id(kind: PlantKind) -> f32 {
     match kind {
         PlantKind::Coal => 1.0,
         PlantKind::Oil => 2.0,
-        PlantKind::CoalOrOil => 3.0,
-        PlantKind::Garbage => 4.0,
+        PlantKind::GasOrOil => 3.0,
+        PlantKind::Gas => 4.0,
         PlantKind::Uranium => 5.0,
         PlantKind::Wind => 6.0,
-        PlantKind::Fusion => 7.0,
     }
 }
 
@@ -387,23 +386,23 @@ fn build_observation(state: &GameState, actor_id: PlayerId) -> Vec<f32> {
     obs[idx] = me.money as f32 / 500.0;
     idx += 1;
 
-    // 2. Self resources (4): coal, oil, garbage, uranium
+    // 2. Self resources (4): coal, oil, gas, uranium
     obs[idx] = me.resources.coal as f32 / 24.0;
     obs[idx + 1] = me.resources.oil as f32 / 24.0;
-    obs[idx + 2] = me.resources.garbage as f32 / 24.0;
+    obs[idx + 2] = me.resources.gas as f32 / 24.0;
     obs[idx + 3] = me.resources.uranium as f32 / 12.0;
     idx += 4;
 
     // 3. Self plants (3 × 5 = 15): padded to 3 slots
     for (i, plant) in me.plants.iter().take(3).enumerate() {
         let base = idx + i * 5;
-        let cap = if matches!(plant.kind, PlantKind::Wind | PlantKind::Fusion) {
+        let cap = if matches!(plant.kind, PlantKind::Wind) {
             0.0
         } else {
             plant.cost as f32 * 2.0
         };
         obs[base] = plant.number as f32 / 60.0;
-        obs[base + 1] = plant_kind_id(plant.kind) / 7.0;
+        obs[base + 1] = plant_kind_id(plant.kind) / 6.0;
         obs[base + 2] = plant.cost as f32 / 5.0;
         obs[base + 3] = plant.cities as f32 / 8.0;
         obs[base + 4] = cap / 10.0;
@@ -424,7 +423,7 @@ fn build_observation(state: &GameState, actor_id: PlayerId) -> Vec<f32> {
         let cap: f32 = opp
             .plants
             .iter()
-            .filter(|p| !matches!(p.kind, PlantKind::Wind | PlantKind::Fusion))
+            .filter(|p| !matches!(p.kind, PlantKind::Wind))
             .map(|p| p.cost as f32 * 2.0)
             .sum();
         obs[base] = opp.money as f32 / 500.0;
@@ -469,7 +468,7 @@ fn build_observation(state: &GameState, actor_id: PlayerId) -> Vec<f32> {
         for (i, plant) in plants_section.iter().take(4).enumerate() {
             let base = idx + i * 5;
             obs[base] = plant.number as f32 / 60.0;
-            obs[base + 1] = plant_kind_id(plant.kind) / 7.0;
+            obs[base + 1] = plant_kind_id(plant.kind) / 6.0;
             obs[base + 2] = plant.cost as f32 / 5.0;
             obs[base + 3] = plant.cities as f32 / 8.0;
             obs[base + 4] = 1.0;
@@ -490,7 +489,7 @@ fn build_observation(state: &GameState, actor_id: PlayerId) -> Vec<f32> {
     // 12. Resource market (4)
     obs[idx] = state.resources.coal as f32 / 24.0;
     obs[idx + 1] = state.resources.oil as f32 / 24.0;
-    obs[idx + 2] = state.resources.garbage as f32 / 24.0;
+    obs[idx + 2] = state.resources.gas as f32 / 24.0;
     obs[idx + 3] = state.resources.uranium as f32 / 12.0;
     idx += 4;
 
@@ -616,15 +615,15 @@ fn build_action_mask(state: &GameState, actor_id: PlayerId) -> Vec<u8> {
         }
     }
 
-    for &coal in &info.discard_resource_coal {
-        if (coal as usize) < 9 {
-            mask[DISCARD_RESOURCE_BASE + coal as usize] = 1;
+    for &gas in &info.discard_resource_gas {
+        if (gas as usize) < 9 {
+            mask[DISCARD_RESOURCE_BASE + gas as usize] = 1;
         }
     }
 
-    for &coal in &info.fuel_coal {
-        if (coal as usize) < 9 {
-            mask[POWER_FUEL_BASE + coal as usize] = 1;
+    for &gas in &info.fuel_gas {
+        if (gas as usize) < 9 {
+            mask[POWER_FUEL_BASE + gas as usize] = 1;
         }
     }
 
@@ -703,7 +702,7 @@ fn action_id_to_action(action_id: u16, state: &GameState, actor_id: PlayerId) ->
         let resource = [
             Resource::Coal,
             Resource::Oil,
-            Resource::Garbage,
+            Resource::Gas,
             Resource::Uranium,
         ][ri];
         return Action::BuyResourceBatch {
@@ -731,25 +730,25 @@ fn action_id_to_action(action_id: u16, state: &GameState, actor_id: PlayerId) ->
     }
 
     if (DISCARD_RESOURCE_BASE..POWER_FUEL_BASE).contains(&aid) {
-        let coal = (aid - DISCARD_RESOURCE_BASE) as u8;
+        let gas = (aid - DISCARD_RESOURCE_BASE) as u8;
         let drop_total = if let Phase::DiscardResource { drop_total, .. } = &state.phase {
             *drop_total
         } else {
             0
         };
-        let oil = drop_total.saturating_sub(coal);
-        return Action::DiscardResource { coal, oil };
+        let oil = drop_total.saturating_sub(gas);
+        return Action::DiscardResource { gas, oil };
     }
 
     if (POWER_FUEL_BASE..N_ACTIONS).contains(&aid) {
-        let coal = (aid - POWER_FUEL_BASE) as u8;
+        let gas = (aid - POWER_FUEL_BASE) as u8;
         let hybrid_cost = if let Phase::PowerCitiesFuel { hybrid_cost, .. } = &state.phase {
             *hybrid_cost
         } else {
             0
         };
-        let oil = hybrid_cost.saturating_sub(coal);
-        return Action::PowerCitiesFuel { coal, oil };
+        let oil = hybrid_cost.saturating_sub(gas);
+        return Action::PowerCitiesFuel { gas, oil };
     }
 
     Action::PassAuction

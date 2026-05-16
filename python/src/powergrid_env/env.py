@@ -227,7 +227,7 @@ def _render_ansi(state: dict) -> str:
     for p in state.get("players", []):
         plants_str = ", ".join(f"{pl['number']}({pl['kind'][0]})" for pl in p.get("plants", []))
         r = p.get("resources", {})
-        res_str = f"C{r.get('coal',0)} O{r.get('oil',0)} G{r.get('garbage',0)} U{r.get('uranium',0)}"
+        res_str = f"C{r.get('coal',0)} O{r.get('oil',0)} G{r.get('gas',0)} U{r.get('uranium',0)}"
         lines.append(
             f"  {p['name']:12s}  ${p['money']:4d}  "
             f"cities={len(p.get('cities', [])):2d}  plants=[{plants_str}]  res={res_str}"
@@ -242,7 +242,7 @@ def _render_ansi(state: dict) -> str:
     rm = state.get("resources", {})
     lines.append(
         f"Resources  coal={rm.get('coal',0)}  oil={rm.get('oil',0)}  "
-        f"garbage={rm.get('garbage',0)}  uranium={rm.get('uranium',0)}"
+        f"gas={rm.get('gas',0)}  uranium={rm.get('uranium',0)}"
     )
 
     if state.get("event_log"):

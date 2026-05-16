@@ -79,15 +79,17 @@
 * During power cities, select which cities
 * BUG: Phase three started in the middle of auction
 
-# v0.9.0
+# v0.8.0
 
 * Resource buying: button to add "1 set" or "2 sets" to cart
 * Click on resoure market squares to add to cart
 
+# v 0.9.0
+
+* Show on map where other people are placing cities
 
 # To do...
 
-* Show on map where other people are placing cities
 * Sound when it's your turn
 * Switch plants to Recharged version (random start) - add option at game start of OG/Recharge
 * Highlight nominated plant in the market

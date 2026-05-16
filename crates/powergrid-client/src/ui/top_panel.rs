@@ -1,6 +1,7 @@
 use egui::{Align2, Color32, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui};
 use powergrid_core::{
     actions::{Action, HintPayload},
+    price_table,
     types::{Phase, PlayerColor, PlayerId, Resource, ResourceMarket},
     GameStateView,
 };
@@ -214,13 +215,13 @@ fn replenish_rates(step: u8, n: usize) -> (u8, u8, u8, u8) {
 fn step_replenish_columns(ui: &mut Ui, current_step: u8, n_players: usize) {
     let coal_color = theme::RES_COAL;
     let oil_color = theme::RES_OIL;
-    let garb_color = theme::RES_GARBAGE;
+    let gas_color = theme::RES_GAS;
     let uran_color = theme::RES_URANIUM;
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         for step in 1u8..=3 {
-            let (coal, oil, garb, uran) = replenish_rates(step, n_players);
+            let (coal, oil, gas, uran) = replenish_rates(step, n_players);
             let active = step == current_step;
             let hdr = if active {
                 theme::NEON_CYAN
@@ -238,9 +239,9 @@ fn step_replenish_columns(ui: &mut Ui, current_step: u8, n_players: usize) {
                 dim_color(oil_color)
             };
             let g_col = if active {
-                garb_color
+                gas_color
             } else {
-                dim_color(garb_color)
+                dim_color(gas_color)
             };
             let u_col = if active {
                 uran_color
@@ -262,14 +263,14 @@ fn step_replenish_columns(ui: &mut Ui, current_step: u8, n_players: usize) {
                         .small(),
                 );
                 ui.label(
-                    RichText::new(format!("{oil}"))
-                        .color(o_col)
+                    RichText::new(format!("{gas}"))
+                        .color(g_col)
                         .monospace()
                         .small(),
                 );
                 ui.label(
-                    RichText::new(format!("{garb}"))
-                        .color(g_col)
+                    RichText::new(format!("{oil}"))
+                        .color(o_col)
                         .monospace()
                         .small(),
                 );
@@ -301,31 +302,69 @@ fn resource_market_grid(
     const SQ: f32 = 14.0;
     const INNER_GAP: f32 = 2.0;
     const GROUP_GAP: f32 = 8.0;
-    const URAN_W: f32 = 24.0;
     const LABEL_W: f32 = 36.0;
     const HEADER_H: f32 = 20.0;
     const ROW_H: f32 = SQ;
     const ROW_GAP: f32 = 4.0;
-    const SECTION_GAP: f32 = 12.0;
 
-    let cog_group_w = 3.0 * SQ + 2.0 * INNER_GAP;
-    let cog_total_w = 8.0 * cog_group_w + 7.0 * GROUP_GAP;
-    let uran_total_w = 12.0 * URAN_W + 11.0 * GROUP_GAP;
+    let rows: &[(Resource, &str, Color32)] = &[
+        (Resource::Coal, "COAL", theme::RES_COAL),
+        (Resource::Gas, "GAS", theme::RES_GAS),
+        (Resource::Oil, "OIL", theme::RES_OIL),
+        (Resource::Uranium, "URAN", theme::RES_URANIUM),
+    ];
 
-    let content_w = cog_total_w.max(uran_total_w);
+    // For each resource, compute (price, group_size) pairs ordered cheapest → most expensive.
+    let resource_groups: Vec<Vec<(u8, usize)>> = rows
+        .iter()
+        .map(|(r, _, _)| {
+            let mut groups: Vec<(u8, usize)> = Vec::new();
+            for &p in price_table(*r).iter().rev() {
+                match groups.last_mut() {
+                    Some(last) if last.0 == p => last.1 += 1,
+                    _ => groups.push((p, 1)),
+                }
+            }
+            groups
+        })
+        .collect();
+
+    // All distinct prices across all resources, sorted ascending (cheapest first = leftmost).
+    let mut all_prices: Vec<u8> = resource_groups
+        .iter()
+        .flat_map(|groups| groups.iter().map(|&(p, _)| p))
+        .collect();
+    all_prices.sort_unstable();
+    all_prices.dedup();
+
+    // Column width for price P = max group size at P across all resources.
+    let col_widths: Vec<usize> = all_prices
+        .iter()
+        .map(|&p| {
+            resource_groups
+                .iter()
+                .filter_map(|groups| groups.iter().find(|&&(gp, _)| gp == p).map(|&(_, gs)| gs))
+                .max()
+                .unwrap_or(0)
+        })
+        .collect();
+
+    // X-offset (from ox + LABEL_W) of the first cell in each column.
+    let mut col_x: Vec<f32> = Vec::with_capacity(all_prices.len());
+    let mut x = 0.0f32;
+    for (i, &w) in col_widths.iter().enumerate() {
+        col_x.push(x);
+        let col_w = w as f32 * (SQ + INNER_GAP) - INNER_GAP;
+        x += col_w;
+        if i + 1 < col_widths.len() {
+            x += GROUP_GAP;
+        }
+    }
+    let content_w = x;
+
     let total_w = LABEL_W + content_w;
-
-    let total_h = HEADER_H
-        + ROW_GAP
-        + ROW_H
-        + ROW_GAP
-        + ROW_H
-        + ROW_GAP
-        + ROW_H
-        + SECTION_GAP
-        + HEADER_H
-        + ROW_GAP
-        + ROW_H;
+    let n = rows.len() as f32;
+    let total_h = HEADER_H + ROW_GAP + n * ROW_H + (n - 1.0) * ROW_GAP;
 
     let sense = if clickable {
         Sense::click()
@@ -342,37 +381,18 @@ fn resource_market_grid(
     let ox = rect.min.x;
     let oy = rect.min.y;
 
-    let coal_color = theme::RES_COAL;
-    let oil_color = theme::RES_OIL;
-    let garb_color = theme::RES_GARBAGE;
-    let uran_color = theme::RES_URANIUM;
-
-    // ── COG price header ($1 on left = cheapest, $8 on right = most expensive) ──
-    for g in 0..8usize {
-        let price = g + 1;
-        let gx = ox + LABEL_W + g as f32 * (cog_group_w + GROUP_GAP);
-        let cx = gx + cog_group_w / 2.0;
+    // ── Price header ──
+    for (col_idx, (&price, &w)) in all_prices.iter().zip(col_widths.iter()).enumerate() {
+        let gx = ox + LABEL_W + col_x[col_idx];
+        let col_w = w as f32 * (SQ + INNER_GAP) - INNER_GAP;
         painter.text(
-            egui::pos2(cx, oy + HEADER_H / 2.0),
+            egui::pos2(gx + col_w / 2.0, oy + HEADER_H / 2.0),
             Align2::CENTER_CENTER,
             format!("${price}"),
             FontId::monospace(10.0),
             theme::TEXT_DIM,
         );
     }
-
-    // ── COG rows (coal, oil, garbage) ──
-    // Price table: index 0 = most expensive ($8), index 23 = cheapest ($1).
-    // `count` resources occupy array indices 0..(count-1).
-    // Display pos 0 (leftmost, $1) maps to array_idx = total-1-display_pos.
-    // Slot is filled when array_idx < count.
-    // Cart-selected slots are the cheapest `cart_amount` filled squares:
-    //   display_pos in [total-count, total-count+cart_amount-1].
-    let cog_rows: &[(&str, Color32, u8, usize, Resource)] = &[
-        ("COAL", coal_color, market.coal, 24, Resource::Coal),
-        ("OIL", oil_color, market.oil, 24, Resource::Oil),
-        ("GARB", garb_color, market.garbage, 24, Resource::Garbage),
-    ];
 
     let mut click_result: Option<(Resource, u8)> = None;
     let clicked_pos = if response.clicked() {
@@ -381,10 +401,19 @@ fn resource_market_grid(
         None
     };
 
-    for (i, (label, color, count, total, resource)) in cog_rows.iter().enumerate() {
-        let row_y = oy + HEADER_H + ROW_GAP + i as f32 * (ROW_H + ROW_GAP);
+    // ── Resource rows ──
+    // Index 0 in price_table = scarcest (most expensive). `count` units occupy indices 0..count.
+    // Display pos 0 = leftmost = cheapest; array_idx = total - 1 - display_pos.
+    // Slot filled when array_idx < count.
+    // Cart selects the cheapest `cart_amount` filled slots starting at display_pos = total - count.
+    for (row_idx, ((resource, label, color), rgroups)) in
+        rows.iter().zip(resource_groups.iter()).enumerate()
+    {
+        let row_y = oy + HEADER_H + ROW_GAP + row_idx as f32 * (ROW_H + ROW_GAP);
+        let count = market.available(*resource) as usize;
+        let total = price_table(*resource).len();
         let cart_amount = cart.get(resource).copied().unwrap_or(0) as usize;
-        let cheapest_filled = total.saturating_sub(*count as usize); // first filled display_pos
+        let cheapest_filled = total.saturating_sub(count);
 
         painter.text(
             egui::pos2(ox + LABEL_W - 2.0, row_y + ROW_H / 2.0),
@@ -394,15 +423,19 @@ fn resource_market_grid(
             *color,
         );
 
-        for g in 0..8usize {
-            let gx = ox + LABEL_W + g as f32 * (cog_group_w + GROUP_GAP);
-            for s in 0..3usize {
-                let display_pos = g * 3 + s;
-                let array_idx = total - 1 - display_pos;
-                let filled = array_idx < *count as usize;
-                let in_cart = filled
-                    && display_pos >= cheapest_filled
-                    && display_pos < cheapest_filled + cart_amount;
+        let mut display_pos = 0usize;
+        for (col_idx, &price) in all_prices.iter().enumerate() {
+            let group_size = rgroups
+                .iter()
+                .find(|&&(p, _)| p == price)
+                .map_or(0, |&(_, gs)| gs);
+            let gx = ox + LABEL_W + col_x[col_idx];
+
+            for s in 0..group_size {
+                let dp = display_pos + s;
+                let array_idx = total - 1 - dp;
+                let filled = array_idx < count;
+                let in_cart = filled && dp >= cheapest_filled && dp < cheapest_filled + cart_amount;
 
                 let sq_x = gx + s as f32 * (SQ + INNER_GAP);
                 let sq_rect = Rect::from_min_size(egui::pos2(sq_x, row_y), egui::vec2(SQ, ROW_H));
@@ -415,12 +448,10 @@ fn resource_market_grid(
                     painter.rect_filled(sq_rect, 1.0, dim_color(*color));
                 }
 
-                // Peer cart overlays: outer border in each peer's color
                 for (peer_color, peer_cart) in peer_carts {
                     let peer_amount = peer_cart.get(resource).copied().unwrap_or(0) as usize;
-                    let peer_in_cart = filled
-                        && display_pos >= cheapest_filled
-                        && display_pos < cheapest_filled + peer_amount;
+                    let peer_in_cart =
+                        filled && dp >= cheapest_filled && dp < cheapest_filled + peer_amount;
                     if peer_in_cart {
                         painter.rect_stroke(
                             sq_rect.expand(1.5),
@@ -430,105 +461,20 @@ fn resource_market_grid(
                         );
                     }
                 }
-            }
-        }
 
-        // Click detection — only fires for this row's y-band.
-        if let Some(pos) = clicked_pos {
-            if pos.y >= row_y && pos.y < row_y + ROW_H {
-                'cog_click: for g in 0..8usize {
-                    let gx = ox + LABEL_W + g as f32 * (cog_group_w + GROUP_GAP);
-                    for s in 0..3usize {
-                        let display_pos = g * 3 + s;
-                        let sq_x = gx + s as f32 * (SQ + INNER_GAP);
-                        if pos.x >= sq_x && pos.x < sq_x + SQ {
-                            let filled = (total - 1 - display_pos) < *count as usize;
-                            let amount = if filled {
-                                (display_pos.saturating_sub(cheapest_filled) + 1) as u8
-                            } else {
-                                0u8
-                            };
-                            click_result = Some((*resource, amount));
-                            break 'cog_click;
-                        }
+                if let Some(pos) = clicked_pos {
+                    if pos.y >= row_y && pos.y < row_y + ROW_H && pos.x >= sq_x && pos.x < sq_x + SQ
+                    {
+                        let amount = if filled {
+                            (dp.saturating_sub(cheapest_filled) + 1) as u8
+                        } else {
+                            0u8
+                        };
+                        click_result = Some((*resource, amount));
                     }
                 }
             }
-        }
-    }
-
-    // ── Uranium section ──
-    // Array index 0 = $16, index 11 = $1.  Display pos 0=cheapest ($1) → array 11.
-    let usec_y = oy + HEADER_H + ROW_GAP + 3.0 * (ROW_H + ROW_GAP) + SECTION_GAP;
-    let uran_prices: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16];
-    let uran_count = market.uranium as usize;
-    let uran_cart = cart.get(&Resource::Uranium).copied().unwrap_or(0) as usize;
-    let uran_cheapest_filled = 12usize.saturating_sub(uran_count);
-
-    for (i, &price) in uran_prices.iter().enumerate() {
-        let sx = ox + LABEL_W + i as f32 * (URAN_W + GROUP_GAP);
-        let cx = sx + URAN_W / 2.0;
-        painter.text(
-            egui::pos2(cx, usec_y + HEADER_H / 2.0),
-            Align2::CENTER_CENTER,
-            format!("${price}"),
-            FontId::monospace(9.0),
-            theme::TEXT_DIM,
-        );
-    }
-
-    let uran_row_y = usec_y + HEADER_H + ROW_GAP;
-
-    painter.text(
-        egui::pos2(ox + LABEL_W - 2.0, uran_row_y + ROW_H / 2.0),
-        Align2::RIGHT_CENTER,
-        "URAN",
-        FontId::monospace(10.0),
-        uran_color,
-    );
-
-    for i in 0..12usize {
-        let array_idx = 11 - i;
-        let filled = array_idx < uran_count;
-        let in_cart = filled && i >= uran_cheapest_filled && i < uran_cheapest_filled + uran_cart;
-
-        let sx = ox + LABEL_W + i as f32 * (URAN_W + GROUP_GAP);
-        let sq_rect = Rect::from_min_size(egui::pos2(sx, uran_row_y), egui::vec2(URAN_W, ROW_H));
-
-        if in_cart {
-            painter.rect_stroke(
-                sq_rect,
-                1.0,
-                Stroke::new(1.5, uran_color),
-                StrokeKind::Inside,
-            );
-        } else if filled {
-            painter.rect_filled(sq_rect, 1.0, uran_color);
-        } else {
-            painter.rect_filled(sq_rect, 1.0, dim_color(uran_color));
-        }
-
-        // Peer cart overlays for uranium
-        for (peer_color, peer_cart) in peer_carts {
-            let peer_uran = peer_cart.get(&Resource::Uranium).copied().unwrap_or(0) as usize;
-            let peer_in_cart =
-                filled && i >= uran_cheapest_filled && i < uran_cheapest_filled + peer_uran;
-            if peer_in_cart {
-                painter.rect_stroke(
-                    sq_rect.expand(1.5),
-                    2.0,
-                    Stroke::new(1.0, *peer_color),
-                    StrokeKind::Outside,
-                );
-            }
-        }
-
-        if let Some(pos) = clicked_pos {
-            if sq_rect.contains(pos) {
-                let amount = i.saturating_sub(uran_cheapest_filled) + 1;
-                let amount = if filled { amount as u8 } else { 0u8 };
-                click_result = Some((Resource::Uranium, amount));
-            }
+            display_pos += group_size;
         }
     }
 

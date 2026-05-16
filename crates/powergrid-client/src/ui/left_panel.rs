@@ -90,8 +90,8 @@ pub(super) fn left_panel_contents(ui: &mut Ui, gs: &GameStateView, my_id: Player
                         if res.oil > 0 {
                             parts.push(format!("O:{}", res.oil));
                         }
-                        if res.garbage > 0 {
-                            parts.push(format!("G:{}", res.garbage));
+                        if res.gas > 0 {
+                            parts.push(format!("G:{}", res.gas));
                         }
                         if res.uranium > 0 {
                             parts.push(format!("U:{}", res.uranium));

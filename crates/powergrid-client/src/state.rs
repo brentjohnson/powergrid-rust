@@ -101,11 +101,11 @@ pub struct AppState {
     pub auction_last_plant: Option<u8>,
 
     // Resource-discard phase (hybrid shared-slot overflow)
-    pub discard_coal: u8,
+    pub discard_gas: u8,
     pub discard_oil: u8,
 
     // PowerCitiesFuel phase (hybrid fuel split during bureaucracy)
-    pub power_fuel_coal: u8,
+    pub power_fuel_gas: u8,
 
     // Bureaucracy plant-selection scratch state
     pub power_selected_plants: HashSet<u8>,
@@ -214,9 +214,9 @@ impl AppState {
             bid_plant_number: None,
             auction_last_bids: HashMap::new(),
             auction_last_plant: None,
-            discard_coal: 0,
+            discard_gas: 0,
             discard_oil: 0,
-            power_fuel_coal: 0,
+            power_fuel_gas: 0,
             power_selected_plants: HashSet::new(),
             power_selected_initialised: false,
             city_history: Vec::new(),
@@ -346,7 +346,7 @@ impl AppState {
             .map(|id| matches!(&view.phase, Phase::DiscardResource { player, .. } if *player == id))
             .unwrap_or(false);
         if !still_my_discard {
-            self.discard_coal = 0;
+            self.discard_gas = 0;
             self.discard_oil = 0;
         }
 
@@ -356,7 +356,7 @@ impl AppState {
             .map(|id| matches!(&view.phase, Phase::PowerCitiesFuel { player, .. } if *player == id))
             .unwrap_or(false);
         if !still_my_fuel {
-            self.power_fuel_coal = 0;
+            self.power_fuel_gas = 0;
         }
 
         // Clear plant-selection scratch state when not in Bureaucracy.
@@ -463,7 +463,7 @@ impl AppState {
         [
             Resource::Coal,
             Resource::Oil,
-            Resource::Garbage,
+            Resource::Gas,
             Resource::Uranium,
         ]
         .iter()
@@ -708,11 +708,11 @@ fn heap_permutations<T: Clone>(arr: &mut Vec<T>, k: usize, cb: &mut impl FnMut(&
 /// Compute how many of each resource to add to the cart to fire all plants `sets` times.
 ///
 /// Algorithm:
-/// 1. Dedicated plants (Coal/Oil/Garbage/Uranium): buy `sets * cost - owned`, capped by market.
-/// 2. Hybrid (CoalOrOil) plants: after dedicated buys are simulated, pick the cheaper of coal
+/// 1. Dedicated plants (Coal/Oil/Gas/Uranium): buy `sets * cost - owned`, capped by market.
+/// 2. Hybrid (GasOrOil) plants: after dedicated buys are simulated, pick the cheaper of gas
 ///    or oil for each remaining unit, tie-breaking to oil.
 ///
-/// Returns a deterministic `Vec<(Resource, u8)>` in Coal/Oil/Garbage/Uranium order.
+/// Returns a deterministic `Vec<(Resource, u8)>` in Coal/Oil/Gas/Uranium order.
 /// Amounts are advisory — the caller should still run them through `add_to_cart` to
 /// enforce storage capacity and market constraints.
 fn compute_set_cart(
@@ -732,10 +732,10 @@ fn compute_set_cart(
         .filter(|p| p.kind == PlantKind::Oil)
         .map(|p| p.cost.saturating_mul(sets))
         .fold(0u8, |a, b| a.saturating_add(b));
-    let garbage_need: u8 = player
+    let gas_need: u8 = player
         .plants
         .iter()
-        .filter(|p| p.kind == PlantKind::Garbage)
+        .filter(|p| p.kind == PlantKind::Gas)
         .map(|p| p.cost.saturating_mul(sets))
         .fold(0u8, |a, b| a.saturating_add(b));
     let uranium_need: u8 = player
@@ -747,7 +747,7 @@ fn compute_set_cart(
     let hybrid_need: u8 = player
         .plants
         .iter()
-        .filter(|p| p.kind == PlantKind::CoalOrOil)
+        .filter(|p| p.kind == PlantKind::GasOrOil)
         .map(|p| p.cost.saturating_mul(sets))
         .fold(0u8, |a, b| a.saturating_add(b));
 
@@ -760,7 +760,7 @@ fn compute_set_cart(
     for (resource, need) in [
         (Resource::Coal, coal_only_need),
         (Resource::Oil, oil_only_need),
-        (Resource::Garbage, garbage_need),
+        (Resource::Gas, gas_need),
         (Resource::Uranium, uranium_need),
     ] {
         let owned = sim_player.resources.get(resource);
@@ -781,21 +781,21 @@ fn compute_set_cart(
     }
 
     // Determine how much hybrid fuel is still needed after dedicated plants are covered.
-    let leftover_coal = sim_player.resources.coal.saturating_sub(coal_only_need);
+    let leftover_gas = sim_player.resources.gas.saturating_sub(gas_need);
     let leftover_oil = sim_player.resources.oil.saturating_sub(oil_only_need);
-    let hybrid_remaining = hybrid_need.saturating_sub(leftover_coal.saturating_add(leftover_oil));
+    let hybrid_remaining = hybrid_need.saturating_sub(leftover_gas.saturating_add(leftover_oil));
 
-    // For each remaining hybrid unit, pick the cheaper of coal or oil.
+    // For each remaining hybrid unit, pick the cheaper of gas or oil.
     for _ in 0..hybrid_remaining {
-        let coal_ok = sim_market.available(Resource::Coal) >= 1
-            && sim_player.can_add_resource(Resource::Coal, 1);
+        let gas_ok = sim_market.available(Resource::Gas) >= 1
+            && sim_player.can_add_resource(Resource::Gas, 1);
         let oil_ok = sim_market.available(Resource::Oil) >= 1
             && sim_player.can_add_resource(Resource::Oil, 1);
-        if !coal_ok && !oil_ok {
+        if !gas_ok && !oil_ok {
             break;
         }
-        let coal_price = if coal_ok {
-            sim_market.price(Resource::Coal, 1).unwrap_or(u32::MAX)
+        let gas_price = if gas_ok {
+            sim_market.price(Resource::Gas, 1).unwrap_or(u32::MAX)
         } else {
             u32::MAX
         };
@@ -805,21 +805,21 @@ fn compute_set_cart(
             u32::MAX
         };
         // Tie-break to oil (matches the bot strategy convention).
-        let pick = if oil_price <= coal_price {
+        let pick = if oil_price <= gas_price {
             Resource::Oil
         } else {
-            Resource::Coal
+            Resource::Gas
         };
         *result.entry(pick).or_insert(0) += 1;
         sim_market.take(pick, 1);
         sim_player.resources.add(pick, 1);
     }
 
-    // Return in canonical Coal/Oil/Garbage/Uranium order.
+    // Return in canonical Coal/Oil/Gas/Uranium order.
     [
         Resource::Coal,
         Resource::Oil,
-        Resource::Garbage,
+        Resource::Gas,
         Resource::Uranium,
     ]
     .iter()
@@ -1012,55 +1012,56 @@ mod tests {
 
     #[test]
     fn hybrid_plant_picks_cheaper_resource() {
-        // No dedicated coal/oil plants; one hybrid.
-        // Initial market: coal=24 (cheapest slot price $1/unit), oil=18 (cheapest slot price $3/unit).
-        // Coal is cheaper, so both units should come from coal.
+        // No dedicated gas/oil plants; one GasOrOil hybrid.
+        // Initial market: gas=6 (cheapest slot price ~$7), oil=18 (cheapest slot price $3/unit).
+        // Oil is cheaper, so both units should come from oil.
         let player = make_player(
-            vec![make_plant(PlantKind::CoalOrOil, 2)],
+            vec![make_plant(PlantKind::GasOrOil, 2)],
             PlayerResources::default(),
         );
         let market = ResourceMarket::initial();
-        let result = compute_set_cart(&player, &market, 1);
-        assert_eq!(result, vec![(Resource::Coal, 2)]);
-    }
-
-    #[test]
-    fn hybrid_plant_picks_oil_when_cheaper() {
-        // Make coal scarce (expensive) so oil wins.
-        let player = make_player(
-            vec![make_plant(PlantKind::CoalOrOil, 2)],
-            PlayerResources::default(),
-        );
-        let market = ResourceMarket {
-            coal: 3, // slots 0-2, price $8/unit
-            oil: 24, // slots 0-23, price $1/unit at slot 23
-            garbage: 6,
-            uranium: 2,
-        };
         let result = compute_set_cart(&player, &market, 1);
         assert_eq!(result, vec![(Resource::Oil, 2)]);
     }
 
     #[test]
-    fn hybrid_plant_falls_back_to_coal_when_oil_depleted() {
+    fn hybrid_plant_picks_gas_when_oil_scarce() {
+        // Make oil scarce (expensive) so gas wins.
         let player = make_player(
-            vec![make_plant(PlantKind::CoalOrOil, 2)],
+            vec![make_plant(PlantKind::GasOrOil, 2)],
+            PlayerResources::default(),
+        );
+        let market = ResourceMarket {
+            coal: 24,
+            oil: 3,  // slots 0-2, price $8/unit
+            gas: 24, // slots 0-23, price $1/unit at slot 23
+            uranium: 2,
+        };
+        let result = compute_set_cart(&player, &market, 1);
+        assert_eq!(result, vec![(Resource::Gas, 2)]);
+    }
+
+    #[test]
+    fn hybrid_plant_falls_back_to_gas_when_oil_depleted() {
+        let player = make_player(
+            vec![make_plant(PlantKind::GasOrOil, 2)],
             PlayerResources::default(),
         );
         let market = ResourceMarket {
             coal: 24,
             oil: 0, // exhausted
-            garbage: 6,
+            gas: 6,
             uranium: 2,
         };
         let result = compute_set_cart(&player, &market, 1);
-        assert_eq!(result, vec![(Resource::Coal, 2)]);
+        assert_eq!(result, vec![(Resource::Gas, 2)]);
     }
 
     #[test]
-    fn dedicated_plants_satisfied_first_then_hybrid_uses_leftovers() {
-        // Coal plant (cost 2) + hybrid (cost 1). Player already has 3 coal.
-        // After satisfying coal-only need (2), leftover_coal=1 covers the hybrid, so no buying needed.
+    fn dedicated_plants_satisfied_first_then_hybrid_buys_oil() {
+        // Coal plant (cost 2) + GasOrOil hybrid (cost 1). Player has 3 coal.
+        // Coal-only need = 2, covered by stock. Hybrid needs 1 gas-or-oil;
+        // with initial market oil is cheaper, so we buy 1 oil.
         let resources = PlayerResources {
             coal: 3,
             ..Default::default()
@@ -1068,12 +1069,12 @@ mod tests {
         let player = make_player(
             vec![
                 make_plant(PlantKind::Coal, 2),
-                make_plant(PlantKind::CoalOrOil, 1),
+                make_plant(PlantKind::GasOrOil, 1),
             ],
             resources,
         );
         let market = ResourceMarket::initial();
         let result = compute_set_cart(&player, &market, 1);
-        assert!(result.is_empty(), "all needs covered by existing stock");
+        assert_eq!(result, vec![(Resource::Oil, 1)]);
     }
 }

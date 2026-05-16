@@ -10,7 +10,7 @@ use crate::profile::{AuctionWeights, BuyWeights};
 // ---------------------------------------------------------------------------
 
 pub fn is_green(plant: &PowerPlant) -> bool {
-    matches!(plant.kind, PlantKind::Wind | PlantKind::Fusion)
+    matches!(plant.kind, PlantKind::Wind)
 }
 
 /// Base desirability score for a plant, using profile weights.

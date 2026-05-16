@@ -29,7 +29,7 @@ pub const BORDER_PANEL: Color32 = NEON_CYAN_DARK;
 
 pub const RES_COAL: Color32 = Color32::from_rgb(150, 100, 55);
 pub const RES_OIL: Color32 = Color32::from_rgb(110, 110, 140);
-pub const RES_GARBAGE: Color32 = Color32::from_rgb(200, 170, 20);
+pub const RES_GAS: Color32 = Color32::from_rgb(70, 130, 220);
 pub const RES_URANIUM: Color32 = Color32::from_rgb(200, 30, 30);
 
 // ---------------------------------------------------------------------------
@@ -72,11 +72,10 @@ pub fn map_city_label_dim() -> Color32 {
 
 pub const CARD_COAL: Color32 = Color32::from_rgb(140, 90, 45);
 pub const CARD_OIL: Color32 = Color32::from_rgb(100, 100, 120);
-pub const CARD_COAL_OIL: Color32 = Color32::from_rgb(120, 95, 55);
-pub const CARD_GARBAGE: Color32 = Color32::from_rgb(190, 175, 30);
+pub const CARD_GAS_OIL: Color32 = Color32::from_rgb(70, 110, 150);
+pub const CARD_GAS: Color32 = Color32::from_rgb(40, 140, 210);
 pub const CARD_URANIUM: Color32 = Color32::from_rgb(220, 40, 60);
 pub const CARD_WIND: Color32 = Color32::from_rgb(0, 200, 170);
-pub const CARD_FUSION: Color32 = Color32::from_rgb(180, 100, 255);
 
 // ---------------------------------------------------------------------------
 // City-history graph indicators

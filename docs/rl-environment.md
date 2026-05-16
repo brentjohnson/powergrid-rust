@@ -109,10 +109,10 @@ Each integer maps to one game action. The mask in `info["action_mask"]` is `1` o
 | 11–60 | `PlaceBid` offset 0–49 | Bid amount = `active_bid.amount + 1 + offset`; masked above player's money |
 | 61–63 | `DiscardPlant` slot 0–2 | Index into player's plants sorted by number; forced when winning a 4th plant |
 | 64–105 | `BuildCity` city 0–41 | Sorted alphabetically; see constants.py for order |
-| 106–109 | `BuyResources` coal/oil/garbage/uranium | Buys 1 unit; masked if market empty, player over capacity, or unaffordable |
+| 106–109 | `BuyResources` coal/oil/gas/uranium | Buys 1 unit; masked if market empty, player over capacity, or unaffordable |
 | 110–117 | `PowerCities` bitmask 0–7 | Bitmask over player's first 3 plants sorted by number; 0 = power nothing |
-| 118–126 | `DiscardResource` coal\_drop 0–8 | `oil_drop = drop_total − coal_drop`; forced on hybrid-slot overflow |
-| 127–135 | `PowerCitiesFuel` coal 0–8 | `oil = hybrid_cost − coal`; forced when hybrid fuel split is ambiguous |
+| 118–126 | `DiscardResource` gas\_drop 0–8 | `oil_drop = drop_total − gas_drop`; forced on hybrid-slot overflow |
+| 127–135 | `PowerCitiesFuel` gas 0–8 | `oil = hybrid_cost − gas`; forced when hybrid fuel split is ambiguous |
 
 ---
 
@@ -123,17 +123,17 @@ All values are normalised to `[0, 1]`. Segments in order:
 | Segment | Size | Content |
 |---|---|---|
 | Self money | 1 | `money / 500` |
-| Self resources | 4 | coal/24, oil/24, garbage/24, uranium/12 |
-| Self plants | 15 | 3 plant slots × (number/60, kind/7, cost/5, cities/8, capacity/10) |
+| Self resources | 4 | coal/24, oil/24, gas/24, uranium/12 |
+| Self plants | 15 | 3 plant slots × (number/60, kind/6, cost/5, cities/8, capacity/10) |
 | Self cities | 42 | Binary ownership vector (Germany cities in sorted order) |
 | Opponents | 25 | 5 opponents × (money/500, n\_plants/3, n\_cities/42, total\_cap/30, last\_powered/21) |
 | Opponent cities | 210 | 5 opponents × 42-city binary ownership |
 | City slot count | 42 | `owner_count / 3` per city |
 | Active regions | 6 | Binary region-active flags |
-| Plant market actual | 20 | 4 slots × (number/60, kind/7, cost/5, cities/8, present=1) |
+| Plant market actual | 20 | 4 slots × (number/60, kind/6, cost/5, cities/8, present=1) |
 | Plant market future | 20 | Same layout; empty in Step 3 |
 | Market meta | 3 | step3\_triggered, in\_step3, deck\_remaining/50 |
-| Resource market | 4 | coal/24, oil/24, garbage/24, uranium/12 |
+| Resource market | 4 | coal/24, oil/24, gas/24, uranium/12 |
 | Phase id | 1 | 0–9 encoding of phase variant |
 | Step | 1 | step/3 |
 | Round | 1 | round/50 |

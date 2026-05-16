@@ -29,8 +29,8 @@ pub fn apply_action(
         Action::DoneBuilding => handle_done_building(state, actor),
         Action::PowerCities { plant_numbers } => handle_power_cities(state, actor, plant_numbers),
         Action::DiscardPlant { plant_number } => handle_discard_plant(state, actor, plant_number),
-        Action::DiscardResource { coal, oil } => handle_discard_resource(state, actor, coal, oil),
-        Action::PowerCitiesFuel { coal, oil } => handle_power_cities_fuel(state, actor, coal, oil),
+        Action::DiscardResource { gas, oil } => handle_discard_resource(state, actor, gas, oil),
+        Action::PowerCitiesFuel { gas, oil } => handle_power_cities_fuel(state, actor, gas, oil),
     }
 }
 
@@ -431,7 +431,7 @@ fn handle_discard_plant(
         [
             Resource::Coal,
             Resource::Oil,
-            Resource::Garbage,
+            Resource::Gas,
             Resource::Uranium,
         ]
         .into_iter()
@@ -493,7 +493,7 @@ fn handle_discard_plant(
 fn handle_discard_resource(
     state: &mut GameState,
     actor: PlayerId,
-    coal: u8,
+    gas: u8,
     oil: u8,
 ) -> Result<(), ActionError> {
     let (player_id, drop_total, bought, passed) = match &state.phase {
@@ -513,15 +513,15 @@ fn handle_discard_resource(
     let player = state.player(actor).ok_or(ActionError::UnknownPlayer)?;
 
     // Validate the split: sum must match, neither may exceed held.
-    if coal + oil != drop_total || coal > player.resources.coal || oil > player.resources.oil {
+    if gas + oil != drop_total || gas > player.resources.gas || oil > player.resources.oil {
         return Err(ActionError::InvalidDiscardSplit);
     }
 
     // Validate that this split actually resolves the overflow (no over-dropping).
-    // After removing coal and oil, shared_slot_overflow must be 0.
+    // After removing gas and oil, shared_slot_overflow must be 0.
     {
         let mut sim = player.clone();
-        sim.resources.remove(Resource::Coal, coal);
+        sim.resources.remove(Resource::Gas, gas);
         sim.resources.remove(Resource::Oil, oil);
         if sim.shared_slot_overflow() != 0 {
             return Err(ActionError::InvalidDiscardSplit);
@@ -529,13 +529,13 @@ fn handle_discard_resource(
     }
 
     // Apply the drops.
-    if coal > 0 {
+    if gas > 0 {
         state
             .player_mut(actor)
             .ok_or(ActionError::UnknownPlayer)?
             .resources
-            .remove(Resource::Coal, coal);
-        state.resources.replenish(Resource::Coal, coal);
+            .remove(Resource::Gas, gas);
+        state.resources.replenish(Resource::Gas, gas);
     }
     if oil > 0 {
         state
@@ -547,9 +547,9 @@ fn handle_discard_resource(
     }
 
     state.log(format!(
-        "{} discarded {} coal and {} oil",
+        "{} discarded {} gas and {} oil",
         state.player(actor).map(|p| p.name.as_str()).unwrap_or("?"),
-        coal,
+        gas,
         oil,
     ));
 
@@ -1068,17 +1068,17 @@ fn handle_power_cities(
         best_subset_numbers
             .iter()
             .filter_map(|&num| player.plants.iter().find(|p| p.number == num))
-            .filter(|p| p.kind == PlantKind::CoalOrOil)
+            .filter(|p| p.kind == PlantKind::GasOrOil)
             .map(|p| p.cost)
             .sum::<u8>()
     };
 
     if hybrid_cost > 0 {
         let player = state.player(actor).ok_or(ActionError::UnknownPlayer)?;
-        let pure_coal: u8 = best_subset_numbers
+        let pure_gas: u8 = best_subset_numbers
             .iter()
             .filter_map(|&num| player.plants.iter().find(|p| p.number == num))
-            .filter(|p| p.kind == PlantKind::Coal)
+            .filter(|p| p.kind == PlantKind::Gas)
             .map(|p| p.cost)
             .sum();
         let pure_oil: u8 = best_subset_numbers
@@ -1087,11 +1087,11 @@ fn handle_power_cities(
             .filter(|p| p.kind == PlantKind::Oil)
             .map(|p| p.cost)
             .sum();
-        let coal_after_pure = player.resources.coal.saturating_sub(pure_coal);
+        let gas_after_pure = player.resources.gas.saturating_sub(pure_gas);
         let oil_after_pure = player.resources.oil.saturating_sub(pure_oil);
-        let min_coal = hybrid_cost.saturating_sub(oil_after_pure);
-        let max_coal = hybrid_cost.min(coal_after_pure);
-        if min_coal < max_coal {
+        let min_gas = hybrid_cost.saturating_sub(oil_after_pure);
+        let max_gas = hybrid_cost.min(gas_after_pure);
+        if min_gas < max_gas {
             // Split is genuinely ambiguous — pause and ask the player.
             state.phase = Phase::PowerCitiesFuel {
                 player: actor,
@@ -1147,7 +1147,7 @@ fn apply_power_result(
 fn handle_power_cities_fuel(
     state: &mut GameState,
     actor: PlayerId,
-    coal: u8,
+    gas: u8,
     oil: u8,
 ) -> Result<(), ActionError> {
     let (player_id, plant_numbers, hybrid_cost, remaining) = match &state.phase {
@@ -1169,7 +1169,7 @@ fn handle_power_cities_fuel(
         return Err(ActionError::NotYourTurn);
     }
 
-    if coal + oil != hybrid_cost {
+    if gas + oil != hybrid_cost {
         return Err(ActionError::InvalidFuelSplit);
     }
 
@@ -1178,7 +1178,7 @@ fn handle_power_cities_fuel(
     // Compute per-type costs from the chosen subset.
     let mut pure_coal_cost: u8 = 0;
     let mut pure_oil_cost: u8 = 0;
-    let mut pure_garbage_cost: u8 = 0;
+    let mut pure_gas_cost: u8 = 0;
     let mut pure_uranium_cost: u8 = 0;
     let mut powered: u8 = 0;
 
@@ -1191,9 +1191,9 @@ fn handle_power_cities_fuel(
         match plant.kind {
             PlantKind::Coal => pure_coal_cost += plant.cost,
             PlantKind::Oil => pure_oil_cost += plant.cost,
-            PlantKind::Garbage => pure_garbage_cost += plant.cost,
+            PlantKind::Gas => pure_gas_cost += plant.cost,
             PlantKind::Uranium => pure_uranium_cost += plant.cost,
-            PlantKind::CoalOrOil | PlantKind::Wind | PlantKind::Fusion => {}
+            PlantKind::GasOrOil | PlantKind::Wind => {}
         }
         powered += plant.cities;
     }
@@ -1202,9 +1202,9 @@ fn handle_power_cities_fuel(
     let powered = powered.min(cities_owned);
 
     // Validate the split is feasible.
-    if pure_coal_cost + coal > player.resources.coal
+    if pure_coal_cost > player.resources.coal
         || pure_oil_cost + oil > player.resources.oil
-        || pure_garbage_cost > player.resources.garbage
+        || pure_gas_cost + gas > player.resources.gas
         || pure_uranium_cost > player.resources.uranium
     {
         return Err(ActionError::InvalidFuelSplit);
@@ -1212,9 +1212,9 @@ fn handle_power_cities_fuel(
 
     // Build the resulting resource state and apply it.
     let new_resources = PlayerResources {
-        coal: player.resources.coal - pure_coal_cost - coal,
+        coal: player.resources.coal - pure_coal_cost,
         oil: player.resources.oil - pure_oil_cost - oil,
-        garbage: player.resources.garbage - pure_garbage_cost,
+        gas: player.resources.gas - pure_gas_cost - gas,
         uranium: player.resources.uranium - pure_uranium_cost,
     };
 
@@ -1297,7 +1297,7 @@ fn recalculate_player_order(state: &mut GameState) {
 
 fn replenish_resources(state: &mut GameState) {
     let n = state.players.len();
-    let (coal, oil, garbage, uranium) = match state.step {
+    let (coal, oil, gas, uranium) = match state.step {
         1 => match n {
             2 => (3, 2, 1, 1),
             3 => (4, 2, 1, 1),
@@ -1324,15 +1324,15 @@ fn replenish_resources(state: &mut GameState) {
     let before = state.resources.clone();
     state.resources.replenish(Resource::Coal, coal);
     state.resources.replenish(Resource::Oil, oil);
-    state.resources.replenish(Resource::Garbage, garbage);
+    state.resources.replenish(Resource::Gas, gas);
     state.resources.replenish(Resource::Uranium, uranium);
     let dc = state.resources.coal - before.coal;
     let do_ = state.resources.oil - before.oil;
-    let dg = state.resources.garbage - before.garbage;
+    let dg = state.resources.gas - before.gas;
     let du = state.resources.uranium - before.uranium;
     if dc + do_ + dg + du > 0 {
         state.log(format!(
-            "Resources replenished: +{dc} coal, +{do_} oil, +{dg} garbage, +{du} uranium"
+            "Resources replenished: +{dc} coal, +{do_} oil, +{dg} gas, +{du} uranium"
         ));
     } else {
         state.log("Resources: market already at capacity, nothing added");
@@ -1343,13 +1343,15 @@ fn replenish_resources(state: &mut GameState) {
 // Plant deck builder
 // ---------------------------------------------------------------------------
 
-/// Build the standard Powergrid base-game plant deck and initial market.
+/// Build the Power Grid Deluxe plant deck (42 plants).
+/// All plants are placed in `deck`; `actual` and `future` are empty.
+/// Call `PlantMarket::setup_deck` after players join to populate the market.
 pub fn build_plant_deck() -> PlantMarket {
-    let mut all_plants: Vec<PowerPlant> = vec![
-        // number, kind, resource cost, cities powered
+    // number, kind, resource cost, cities powered
+    let mut deck: Vec<PowerPlant> = vec![
         PowerPlant {
             number: 3,
-            kind: PlantKind::Oil,
+            kind: PlantKind::Coal,
             cost: 2,
             cities: 1,
         },
@@ -1361,123 +1363,123 @@ pub fn build_plant_deck() -> PlantMarket {
         },
         PowerPlant {
             number: 5,
-            kind: PlantKind::CoalOrOil,
+            kind: PlantKind::Gas,
             cost: 2,
             cities: 1,
         },
         PowerPlant {
             number: 6,
-            kind: PlantKind::Garbage,
+            kind: PlantKind::Oil,
             cost: 1,
             cities: 1,
         },
         PowerPlant {
             number: 7,
-            kind: PlantKind::Oil,
-            cost: 3,
-            cities: 2,
+            kind: PlantKind::Coal,
+            cost: 1,
+            cities: 1,
         },
         PowerPlant {
             number: 8,
-            kind: PlantKind::Coal,
+            kind: PlantKind::GasOrOil,
             cost: 3,
             cities: 2,
         },
         PowerPlant {
             number: 9,
-            kind: PlantKind::Oil,
-            cost: 1,
-            cities: 1,
+            kind: PlantKind::Coal,
+            cost: 3,
+            cities: 2,
         },
         PowerPlant {
             number: 10,
-            kind: PlantKind::Coal,
+            kind: PlantKind::Oil,
             cost: 2,
             cities: 2,
         },
         PowerPlant {
             number: 11,
-            kind: PlantKind::Uranium,
-            cost: 1,
-            cities: 2,
-        },
-        PowerPlant {
-            number: 12,
-            kind: PlantKind::CoalOrOil,
-            cost: 2,
-            cities: 2,
-        },
-        PowerPlant {
-            number: 13,
             kind: PlantKind::Wind,
             cost: 0,
             cities: 1,
         },
         PowerPlant {
-            number: 14,
-            kind: PlantKind::Garbage,
+            number: 12,
+            kind: PlantKind::Coal,
             cost: 2,
             cities: 2,
         },
         PowerPlant {
-            number: 15,
-            kind: PlantKind::Coal,
-            cost: 2,
-            cities: 3,
-        },
-        PowerPlant {
-            number: 16,
-            kind: PlantKind::Oil,
-            cost: 2,
-            cities: 3,
-        },
-        PowerPlant {
-            number: 17,
+            number: 13,
             kind: PlantKind::Uranium,
             cost: 1,
             cities: 2,
         },
         PowerPlant {
-            number: 18,
+            number: 14,
+            kind: PlantKind::Gas,
+            cost: 1,
+            cities: 2,
+        },
+        PowerPlant {
+            number: 15,
+            kind: PlantKind::Coal,
+            cost: 1,
+            cities: 2,
+        },
+        PowerPlant {
+            number: 16,
+            kind: PlantKind::Gas,
+            cost: 2,
+            cities: 3,
+        },
+        PowerPlant {
+            number: 17,
             kind: PlantKind::Wind,
             cost: 0,
             cities: 2,
         },
         PowerPlant {
-            number: 19,
-            kind: PlantKind::Garbage,
+            number: 18,
+            kind: PlantKind::Oil,
             cost: 2,
+            cities: 3,
+        },
+        PowerPlant {
+            number: 19,
+            kind: PlantKind::Gas,
+            cost: 1,
             cities: 3,
         },
         PowerPlant {
             number: 20,
             kind: PlantKind::Coal,
             cost: 3,
-            cities: 5,
-        },
-        PowerPlant {
-            number: 21,
-            kind: PlantKind::CoalOrOil,
-            cost: 2,
             cities: 4,
         },
         PowerPlant {
-            number: 22,
-            kind: PlantKind::Wind,
-            cost: 0,
-            cities: 2,
-        },
-        PowerPlant {
-            number: 23,
+            number: 21,
             kind: PlantKind::Uranium,
             cost: 1,
             cities: 3,
         },
         PowerPlant {
-            number: 24,
-            kind: PlantKind::Garbage,
+            number: 22,
+            kind: PlantKind::GasOrOil,
+            cost: 3,
+            cities: 5,
+        },
+        PowerPlant {
+            number: 23,
+            kind: PlantKind::Oil,
             cost: 2,
             cities: 4,
+        },
+        PowerPlant {
+            number: 24,
+            kind: PlantKind::Wind,
+            cost: 0,
+            cities: 3,
         },
         PowerPlant {
             number: 25,
@@ -1487,91 +1489,97 @@ pub fn build_plant_deck() -> PlantMarket {
         },
         PowerPlant {
             number: 26,
-            kind: PlantKind::Oil,
-            cost: 2,
-            cities: 5,
+            kind: PlantKind::Gas,
+            cost: 1,
+            cities: 4,
         },
         PowerPlant {
             number: 27,
+            kind: PlantKind::Coal,
+            cost: 1,
+            cities: 4,
+        },
+        PowerPlant {
+            number: 28,
             kind: PlantKind::Wind,
             cost: 0,
             cities: 3,
         },
         PowerPlant {
-            number: 28,
-            kind: PlantKind::Uranium,
-            cost: 1,
-            cities: 4,
-        },
-        PowerPlant {
             number: 29,
-            kind: PlantKind::CoalOrOil,
-            cost: 1,
-            cities: 4,
+            kind: PlantKind::Coal,
+            cost: 2,
+            cities: 5,
         },
         PowerPlant {
             number: 30,
-            kind: PlantKind::Garbage,
-            cost: 3,
-            cities: 6,
+            kind: PlantKind::Oil,
+            cost: 2,
+            cities: 5,
         },
         PowerPlant {
             number: 31,
-            kind: PlantKind::Coal,
-            cost: 3,
-            cities: 6,
-        },
-        PowerPlant {
-            number: 32,
-            kind: PlantKind::Oil,
-            cost: 3,
-            cities: 6,
-        },
-        PowerPlant {
-            number: 33,
             kind: PlantKind::Wind,
             cost: 0,
             cities: 4,
         },
         PowerPlant {
-            number: 34,
+            number: 32,
             kind: PlantKind::Uranium,
-            cost: 1,
+            cost: 2,
             cities: 5,
         },
         PowerPlant {
+            number: 33,
+            kind: PlantKind::Coal,
+            cost: 3,
+            cities: 6,
+        },
+        PowerPlant {
+            number: 34,
+            kind: PlantKind::Gas,
+            cost: 3,
+            cities: 6,
+        },
+        PowerPlant {
             number: 35,
-            kind: PlantKind::Oil,
-            cost: 1,
+            kind: PlantKind::GasOrOil,
+            cost: 2,
             cities: 5,
         },
         PowerPlant {
             number: 36,
-            kind: PlantKind::Coal,
-            cost: 3,
-            cities: 7,
+            kind: PlantKind::Wind,
+            cost: 0,
+            cities: 5,
+        },
+        PowerPlant {
+            number: 37,
+            kind: PlantKind::Uranium,
+            cost: 2,
+            cities: 6,
         },
         PowerPlant {
             number: 38,
-            kind: PlantKind::Garbage,
+            kind: PlantKind::Oil,
             cost: 3,
-            cities: 7,
+            cities: 6,
         },
         PowerPlant {
             number: 39,
-            kind: PlantKind::Uranium,
-            cost: 1,
+            kind: PlantKind::Gas,
+            cost: 2,
             cities: 6,
         },
         PowerPlant {
             number: 40,
-            kind: PlantKind::Oil,
+            kind: PlantKind::Coal,
             cost: 2,
             cities: 6,
         },
         PowerPlant {
             number: 42,
-            kind: PlantKind::Coal,
+            kind: PlantKind::Oil,
             cost: 2,
             cities: 6,
         },
@@ -1579,51 +1587,28 @@ pub fn build_plant_deck() -> PlantMarket {
             number: 44,
             kind: PlantKind::Wind,
             cost: 0,
-            cities: 5,
+            cities: 6,
         },
         PowerPlant {
             number: 46,
-            kind: PlantKind::CoalOrOil,
-            cost: 3,
+            kind: PlantKind::Gas,
+            cost: 2,
             cities: 7,
         },
         PowerPlant {
             number: 50,
-            kind: PlantKind::Fusion,
-            cost: 0,
-            cities: 6,
+            kind: PlantKind::Uranium,
+            cost: 2,
+            cities: 7,
         },
     ];
 
-    all_plants.sort_by_key(|p| p.number);
-
-    // Plants 3–10 form the initial market visible at game start.
-    let initial: Vec<PowerPlant> = all_plants
-        .iter()
-        .filter(|p| p.number <= 10)
-        .cloned()
-        .collect();
-
-    // Plant 13 is set aside and placed on top of the deck at game start.
-    let plant_13 = all_plants.iter().find(|p| p.number == 13).cloned();
-
-    // Remaining plants (11–50, excluding 13) form the draw deck.
-    // Reversed so that pop() draws in ascending order before shuffling.
-    let deck: Vec<PowerPlant> = all_plants
-        .iter()
-        .filter(|p| p.number > 10 && p.number != 13)
-        .rev()
-        .cloned()
-        .collect();
-
-    let actual = initial.iter().take(4).cloned().collect();
-    let future = initial.iter().skip(4).cloned().collect();
+    deck.sort_by_key(|p| p.number);
 
     PlantMarket {
-        actual,
-        future,
+        actual: Vec::new(),
+        future: Vec::new(),
         deck,
-        plant_13,
         below_step3: None,
         step3_triggered: false,
         in_step3: false,
@@ -1848,13 +1833,29 @@ mod tests {
         let first = state.player_order[0];
         let second = state.player_order[1];
 
-        // First player selects plant 4; second player passes the active bid so first wins it.
+        // First player selects the second-cheapest plant in the market; second passes → first wins.
         // (Round 1 forbids passing a selection turn, but passing an active bid is always allowed.)
-        apply_action(&mut state, first, Action::SelectPlant { plant_number: 4 }).unwrap();
+        let first_plant = state.market.actual[1].number;
+        apply_action(
+            &mut state,
+            first,
+            Action::SelectPlant {
+                plant_number: first_plant,
+            },
+        )
+        .unwrap();
         apply_action(&mut state, second, Action::PassAuction).unwrap();
 
         // Now only the second player remains for selection. Selecting a plant auto-awards it at minimum.
-        apply_action(&mut state, second, Action::SelectPlant { plant_number: 3 }).unwrap();
+        let second_plant = state.market.actual[0].number;
+        apply_action(
+            &mut state,
+            second,
+            Action::SelectPlant {
+                plant_number: second_plant,
+            },
+        )
+        .unwrap();
 
         // Should have advanced past auction into BuyResources.
         assert!(
@@ -1863,10 +1864,13 @@ mod tests {
             state.phase
         );
 
-        // Second player should own plant 3 and have been charged its minimum bid (3).
+        // Second player should own the plant they selected, charged its minimum bid.
         let second_player = state.player(second).unwrap();
-        assert!(second_player.plants.iter().any(|p| p.number == 3));
-        assert_eq!(second_player.money, 50 - 3);
+        assert!(second_player
+            .plants
+            .iter()
+            .any(|p| p.number == second_plant));
+        assert_eq!(second_player.money, 50 - second_plant as u32);
 
         let _ = (p1, p2);
     }
@@ -2073,26 +2077,26 @@ mod tests {
     fn test_hybrid_plant_shared_capacity() {
         use crate::types::{PlantKind, PlayerColor, PowerPlant};
 
-        // A CoalOrOil plant with cost=2 holds 4 total resources (coal + oil combined).
+        // A GasOrOil plant with cost=2 holds 4 total resources (gas + oil combined).
         let mut player = crate::types::Player::new("Test".into(), PlayerColor::Red);
         player.plants.push(PowerPlant {
             number: 5,
-            kind: PlantKind::CoalOrOil,
+            kind: PlantKind::GasOrOil,
             cost: 2,
             cities: 1,
         });
 
-        // Can buy up to 4 coal with 0 oil stored.
-        assert!(player.can_add_resource(Resource::Coal, 4));
-        // Cannot buy 5 coal — exceeds total slots.
-        assert!(!player.can_add_resource(Resource::Coal, 5));
+        // Can buy up to 4 gas with 0 oil stored.
+        assert!(player.can_add_resource(Resource::Gas, 4));
+        // Cannot buy 5 gas — exceeds total slots.
+        assert!(!player.can_add_resource(Resource::Gas, 5));
 
-        // After storing 4 coal, cannot buy any oil.
-        player.resources.coal = 4;
+        // After storing 4 gas, cannot buy any oil.
+        player.resources.gas = 4;
         assert!(!player.can_add_resource(Resource::Oil, 1));
 
-        // After storing 2 coal, can only buy 2 more oil.
-        player.resources.coal = 2;
+        // After storing 2 gas, can only buy 2 more oil.
+        player.resources.gas = 2;
         assert!(player.can_add_resource(Resource::Oil, 2));
         assert!(!player.can_add_resource(Resource::Oil, 3));
     }
@@ -2139,7 +2143,7 @@ mod tests {
             apply_action(&mut state, *actor, Action::DoneBuying).unwrap();
         }
         let coal_after_buy = state.resources.coal;
-        assert_eq!(coal_after_buy, 20, "expected 4 coal bought from initial 24");
+        assert_eq!(coal_after_buy, 19, "expected 4 coal bought from initial 23");
 
         // Both players skip building.
         assert!(matches!(state.phase, Phase::BuildCities { .. }));
@@ -2310,7 +2314,7 @@ mod tests {
     /// 2 coal.  The player (or bot via `optimal_firing_subset`) selects plant 21 alone, which
     /// fires on 2 coal and powers 4 cities.  Submitting all three would be infeasible.
     #[test]
-    fn test_bureaucracy_optimal_coalor_oil_plant() {
+    fn test_bureaucracy_optimal_gas_or_oil_plant() {
         use crate::types::{PlantKind, PowerPlant};
 
         let (mut state, p1, _p2) = two_player_game();
@@ -2324,7 +2328,7 @@ mod tests {
         let player = state.player_mut(p1).unwrap();
         // Give 4 cities.
         player.cities = vec!["a".into(), "b".into(), "c".into(), "d".into()];
-        // Plants: 8 (Coal, cost 3, 2 cities), 10 (Coal, cost 2, 2 cities), 21 (CoalOrOil, cost 2, 4 cities).
+        // Plants: 8 (Coal, cost 3, 2 cities), 10 (Coal, cost 2, 2 cities), 21 (GasOrOil, cost 2, 4 cities).
         player.plants = vec![
             PowerPlant {
                 number: 8,
@@ -2340,20 +2344,20 @@ mod tests {
             },
             PowerPlant {
                 number: 21,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 2,
                 cities: 4,
             },
         ];
-        // Only 2 coal — enough for plant 21 alone, not for both 10 and 21.
+        // 2 gas — enough for plant 21 (GasOrOil, cost 2), but coal plants can't fire (0 coal).
         player.resources = PlayerResources {
-            coal: 2,
+            coal: 0,
             oil: 0,
-            garbage: 0,
+            gas: 2,
             uranium: 0,
         };
 
-        // Player selects only plant 21 (the feasible choice given 2 coal).
+        // Player selects only plant 21 (fires on gas).
         apply_action(
             &mut state,
             p1,
@@ -2373,9 +2377,9 @@ mod tests {
             "expected a log entry with 'powered 4 cities'; log: {:?}",
             state.event_log
         );
-        // Resources: plant 21 consumed 2 coal.
+        // Resources: plant 21 consumed 2 gas.
         let player = state.player(p1).unwrap();
-        assert_eq!(player.resources.coal, 0, "2 coal should have been consumed");
+        assert_eq!(player.resources.gas, 0, "2 gas should have been consumed");
     }
 
     /// Player explicitly selects only the wind plant to conserve coal even though
@@ -2412,7 +2416,7 @@ mod tests {
         player.resources = PlayerResources {
             coal: 2,
             oil: 0,
-            garbage: 0,
+            gas: 0,
             uranium: 0,
         };
 
@@ -2458,7 +2462,7 @@ mod tests {
         player.resources = PlayerResources {
             coal: 1, // only 1 coal but plant costs 2
             oil: 0,
-            garbage: 0,
+            gas: 0,
             uranium: 0,
         };
 
@@ -2516,7 +2520,7 @@ mod tests {
         player.resources = PlayerResources {
             coal: 3,
             oil: 0,
-            garbage: 0,
+            gas: 0,
             uranium: 0,
         };
 
@@ -2572,7 +2576,7 @@ mod tests {
         player.resources = PlayerResources {
             coal: 2,
             oil: 0,
-            garbage: 0,
+            gas: 0,
             uranium: 0,
         };
 
@@ -2617,7 +2621,7 @@ mod tests {
             player.resources = PlayerResources {
                 coal: 0,
                 oil: 0,
-                garbage: 0,
+                gas: 0,
                 uranium: 0,
             };
         }
@@ -2673,7 +2677,7 @@ mod tests {
         player.plants = vec![
             PowerPlant {
                 number: 5,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 2,
                 cities: 1,
             }, // cap 4
@@ -2693,7 +2697,7 @@ mod tests {
         player.resources = PlayerResources {
             coal: 0,
             oil: 4,
-            garbage: 0,
+            gas: 0,
             uranium: 0,
         };
 
@@ -3169,7 +3173,7 @@ mod tests {
             },
             PowerPlant {
                 number: 29,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 1,
                 cities: 4,
             },
@@ -3183,7 +3187,7 @@ mod tests {
         player.resources = PlayerResources {
             coal: 5,
             oil: 2,
-            garbage: 0,
+            gas: 0,
             uranium: 0,
         };
 
@@ -3210,7 +3214,7 @@ mod tests {
     /// Hybrids should prefer oil over coal so that coal is preserved for
     /// pure-Coal plants when resources are tight.
     #[test]
-    fn test_hybrid_prefers_oil_to_conserve_coal() {
+    fn test_hybrid_prefers_oil_to_conserve_gas() {
         use crate::types::{PlantKind, PowerPlant};
 
         let (mut state, p1, _p2) = two_player_game();
@@ -3222,18 +3226,20 @@ mod tests {
 
         let player = state.player_mut(p1).unwrap();
         player.cities = (0..6).map(|i| format!("c{i}")).collect();
-        // Hybrid (cost 2, 2 cities) + Hybrid (cost 1, 2 cities) + Coal (cost 2, 2 cities).
-        // Resources: 3 coal + 2 oil.  Pure coal needs 2, leaving 1 coal + 2 oil for hybrids (need 3).
+        // GasOrOil hybrid (cost 2) + GasOrOil hybrid (cost 1) + Coal (cost 2).
+        // Resources: coal=2, gas=3, oil=2.
+        // Coal plant needs 2 coal. Hybrid total cost=3; oil=2, gas=3 → split is ambiguous
+        // (min_gas=1, max_gas=3). Player submits gas=1,oil=2 to preserve gas.
         player.plants = vec![
             PowerPlant {
                 number: 5,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 2,
                 cities: 2,
             },
             PowerPlant {
                 number: 8,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 1,
                 cities: 2,
             },
@@ -3245,12 +3251,13 @@ mod tests {
             },
         ];
         player.resources = PlayerResources {
-            coal: 3,
+            coal: 2,
             oil: 2,
-            garbage: 0,
+            gas: 3,
             uranium: 0,
         };
 
+        // Submit plant selection — enters PowerCitiesFuel because split is ambiguous.
         apply_action(
             &mut state,
             p1,
@@ -3259,6 +3266,13 @@ mod tests {
             },
         )
         .unwrap();
+        assert!(
+            matches!(state.phase, Phase::PowerCitiesFuel { .. }),
+            "expected PowerCitiesFuel after ambiguous hybrid selection"
+        );
+
+        // Choose the split that preserves gas: use minimum gas (1), maximum oil (2).
+        apply_action(&mut state, p1, Action::PowerCitiesFuel { gas: 1, oil: 2 }).unwrap();
 
         let player = state.player(p1).unwrap();
         assert_eq!(
@@ -3268,19 +3282,23 @@ mod tests {
         );
         assert_eq!(player.resources.coal, 0, "expected 0 coal remaining");
         assert_eq!(player.resources.oil, 0, "expected 0 oil remaining");
+        assert_eq!(
+            player.resources.gas, 2,
+            "expected 2 gas remaining (gas conserved)"
+        );
     }
 
     // -----------------------------------------------------------------------
     // DiscardResource phase tests
     // -----------------------------------------------------------------------
 
-    /// Discarding a pure-coal plant while two hybrids remain triggers Phase::DiscardResource
-    /// when the player holds both coal and oil that jointly overflow the hybrid slots.
+    /// Discarding a pure-gas plant while two GasOrOil hybrids remain triggers Phase::DiscardResource
+    /// when the player holds both gas and oil that jointly overflow the hybrid slots.
     ///
-    /// Setup: hybrid #5 (cap 4) + pure-coal #3 (cap 4) + hybrid #7 (cap 6).
-    /// Held: 6 coal + 8 oil (total 14, fits: 4 in pure-coal, 10 in hybrid).
-    /// Win Garbage #24 (adds no coal/oil cap).  Discard pure-coal #3.
-    /// After: plants #5, #7, #24.  coal_only=0, oil_only=0, hybrid=10.
+    /// Setup: hybrid #5 (cap 4) + pure-gas #3 (cap 4) + hybrid #7 (cap 6).
+    /// Held: gas=6, oil=8 (fits: gas 4 in #3, 2+8=10 in hybrid ≤ 10).
+    /// Win Uranium #24 (adds no gas/oil cap).  Discard pure-gas #3.
+    /// After: plants #5, #7, #24.  gas_only=0, oil_only=0, hybrid=10.
     /// Per-resource OK (6≤10, 8≤10) but shared: 6+8=14 > 10.  drop_total = 4.
     #[test]
     fn test_discard_plant_triggers_resource_prompt_on_shared_slot_overflow() {
@@ -3294,35 +3312,35 @@ mod tests {
         player.plants = vec![
             PowerPlant {
                 number: 3,
-                kind: PlantKind::Coal,
+                kind: PlantKind::Gas,
                 cost: 2,
                 cities: 1,
-            }, // pure-coal cap 4
+            }, // pure-gas cap 4
             PowerPlant {
                 number: 5,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 2,
                 cities: 1,
             }, // hybrid cap 4
             PowerPlant {
                 number: 7,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 3,
                 cities: 2,
             }, // hybrid cap 6
         ];
         player.resources = PlayerResources {
-            coal: 6,
+            coal: 0,
             oil: 8,
-            garbage: 0,
+            gas: 6,
             uranium: 0,
         };
 
-        // Use a Garbage plant so no coal/oil capacity is added — overflow stays ambiguous.
+        // Use a Uranium plant so no gas/oil capacity is added — overflow stays ambiguous.
         let new_plant = PowerPlant {
             number: 24,
-            kind: PlantKind::Garbage,
-            cost: 4,
+            kind: PlantKind::Uranium,
+            cost: 1,
             cities: 3,
         };
         state.market.actual.push(new_plant);
@@ -3333,7 +3351,7 @@ mod tests {
             "should be in DiscardPlant phase"
         );
 
-        // Discard the pure-coal plant — triggers shared-slot overflow.
+        // Discard the pure-gas plant — triggers shared-slot overflow.
         apply_action(&mut state, p1, Action::DiscardPlant { plant_number: 3 }).unwrap();
 
         assert!(
@@ -3344,7 +3362,7 @@ mod tests {
 
         // Resources must be untouched at this point.
         let player = state.player(p1).unwrap();
-        assert_eq!(player.resources.coal, 6);
+        assert_eq!(player.resources.gas, 6);
         assert_eq!(player.resources.oil, 8);
     }
 
@@ -3361,40 +3379,40 @@ mod tests {
         player.plants = vec![
             PowerPlant {
                 number: 3,
-                kind: PlantKind::Coal,
+                kind: PlantKind::Gas,
                 cost: 2,
                 cities: 1,
             },
             PowerPlant {
                 number: 5,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 2,
                 cities: 1,
             },
             PowerPlant {
                 number: 7,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 3,
                 cities: 2,
             },
         ];
         player.resources = PlayerResources {
-            coal: 6,
+            coal: 0,
             oil: 8,
-            garbage: 0,
+            gas: 6,
             uranium: 0,
         };
 
         let new_plant = PowerPlant {
             number: 24,
-            kind: PlantKind::Garbage,
-            cost: 4,
+            kind: PlantKind::Uranium,
+            cost: 1,
             cities: 3,
         };
         state.market.actual.push(new_plant);
 
         // Pre-deplete market so replenish has room to add resources.
-        state.resources.coal = 20;
+        state.resources.gas = 2;
         state.resources.oil = 14;
 
         award_plant(&mut state, p1, 24, 24, vec![], vec![]).unwrap();
@@ -3402,11 +3420,11 @@ mod tests {
 
         assert!(matches!(state.phase, Phase::DiscardResource { .. }));
 
-        let coal_market_before = state.resources.coal;
+        let gas_market_before = state.resources.gas;
         let oil_market_before = state.resources.oil;
 
-        // Drop 2 coal + 2 oil (sum = drop_total 4).
-        apply_action(&mut state, p1, Action::DiscardResource { coal: 2, oil: 2 }).unwrap();
+        // Drop 2 gas + 2 oil (sum = drop_total 4).
+        apply_action(&mut state, p1, Action::DiscardResource { gas: 2, oil: 2 }).unwrap();
 
         // Phase must have advanced out of DiscardResource.
         assert!(
@@ -3416,9 +3434,9 @@ mod tests {
         );
 
         let player = state.player(p1).unwrap();
-        assert_eq!(player.resources.coal, 4, "expected 4 coal remaining");
+        assert_eq!(player.resources.gas, 4, "expected 4 gas remaining");
         assert_eq!(player.resources.oil, 6, "expected 6 oil remaining");
-        assert_eq!(state.resources.coal, coal_market_before + 2);
+        assert_eq!(state.resources.gas, gas_market_before + 2);
         assert_eq!(state.resources.oil, oil_market_before + 2);
     }
 
@@ -3435,34 +3453,34 @@ mod tests {
         player.plants = vec![
             PowerPlant {
                 number: 3,
-                kind: PlantKind::Coal,
+                kind: PlantKind::Gas,
                 cost: 2,
                 cities: 1,
             },
             PowerPlant {
                 number: 5,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 2,
                 cities: 1,
             },
             PowerPlant {
                 number: 7,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 3,
                 cities: 2,
             },
         ];
         player.resources = PlayerResources {
-            coal: 6,
+            coal: 0,
             oil: 8,
-            garbage: 0,
+            gas: 6,
             uranium: 0,
         };
 
         let new_plant = PowerPlant {
             number: 24,
-            kind: PlantKind::Garbage,
-            cost: 4,
+            kind: PlantKind::Uranium,
+            cost: 1,
             cities: 3,
         };
         state.market.actual.push(new_plant);
@@ -3470,15 +3488,15 @@ mod tests {
         apply_action(&mut state, p1, Action::DiscardPlant { plant_number: 3 }).unwrap();
         assert!(matches!(state.phase, Phase::DiscardResource { .. }));
 
-        // coal(1) + oil(2) = 3, but drop_total == 4 → rejected.
-        let result = apply_action(&mut state, p1, Action::DiscardResource { coal: 1, oil: 2 });
+        // gas(1) + oil(2) = 3, but drop_total == 4 → rejected.
+        let result = apply_action(&mut state, p1, Action::DiscardResource { gas: 1, oil: 2 });
         assert!(
             matches!(result, Err(ActionError::InvalidDiscardSplit)),
             "expected InvalidDiscardSplit"
         );
         // Phase and resources unchanged.
         assert!(matches!(state.phase, Phase::DiscardResource { .. }));
-        assert_eq!(state.player(p1).unwrap().resources.coal, 6);
+        assert_eq!(state.player(p1).unwrap().resources.gas, 6);
     }
 
     /// Trying to drop more of a resource than the player holds is rejected.
@@ -3494,34 +3512,34 @@ mod tests {
         player.plants = vec![
             PowerPlant {
                 number: 3,
-                kind: PlantKind::Coal,
+                kind: PlantKind::Gas,
                 cost: 2,
                 cities: 1,
             },
             PowerPlant {
                 number: 5,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 2,
                 cities: 1,
             },
             PowerPlant {
                 number: 7,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 3,
                 cities: 2,
             },
         ];
         player.resources = PlayerResources {
-            coal: 6,
+            coal: 0,
             oil: 8,
-            garbage: 0,
+            gas: 6,
             uranium: 0,
         };
 
         let new_plant = PowerPlant {
             number: 24,
-            kind: PlantKind::Garbage,
-            cost: 4,
+            kind: PlantKind::Uranium,
+            cost: 1,
             cities: 3,
         };
         state.market.actual.push(new_plant);
@@ -3529,8 +3547,8 @@ mod tests {
         apply_action(&mut state, p1, Action::DiscardPlant { plant_number: 3 }).unwrap();
         assert!(matches!(state.phase, Phase::DiscardResource { .. }));
 
-        // Asking for 7 coal but only holds 6 — rejected even though sum == 4 (7 > 6).
-        let result = apply_action(&mut state, p1, Action::DiscardResource { coal: 7, oil: 0 });
+        // Asking for 7 gas but only holds 6 — rejected even though sum == 4 (7 > 6).
+        let result = apply_action(&mut state, p1, Action::DiscardResource { gas: 7, oil: 0 });
         assert!(matches!(result, Err(ActionError::InvalidDiscardSplit)));
     }
 
@@ -3559,13 +3577,13 @@ mod tests {
             }, // pure-oil cap 6
             PowerPlant {
                 number: 5,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 2,
                 cities: 1,
             }, // hybrid cap 4
             PowerPlant {
                 number: 7,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 3,
                 cities: 2,
             }, // hybrid cap 6
@@ -3574,13 +3592,13 @@ mod tests {
         player.resources = PlayerResources {
             coal: 0,
             oil: 12,
-            garbage: 0,
+            gas: 0,
             uranium: 0,
         };
 
         let new_plant = PowerPlant {
             number: 24,
-            kind: PlantKind::Garbage,
+            kind: PlantKind::Gas,
             cost: 4,
             cities: 3,
         };
@@ -3608,12 +3626,12 @@ mod tests {
     // PowerCitiesFuel phase tests
     // -----------------------------------------------------------------------
 
-    /// When a player fires a hybrid plant and has both coal and oil available
+    /// When a player fires a hybrid plant and has both gas and oil available
     /// beyond what pure plants need, the server enters Phase::PowerCitiesFuel.
     ///
-    /// Setup: Hybrid #5 (cost 2, 2 cities), pure-Coal #10 (cost 2, 2 cities).
-    /// Resources: 4 coal + 4 oil.  Pure coal needs 2 → remaining: 2 coal + 4 oil.
-    /// Hybrid cost 2: min_coal=0, max_coal=2 → ambiguous.
+    /// Setup: Hybrid #5 (GasOrOil, cost 2, 2 cities), pure-Coal #10 (cost 2, 2 cities).
+    /// Resources: coal=4, gas=2, oil=4.  Pure coal needs 2. Hybrid cost 2:
+    /// gas_after_pure=2, oil_after_pure=4; min_gas=0, max_gas=2 → ambiguous.
     #[test]
     fn test_power_cities_triggers_fuel_prompt_on_hybrid_ambiguity() {
         use crate::types::{PlantKind, PowerPlant};
@@ -3630,7 +3648,7 @@ mod tests {
         player.plants = vec![
             PowerPlant {
                 number: 5,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 2,
                 cities: 2,
             },
@@ -3644,7 +3662,7 @@ mod tests {
         player.resources = PlayerResources {
             coal: 4,
             oil: 4,
-            garbage: 0,
+            gas: 2,
             uranium: 0,
         };
 
@@ -3664,7 +3682,7 @@ mod tests {
         );
         // Resources untouched until the player submits the split.
         let player = state.player(p1).unwrap();
-        assert_eq!(player.resources.coal, 4);
+        assert_eq!(player.resources.gas, 2);
         assert_eq!(player.resources.oil, 4);
     }
 
@@ -3685,7 +3703,7 @@ mod tests {
         player.plants = vec![
             PowerPlant {
                 number: 5,
-                kind: PlantKind::CoalOrOil,
+                kind: PlantKind::GasOrOil,
                 cost: 2,
                 cities: 2,
             },
@@ -3699,7 +3717,7 @@ mod tests {
         player.resources = PlayerResources {
             coal: 4,
             oil: 4,
-            garbage: 0,
+            gas: 2,
             uranium: 0,
         };
         let money_before = player.money;
@@ -3715,8 +3733,8 @@ mod tests {
 
         assert!(matches!(state.phase, Phase::PowerCitiesFuel { .. }));
 
-        // Player spends 0 coal + 2 oil for hybrid (preserves coal).
-        apply_action(&mut state, p1, Action::PowerCitiesFuel { coal: 0, oil: 2 }).unwrap();
+        // Player spends 0 gas + 2 oil for hybrid (preserves gas).
+        apply_action(&mut state, p1, Action::PowerCitiesFuel { gas: 0, oil: 2 }).unwrap();
 
         // Phase should have advanced.
         assert!(
@@ -3726,9 +3744,11 @@ mod tests {
         );
 
         let player = state.player(p1).unwrap();
-        // 4 coal − 2 (pure-coal #10) − 0 (hybrid) = 2
+        // 4 coal − 2 (pure-coal #10) = 2
         assert_eq!(player.resources.coal, 2, "expected 2 coal remaining");
-        // 4 oil − 0 (pure-oil) − 2 (hybrid) = 2
+        // 2 gas − 0 (hybrid used oil instead) = 2
+        assert_eq!(player.resources.gas, 2, "expected 2 gas remaining");
+        // 4 oil − 2 (hybrid) = 2
         assert_eq!(player.resources.oil, 2, "expected 2 oil remaining");
         // Both plants fire (4 cities), income for 4 cities.
         assert_eq!(player.last_cities_powered, 4);
@@ -3752,14 +3772,14 @@ mod tests {
         player.cities = vec!["a".into(), "b".into()];
         player.plants = vec![PowerPlant {
             number: 5,
-            kind: PlantKind::CoalOrOil,
+            kind: PlantKind::GasOrOil,
             cost: 2,
             cities: 2,
         }];
         player.resources = PlayerResources {
-            coal: 3,
+            coal: 0,
             oil: 3,
-            garbage: 0,
+            gas: 3,
             uranium: 0,
         };
 
@@ -3774,18 +3794,18 @@ mod tests {
 
         assert!(matches!(state.phase, Phase::PowerCitiesFuel { .. }));
 
-        // coal(1) + oil(0) = 1 but hybrid_cost == 2 → rejected.
-        let result = apply_action(&mut state, p1, Action::PowerCitiesFuel { coal: 1, oil: 0 });
+        // gas(1) + oil(0) = 1 but hybrid_cost == 2 → rejected.
+        let result = apply_action(&mut state, p1, Action::PowerCitiesFuel { gas: 1, oil: 0 });
         assert!(
             matches!(result, Err(ActionError::InvalidFuelSplit)),
             "expected InvalidFuelSplit"
         );
         // Phase and resources unchanged.
         assert!(matches!(state.phase, Phase::PowerCitiesFuel { .. }));
-        assert_eq!(state.player(p1).unwrap().resources.coal, 3);
+        assert_eq!(state.player(p1).unwrap().resources.gas, 3);
     }
 
-    /// When only coal is available for hybrids the choice is forced and no prompt appears.
+    /// When only gas is available for hybrids the choice is forced and no prompt appears.
     #[test]
     fn test_power_cities_forced_split_no_prompt() {
         use crate::types::{PlantKind, PowerPlant};
@@ -3801,15 +3821,15 @@ mod tests {
         player.cities = vec!["a".into(), "b".into()];
         player.plants = vec![PowerPlant {
             number: 5,
-            kind: PlantKind::CoalOrOil,
+            kind: PlantKind::GasOrOil,
             cost: 2,
             cities: 2,
         }];
-        // Only coal available → split is forced.
+        // Only gas available → split is forced (oil=0, min_gas==max_gas).
         player.resources = PlayerResources {
-            coal: 3,
+            coal: 0,
             oil: 0,
-            garbage: 0,
+            gas: 3,
             uranium: 0,
         };
 
@@ -3829,7 +3849,7 @@ mod tests {
             state.phase
         );
         let player = state.player(p1).unwrap();
-        assert_eq!(player.resources.coal, 1, "expected 1 coal remaining");
+        assert_eq!(player.resources.gas, 1, "expected 1 gas remaining");
         assert_eq!(player.resources.oil, 0);
     }
 
@@ -3853,8 +3873,16 @@ mod tests {
         let second = state.player_order[1];
         let step_before = state.step;
 
-        // First player selects plant 4; second passes the bid → first wins.
-        apply_action(&mut state, first, Action::SelectPlant { plant_number: 4 }).unwrap();
+        // First player selects a plant; second passes the bid → first wins.
+        let first_plant = state.market.actual[0].number;
+        apply_action(
+            &mut state,
+            first,
+            Action::SelectPlant {
+                plant_number: first_plant,
+            },
+        )
+        .unwrap();
         apply_action(&mut state, second, Action::PassAuction).unwrap();
         // The refill after the purchase drew the Step 3 card.
 
@@ -3977,9 +4005,9 @@ mod tests {
             use crate::types::{PlantKind, PowerPlant};
             state.market.future.push(PowerPlant {
                 number: 50,
-                kind: PlantKind::Fusion,
-                cost: 0,
-                cities: 6,
+                kind: PlantKind::Uranium,
+                cost: 2,
+                cities: 7,
             });
         }
 

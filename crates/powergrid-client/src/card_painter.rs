@@ -18,11 +18,10 @@ fn kind_color(kind: PlantKind) -> Color32 {
     match kind {
         PlantKind::Coal => theme::CARD_COAL,
         PlantKind::Oil => theme::CARD_OIL,
-        PlantKind::CoalOrOil => theme::CARD_COAL_OIL,
-        PlantKind::Garbage => theme::CARD_GARBAGE,
+        PlantKind::GasOrOil => theme::CARD_GAS_OIL,
+        PlantKind::Gas => theme::CARD_GAS,
         PlantKind::Uranium => theme::CARD_URANIUM,
         PlantKind::Wind => theme::CARD_WIND,
-        PlantKind::Fusion => theme::CARD_FUSION,
     }
 }
 
@@ -30,11 +29,10 @@ fn kind_label(kind: PlantKind) -> &'static str {
     match kind {
         PlantKind::Coal => "COAL",
         PlantKind::Oil => "OIL",
-        PlantKind::CoalOrOil => "HYBRID",
-        PlantKind::Garbage => "GARBAGE",
+        PlantKind::GasOrOil => "GAS/OIL",
+        PlantKind::Gas => "GAS",
         PlantKind::Uranium => "URANIUM",
         PlantKind::Wind => "WIND",
-        PlantKind::Fusion => "FUSION",
     }
 }
 

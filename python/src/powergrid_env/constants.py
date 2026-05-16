@@ -25,11 +25,10 @@ REGION_NAMES = ["northwest", "northeast", "west", "east", "southwest", "southeas
 KIND_IDS = {
     "coal": 1,
     "oil": 2,
-    "coal_or_oil": 3,
-    "garbage": 4,
+    "gas_or_oil": 3,
+    "gas": 4,
     "uranium": 5,
     "wind": 6,
-    "fusion": 7,
 }
 
 PHASE_IDS = {
@@ -45,7 +44,7 @@ PHASE_IDS = {
     "game_over": 9,
 }
 
-RESOURCE_IDX = {"coal": 0, "oil": 1, "garbage": 2, "uranium": 3}
+RESOURCE_IDX = {"coal": 0, "oil": 1, "gas": 2, "uranium": 3}
 
 # ---------------------------------------------------------------------------
 # Action space layout
@@ -57,10 +56,10 @@ SELECT_PLANT_BASE    = 3          # 8 actions: actual[0..7] (only 0..5 used; fut
 PLACE_BID_BASE       = 11         # 50 actions: bid at min+0, min+1, ..., min+49
 DISCARD_PLANT_BASE   = 61         # 3 actions: discard player.plants[0..2]
 BUILD_CITY_BASE      = 64         # 42 actions: one per city in CITY_IDS order
-BUY_RESOURCE_BASE    = 106        # 4 actions: coal/oil/garbage/uranium (1 unit)
+BUY_RESOURCE_BASE    = 106        # 4 actions: coal/oil/gas/uranium (1 unit)
 POWER_CITIES_BASE    = 110        # 8 actions: bitmask 0..7 over first 3 plants
-DISCARD_RESOURCE_BASE = 118       # 9 actions: coal_drop 0..8 (oil = total - coal)
-POWER_FUEL_BASE      = 127        # 9 actions: coal 0..8 (oil = hybrid_cost - coal)
+DISCARD_RESOURCE_BASE = 118       # 9 actions: gas_drop 0..8 (oil = total - gas)
+POWER_FUEL_BASE      = 127        # 9 actions: gas 0..8 (oil = hybrid_cost - gas)
 N_ACTIONS            = 136
 
 # Observation vector size (flat float32).

@@ -66,7 +66,7 @@ pub struct PlantMarketView {
 
 /// A wire-safe projection of `GameState`. Strips hidden information:
 /// - `rng_seed` (never sent)
-/// - `PlantMarket.deck`, `plant_13`, `below_step3` (face-down cards)
+/// - `PlantMarket.deck`, `below_step3` (face-down cards)
 /// - `map` (sent once on `RoomJoined`; only mutable `city_owners` is included)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameStateView {
@@ -122,7 +122,6 @@ impl GameStateView {
                 actual: self.market.actual,
                 future: self.market.future,
                 deck: Vec::new(),
-                plant_13: None,
                 below_step3: None,
                 step3_triggered: self.market.step3_triggered,
                 in_step3: self.market.in_step3,

@@ -10,7 +10,7 @@ pub type CityId = String;
 pub enum Resource {
     Coal,
     Oil,
-    Garbage,
+    Gas,
     Uranium,
 }
 
@@ -52,11 +52,10 @@ pub struct PowerPlant {
 pub enum PlantKind {
     Coal,
     Oil,
-    CoalOrOil,
-    Garbage,
+    GasOrOil,
+    Gas,
     Uranium,
-    Wind,   // no resource cost
-    Fusion, // no resource cost (Step 3 era)
+    Wind, // no resource cost
 }
 
 impl PlantKind {
@@ -64,15 +63,15 @@ impl PlantKind {
         match self {
             PlantKind::Coal => vec![Resource::Coal],
             PlantKind::Oil => vec![Resource::Oil],
-            PlantKind::CoalOrOil => vec![Resource::Coal, Resource::Oil],
-            PlantKind::Garbage => vec![Resource::Garbage],
+            PlantKind::GasOrOil => vec![Resource::Gas, Resource::Oil],
+            PlantKind::Gas => vec![Resource::Gas],
             PlantKind::Uranium => vec![Resource::Uranium],
-            PlantKind::Wind | PlantKind::Fusion => vec![],
+            PlantKind::Wind => vec![],
         }
     }
 
     pub fn needs_resources(&self) -> bool {
-        !matches!(self, PlantKind::Wind | PlantKind::Fusion)
+        !matches!(self, PlantKind::Wind)
     }
 }
 
@@ -81,7 +80,7 @@ impl PlantKind {
 pub struct ResourceMarket {
     pub coal: u8,
     pub oil: u8,
-    pub garbage: u8,
+    pub gas: u8,
     pub uranium: u8,
 }
 
@@ -89,9 +88,9 @@ impl ResourceMarket {
     /// Standard starting supply for 2–6 players (we use max supply for simplicity).
     pub fn initial() -> Self {
         Self {
-            coal: 24,
-            oil: 18,
-            garbage: 6,
+            coal: 23,
+            gas: 18,
+            oil: 14,
             uranium: 2,
         }
     }
@@ -100,7 +99,7 @@ impl ResourceMarket {
         match resource {
             Resource::Coal => self.coal,
             Resource::Oil => self.oil,
-            Resource::Garbage => self.garbage,
+            Resource::Gas => self.gas,
             Resource::Uranium => self.uranium,
         }
     }
@@ -113,23 +112,18 @@ impl ResourceMarket {
         match resource {
             Resource::Coal => self.coal -= amount,
             Resource::Oil => self.oil -= amount,
-            Resource::Garbage => self.garbage -= amount,
+            Resource::Gas => self.gas -= amount,
             Resource::Uranium => self.uranium -= amount,
         }
         true
     }
 
     pub fn replenish(&mut self, resource: Resource, amount: u8) {
-        let max = match resource {
-            Resource::Coal => 24,
-            Resource::Oil => 24,
-            Resource::Garbage => 24,
-            Resource::Uranium => 12,
-        };
+        let max = price_table(resource).len() as u8;
         let field = match resource {
             Resource::Coal => &mut self.coal,
             Resource::Oil => &mut self.oil,
-            Resource::Garbage => &mut self.garbage,
+            Resource::Gas => &mut self.gas,
             Resource::Uranium => &mut self.uranium,
         };
         *field = (*field + amount).min(max);
@@ -169,18 +163,16 @@ impl ResourceMarket {
 }
 
 /// Returns the price per unit at each market slot (index 0 = most expensive / scarce).
-fn price_table(resource: Resource) -> &'static [u8] {
+pub fn price_table(resource: Resource) -> &'static [u8] {
     match resource {
         Resource::Coal => &[
+            9, 9, 8, 8, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1,
+        ],
+        Resource::Gas => &[
             8, 8, 8, 7, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1,
         ],
-        Resource::Oil => &[
-            8, 8, 8, 7, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1,
-        ],
-        Resource::Garbage => &[
-            8, 8, 8, 7, 7, 7, 6, 6, 6, 5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1,
-        ],
-        Resource::Uranium => &[16, 14, 12, 10, 8, 7, 6, 5, 4, 3, 2, 1],
+        Resource::Oil => &[9, 9, 9, 9, 8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1],
+        Resource::Uranium => &[9, 9, 8, 8, 7, 7, 6, 5, 4, 3, 2, 1],
     }
 }
 
@@ -189,7 +181,7 @@ fn price_table(resource: Resource) -> &'static [u8] {
 pub struct PlayerResources {
     pub coal: u8,
     pub oil: u8,
-    pub garbage: u8,
+    pub gas: u8,
     pub uranium: u8,
 }
 
@@ -198,7 +190,7 @@ impl PlayerResources {
         match resource {
             Resource::Coal => self.coal,
             Resource::Oil => self.oil,
-            Resource::Garbage => self.garbage,
+            Resource::Gas => self.gas,
             Resource::Uranium => self.uranium,
         }
     }
@@ -207,7 +199,7 @@ impl PlayerResources {
         match resource {
             Resource::Coal => self.coal += amount,
             Resource::Oil => self.oil += amount,
-            Resource::Garbage => self.garbage += amount,
+            Resource::Gas => self.gas += amount,
             Resource::Uranium => self.uranium += amount,
         }
     }
@@ -216,7 +208,7 @@ impl PlayerResources {
         let field = match resource {
             Resource::Coal => &mut self.coal,
             Resource::Oil => &mut self.oil,
-            Resource::Garbage => &mut self.garbage,
+            Resource::Gas => &mut self.gas,
             Resource::Uranium => &mut self.uranium,
         };
         if *field < amount {
@@ -266,8 +258,8 @@ impl Player {
             .iter()
             .map(|p| {
                 let accepts = p.kind.resources().contains(&resource)
-                    || (resource == Resource::Coal && p.kind == PlantKind::CoalOrOil)
-                    || (resource == Resource::Oil && p.kind == PlantKind::CoalOrOil);
+                    || (resource == Resource::Gas && p.kind == PlantKind::GasOrOil)
+                    || (resource == Resource::Oil && p.kind == PlantKind::GasOrOil);
                 if accepts {
                     p.cost * 2
                 } else {
@@ -278,14 +270,14 @@ impl Player {
     }
 
     /// Whether the player can store `amount` more of `resource`, respecting
-    /// the shared-slot constraint on CoalOrOil hybrid plants.
+    /// the shared-slot constraint on GasOrOil hybrid plants.
     pub fn can_add_resource(&self, resource: Resource, amount: u8) -> bool {
         match resource {
-            Resource::Coal | Resource::Oil => {
-                let coal_only: u8 = self
+            Resource::Gas | Resource::Oil => {
+                let gas_only: u8 = self
                     .plants
                     .iter()
-                    .filter(|p| p.kind == PlantKind::Coal)
+                    .filter(|p| p.kind == PlantKind::Gas)
                     .map(|p| p.cost * 2)
                     .sum();
                 let oil_only: u8 = self
@@ -297,41 +289,41 @@ impl Player {
                 let hybrid: u8 = self
                     .plants
                     .iter()
-                    .filter(|p| p.kind == PlantKind::CoalOrOil)
+                    .filter(|p| p.kind == PlantKind::GasOrOil)
                     .map(|p| p.cost * 2)
                     .sum();
 
-                let (new_coal, new_oil) = if resource == Resource::Coal {
-                    (self.resources.coal + amount, self.resources.oil)
+                let (new_gas, new_oil) = if resource == Resource::Gas {
+                    (self.resources.gas + amount, self.resources.oil)
                 } else {
-                    (self.resources.coal, self.resources.oil + amount)
+                    (self.resources.gas, self.resources.oil + amount)
                 };
 
                 // Each resource must fit in its dedicated + hybrid slots.
-                if new_coal > coal_only + hybrid {
+                if new_gas > gas_only + hybrid {
                     return false;
                 }
                 if new_oil > oil_only + hybrid {
                     return false;
                 }
-                // Coal and oil together cannot exceed the shared hybrid slots.
-                new_coal.saturating_sub(coal_only) + new_oil.saturating_sub(oil_only) <= hybrid
+                // Gas and oil together cannot exceed the shared hybrid slots.
+                new_gas.saturating_sub(gas_only) + new_oil.saturating_sub(oil_only) <= hybrid
             }
             _ => self.resources.get(resource) + amount <= self.resource_capacity(resource),
         }
     }
 
-    /// How many coal+oil units violate the hybrid shared-slot constraint.
+    /// How many gas+oil units violate the hybrid shared-slot constraint.
     ///
-    /// Returns 0 when the current coal/oil storage is within capacity.  A nonzero
-    /// value means the player must drop that many total units of coal or oil (or a
+    /// Returns 0 when the current gas/oil storage is within capacity. A nonzero
+    /// value means the player must drop that many total units of gas or oil (or a
     /// combination), and the split is only unambiguous if they hold zero of one of
     /// the two resources.
     pub fn shared_slot_overflow(&self) -> u8 {
-        let coal_only: u8 = self
+        let gas_only: u8 = self
             .plants
             .iter()
-            .filter(|p| p.kind == PlantKind::Coal)
+            .filter(|p| p.kind == PlantKind::Gas)
             .map(|p| p.cost * 2)
             .sum();
         let oil_only: u8 = self
@@ -343,14 +335,14 @@ impl Player {
         let hybrid: u8 = self
             .plants
             .iter()
-            .filter(|p| p.kind == PlantKind::CoalOrOil)
+            .filter(|p| p.kind == PlantKind::GasOrOil)
             .map(|p| p.cost * 2)
             .sum();
-        let coal = self.resources.coal;
+        let gas = self.resources.gas;
         let oil = self.resources.oil;
-        let coal_into_hybrid = coal.saturating_sub(coal_only);
+        let gas_into_hybrid = gas.saturating_sub(gas_only);
         let oil_into_hybrid = oil.saturating_sub(oil_only);
-        (coal_into_hybrid + oil_into_hybrid).saturating_sub(hybrid)
+        (gas_into_hybrid + oil_into_hybrid).saturating_sub(hybrid)
     }
 
     /// Number of cities this player can power given their plants and stored resources.
@@ -396,10 +388,10 @@ impl Player {
             if let Some((powered, res)) = check_plant_feasibility(&subset, &self.resources) {
                 let capped = powered.min(cities_owned);
                 let leftover =
-                    res.coal as u16 + res.oil as u16 + res.garbage as u16 + res.uranium as u16;
+                    res.coal as u16 + res.oil as u16 + res.gas as u16 + res.uranium as u16;
                 let best_leftover = best_res.coal as u16
                     + best_res.oil as u16
-                    + best_res.garbage as u16
+                    + best_res.gas as u16
                     + best_res.uranium as u16;
                 if capped > best_powered || (capped == best_powered && leftover > best_leftover) {
                     best_powered = capped;
@@ -420,9 +412,9 @@ impl Player {
 }
 
 /// Check whether a set of plants can fire with the given resources using a
-/// two-pass allocation: pure-fuel plants are satisfied first, then CoalOrOil
-/// hybrids consume whatever coal+oil remains.  Hybrids prefer oil when
-/// possible to conserve coal for future pure-Coal plants.
+/// two-pass allocation: pure-fuel plants are satisfied first, then GasOrOil
+/// hybrids consume whatever gas+oil remains.  Hybrids prefer oil when
+/// possible to conserve gas for future pure-Gas plants.
 ///
 /// Returns `Some((cities_powered, remaining_resources))` if feasible, or
 /// `None` if the resources are insufficient.
@@ -432,56 +424,53 @@ pub fn check_plant_feasibility(
 ) -> Option<(u8, PlayerResources)> {
     let mut coal = resources.coal;
     let mut oil = resources.oil;
-    let mut garbage = resources.garbage;
+    let mut gas = resources.gas;
     let mut uranium = resources.uranium;
     let mut powered = 0u8;
     let mut pure_coal_cost: u8 = 0;
     let mut pure_oil_cost: u8 = 0;
+    let mut pure_gas_cost: u8 = 0;
     let mut hybrid_cost: u8 = 0;
 
     for plant in plants {
         match plant.kind {
             PlantKind::Coal => pure_coal_cost += plant.cost,
             PlantKind::Oil => pure_oil_cost += plant.cost,
-            PlantKind::CoalOrOil => hybrid_cost += plant.cost,
-            PlantKind::Garbage => {
-                if garbage < plant.cost {
-                    return None;
-                }
-                garbage -= plant.cost;
-            }
+            PlantKind::Gas => pure_gas_cost += plant.cost,
+            PlantKind::GasOrOil => hybrid_cost += plant.cost,
             PlantKind::Uranium => {
                 if uranium < plant.cost {
                     return None;
                 }
                 uranium -= plant.cost;
             }
-            PlantKind::Wind | PlantKind::Fusion => {}
+            PlantKind::Wind => {}
         }
         powered += plant.cities;
     }
 
     // Satisfy pure plants first.
-    if pure_coal_cost > coal || pure_oil_cost > oil {
+    if pure_coal_cost > coal || pure_oil_cost > oil || pure_gas_cost > gas {
         return None;
     }
     coal -= pure_coal_cost;
     oil -= pure_oil_cost;
+    gas -= pure_gas_cost;
 
-    // Satisfy hybrids with remaining coal+oil pool; prefer oil to preserve coal.
-    if hybrid_cost > coal + oil {
+    // Satisfy hybrids with remaining gas+oil pool; prefer oil to preserve gas.
+    if hybrid_cost > gas + oil {
         return None;
     }
     let from_oil = hybrid_cost.min(oil);
     oil -= from_oil;
-    coal -= hybrid_cost - from_oil;
+    gas -= hybrid_cost - from_oil;
 
     Some((
         powered,
         PlayerResources {
             coal,
             oil,
-            garbage,
+            gas,
             uranium,
         },
     ))
@@ -552,13 +541,13 @@ pub enum Phase {
         /// Auction passed list (to resume after discard).
         passed: Vec<PlayerId>,
     },
-    /// Waiting for a player to choose which coal/oil to discard when hybrid-slot overflow is
+    /// Waiting for a player to choose which gas/oil to discard when hybrid-slot overflow is
     /// ambiguous (i.e. neither resource alone exceeds its per-resource cap, but they jointly
-    /// exceed the available shared slots on CoalOrOil plants).
+    /// exceed the available shared slots on GasOrOil plants).
     DiscardResource {
         /// The player who must choose.
         player: PlayerId,
-        /// Total units of coal+oil the player must drop.
+        /// Total units of gas+oil the player must drop.
         drop_total: u8,
         /// Auction bought list (to resume after discard).
         bought: Vec<PlayerId>,
@@ -573,9 +562,9 @@ pub enum Phase {
     BuildCities { remaining: Vec<PlayerId> },
     /// Bureaucracy: power cities, collect income, restock market.
     Bureaucracy { remaining: Vec<PlayerId> },
-    /// Waiting for a player to choose the coal/oil split when firing hybrid (CoalOrOil)
+    /// Waiting for a player to choose the gas/oil split when firing hybrid (GasOrOil)
     /// plants — only entered when the split is genuinely ambiguous (the player has both
-    /// coal and oil available beyond what their pure-fuel plants need, with slack to
+    /// gas and oil available beyond what their pure-fuel plants need, with slack to
     /// spend either).
     PowerCitiesFuel {
         /// The player who must choose.
@@ -611,9 +600,6 @@ pub struct PlantMarket {
     pub future: Vec<PowerPlant>,
     /// Draw deck (face down). Index 0 is the bottom; `pop()` draws from the top.
     pub deck: Vec<PowerPlant>,
-    /// Plant 13, held aside until placed on top of the deck at game start.
-    #[serde(default)]
-    pub plant_13: Option<PowerPlant>,
     /// Cards cycled below the Step 3 card during Steps 1/2. `Some` means the Step 3
     /// card is in play (between `deck` and this pile). When the main deck is exhausted
     /// and a draw is attempted, the Step 3 card is "drawn" — these cards are then
@@ -708,29 +694,47 @@ impl PlantMarket {
         }
     }
 
-    /// Shuffle the draw deck, remove plants based on player count,
-    /// then place plant 13 on top and the Step 3 card on the bottom.
-    /// Called once at game start.
+    /// Set up the deck for game start (Deluxe rules). Called once after `build_plant_deck`.
+    ///
+    /// 1. Partition all plants into low (≤15) and high (>15) pools.
+    /// 2. Draw 8 random low cards for the initial market (4 actual + 4 future, sorted).
+    /// 3. Discard a number of remaining low/high cards based on player count.
+    /// 4. Shuffle the rest together; Step 3 triggers when this deck empties.
     pub fn setup_deck(&mut self, rng: &mut impl rand::Rng, player_count: usize) {
-        // 1. Shuffle the deck.
-        self.deck.shuffle(rng);
-
-        // 2. Remove random plants (face-down) based on player count.
-        let remove_count = match player_count {
-            2 => 8,
-            3 => 8,
-            4 => 4,
-            _ => 0, // 5-6 players: remove none
-        };
-        self.deck
-            .truncate(self.deck.len().saturating_sub(remove_count));
-
-        // 3. Place plant 13 on top (end of vec, drawn first via pop()).
-        if let Some(plant_13) = self.plant_13.take() {
-            self.deck.push(plant_13);
+        // 1. Partition deck into low (≤15) and high (>15).
+        let mut low: Vec<PowerPlant> = Vec::new();
+        let mut high: Vec<PowerPlant> = Vec::new();
+        for p in self.deck.drain(..) {
+            if p.number <= 15 {
+                low.push(p);
+            } else {
+                high.push(p);
+            }
         }
 
-        // 4. Step 3 card sits between the main deck and the below-step3 pile.
+        // 2. Shuffle low, draw 8 for initial market.
+        low.shuffle(rng);
+        let mut market_sorted: Vec<PowerPlant> = low.drain(..8.min(low.len())).collect();
+        market_sorted.sort_by_key(|p| p.number);
+        self.actual = market_sorted.iter().take(4).cloned().collect();
+        self.future = market_sorted.iter().skip(4).cloned().collect();
+
+        // 3. Remove random plants based on player count.
+        let (low_remove, high_remove) = match player_count {
+            2 | 3 => (2usize, 6usize),
+            4 => (1, 3),
+            _ => (0, 0), // 5–6 players: remove nothing
+        };
+        low.shuffle(rng);
+        low.truncate(low.len().saturating_sub(low_remove));
+        high.shuffle(rng);
+        high.truncate(high.len().saturating_sub(high_remove));
+
+        // 4. Combine, shuffle, assign to deck. The Step 3 card triggers when this
+        // deck is exhausted (below_step3 = Some signals the card is "in play").
+        let mut combined: Vec<PowerPlant> = low.into_iter().chain(high).collect();
+        combined.shuffle(rng);
+        self.deck = combined;
         self.below_step3 = Some(Vec::new());
     }
 }

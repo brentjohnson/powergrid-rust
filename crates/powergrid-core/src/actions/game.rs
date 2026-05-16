@@ -36,12 +36,12 @@ pub enum Action {
     },
     /// During discard phase: choose which existing plant to discard after winning a 4th.
     DiscardPlant { plant_number: u8 },
-    /// During resource-discard phase: choose how many coal and oil to drop to resolve
-    /// hybrid shared-slot overflow.  `coal + oil` must equal `Phase::DiscardResource::drop_total`.
-    DiscardResource { coal: u8, oil: u8 },
+    /// During resource-discard phase: choose how many gas and oil to drop to resolve
+    /// hybrid shared-slot overflow.  `gas + oil` must equal `Phase::DiscardResource::drop_total`.
+    DiscardResource { gas: u8, oil: u8 },
     /// During power-cities fuel phase: choose how to split a hybrid plant's fuel cost
-    /// between coal and oil.  `coal + oil` must equal `Phase::PowerCitiesFuel::hybrid_cost`.
-    PowerCitiesFuel { coal: u8, oil: u8 },
+    /// between gas and oil.  `gas + oil` must equal `Phase::PowerCitiesFuel::hybrid_cost`.
+    PowerCitiesFuel { gas: u8, oil: u8 },
 }
 
 /// Errors returned when an action is invalid.

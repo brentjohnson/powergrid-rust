@@ -93,7 +93,7 @@ pub(super) fn resource_name(r: Resource) -> &'static str {
     match r {
         Resource::Coal => "COAL",
         Resource::Oil => "OIL",
-        Resource::Garbage => "GARBAGE",
+        Resource::Gas => "GAS",
         Resource::Uranium => "URANIUM",
     }
 }

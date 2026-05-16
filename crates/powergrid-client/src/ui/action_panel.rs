@@ -242,9 +242,9 @@ pub(super) fn action_panel(
         } => {
             if *player == my_id {
                 let drop_total = *drop_total;
-                let (coal_held, oil_held) = gs
+                let (gas_held, oil_held) = gs
                     .player(my_id)
-                    .map(|p| (p.resources.coal, p.resources.oil))
+                    .map(|p| (p.resources.gas, p.resources.oil))
                     .unwrap_or((0, 0));
 
                 ui.label(
@@ -258,22 +258,22 @@ pub(super) fn action_panel(
                 ui.add_space(4.0);
 
                 // Cap each counter at min(held, drop_total - other_selection) so
-                // coal+oil cannot exceed the required total.
-                let coal_max = coal_held.min(drop_total - state.discard_oil);
+                // gas+oil cannot exceed the required total.
+                let gas_max = gas_held.min(drop_total - state.discard_oil);
                 match resource_counter_row(
                     ui,
-                    "    COAL",
-                    state.discard_coal,
+                    "     GAS",
+                    state.discard_gas,
                     0,
-                    coal_max,
-                    &format!("held: {}", coal_held),
+                    gas_max,
+                    &format!("held: {}", gas_held),
                 ) {
-                    d if d < 0 => state.discard_coal -= 1,
-                    d if d > 0 => state.discard_coal += 1,
+                    d if d < 0 => state.discard_gas -= 1,
+                    d if d > 0 => state.discard_gas += 1,
                     _ => {}
                 }
 
-                let oil_max = oil_held.min(drop_total - state.discard_coal);
+                let oil_max = oil_held.min(drop_total - state.discard_gas);
                 match resource_counter_row(
                     ui,
                     "     OIL",
@@ -287,7 +287,7 @@ pub(super) fn action_panel(
                     _ => {}
                 }
 
-                let selected = state.discard_coal + state.discard_oil;
+                let selected = state.discard_gas + state.discard_oil;
                 ui.add_space(4.0);
                 ui.label(
                     RichText::new(format!("{} / {} selected", selected, drop_total))
@@ -308,7 +308,7 @@ pub(super) fn action_panel(
                 {
                     send(
                         Action::DiscardResource {
-                            coal: state.discard_coal,
+                            gas: state.discard_gas,
                             oil: state.discard_oil,
                         },
                         room,
@@ -333,7 +333,7 @@ pub(super) fn action_panel(
                 for resource in [
                     Resource::Coal,
                     Resource::Oil,
-                    Resource::Garbage,
+                    Resource::Gas,
                     Resource::Uranium,
                 ] {
                     let count = state.resource_cart.get(&resource).copied().unwrap_or(0);
@@ -341,13 +341,13 @@ pub(super) fn action_panel(
                     let (owned, cap_lo, cap_hi) = player
                         .map(|p| {
                             let has_hybrid =
-                                p.plants.iter().any(|pl| pl.kind == PlantKind::CoalOrOil);
+                                p.plants.iter().any(|pl| pl.kind == PlantKind::GasOrOil);
                             match resource {
-                                Resource::Coal | Resource::Oil if has_hybrid => {
-                                    let coal_only: u8 = p
+                                Resource::Gas | Resource::Oil if has_hybrid => {
+                                    let gas_only: u8 = p
                                         .plants
                                         .iter()
-                                        .filter(|pl| pl.kind == PlantKind::Coal)
+                                        .filter(|pl| pl.kind == PlantKind::Gas)
                                         .map(|pl| pl.cost * 2)
                                         .sum();
                                     let oil_only: u8 = p
@@ -359,11 +359,11 @@ pub(super) fn action_panel(
                                     let hybrid: u8 = p
                                         .plants
                                         .iter()
-                                        .filter(|pl| pl.kind == PlantKind::CoalOrOil)
+                                        .filter(|pl| pl.kind == PlantKind::GasOrOil)
                                         .map(|pl| pl.cost * 2)
                                         .sum();
-                                    let (dedicated, owned) = if resource == Resource::Coal {
-                                        (coal_only, p.resources.coal)
+                                    let (dedicated, owned) = if resource == Resource::Gas {
+                                        (gas_only, p.resources.gas)
                                     } else {
                                         (oil_only, p.resources.oil)
                                     };
@@ -536,11 +536,10 @@ pub(super) fn action_panel(
                         let kind_str = match plant.kind {
                             PlantKind::Coal => "coal",
                             PlantKind::Oil => "oil",
-                            PlantKind::CoalOrOil => "coal/oil",
-                            PlantKind::Garbage => "garbage",
+                            PlantKind::GasOrOil => "gas/oil",
+                            PlantKind::Gas => "gas",
                             PlantKind::Uranium => "uranium",
                             PlantKind::Wind => "wind",
-                            PlantKind::Fusion => "fusion",
                         };
                         let city_word = if plant.cities == 1 { "city" } else { "cities" };
                         let label = format!(
@@ -588,7 +587,7 @@ pub(super) fn action_panel(
                             );
                             let spent_coal = player.resources.coal - remaining_res.coal;
                             let spent_oil = player.resources.oil - remaining_res.oil;
-                            let spent_garbage = player.resources.garbage - remaining_res.garbage;
+                            let spent_gas = player.resources.gas - remaining_res.gas;
                             let spent_uranium = player.resources.uranium - remaining_res.uranium;
                             let mut parts: Vec<String> = Vec::new();
                             if spent_coal > 0 {
@@ -597,8 +596,8 @@ pub(super) fn action_panel(
                             if spent_oil > 0 {
                                 parts.push(format!("{} oil", spent_oil));
                             }
-                            if spent_garbage > 0 {
-                                parts.push(format!("{} garbage", spent_garbage));
+                            if spent_gas > 0 {
+                                parts.push(format!("{} gas", spent_gas));
                             }
                             if spent_uranium > 0 {
                                 parts.push(format!("{} uranium", spent_uranium));
@@ -650,46 +649,46 @@ pub(super) fn action_panel(
         } => {
             if *player == my_id {
                 let hybrid_cost = *hybrid_cost;
-                let (coal_held, oil_held) = gs
+                let (gas_held, oil_held) = gs
                     .player(my_id)
-                    .map(|p| (p.resources.coal, p.resources.oil))
+                    .map(|p| (p.resources.gas, p.resources.oil))
                     .unwrap_or((0, 0));
 
-                // Compute how much pure-fuel pure plants in the chosen subset need.
-                let (pure_coal, pure_oil) = gs
+                // Compute how much pure-fuel plants in the chosen subset need.
+                let (pure_gas, pure_oil) = gs
                     .player(my_id)
                     .map(|p| {
-                        plant_numbers.iter().fold((0u8, 0u8), |(pc, po), &num| {
+                        plant_numbers.iter().fold((0u8, 0u8), |(pg, po), &num| {
                             if let Some(pl) = p.plants.iter().find(|pl| pl.number == num) {
                                 match pl.kind {
-                                    PlantKind::Coal => (pc + pl.cost, po),
-                                    PlantKind::Oil => (pc, po + pl.cost),
-                                    _ => (pc, po),
+                                    PlantKind::Gas => (pg + pl.cost, po),
+                                    PlantKind::Oil => (pg, po + pl.cost),
+                                    _ => (pg, po),
                                 }
                             } else {
-                                (pc, po)
+                                (pg, po)
                             }
                         })
                     })
                     .unwrap_or((0, 0));
 
-                let coal_avail = coal_held.saturating_sub(pure_coal);
+                let gas_avail = gas_held.saturating_sub(pure_gas);
                 let oil_avail = oil_held.saturating_sub(pure_oil);
 
-                // Clamp coal selection to valid range.
-                let min_coal = hybrid_cost.saturating_sub(oil_avail);
-                let max_coal = hybrid_cost.min(coal_avail);
-                if state.power_fuel_coal < min_coal {
-                    state.power_fuel_coal = min_coal;
+                // Clamp gas selection to valid range.
+                let min_gas = hybrid_cost.saturating_sub(oil_avail);
+                let max_gas = hybrid_cost.min(gas_avail);
+                if state.power_fuel_gas < min_gas {
+                    state.power_fuel_gas = min_gas;
                 }
-                if state.power_fuel_coal > max_coal {
-                    state.power_fuel_coal = max_coal;
+                if state.power_fuel_gas > max_gas {
+                    state.power_fuel_gas = max_gas;
                 }
-                let oil_used = hybrid_cost - state.power_fuel_coal;
+                let oil_used = hybrid_cost - state.power_fuel_gas;
 
                 ui.label(
                     RichText::new(format!(
-                        "Hybrid plants need {} fuel — choose coal/oil split:",
+                        "Hybrid plants need {} fuel — choose gas/oil split:",
                         hybrid_cost
                     ))
                     .color(theme::NEON_AMBER)
@@ -699,14 +698,14 @@ pub(super) fn action_panel(
 
                 match resource_counter_row(
                     ui,
-                    "    COAL",
-                    state.power_fuel_coal,
-                    min_coal,
-                    max_coal,
-                    &format!("avail: {}", coal_avail),
+                    "     GAS",
+                    state.power_fuel_gas,
+                    min_gas,
+                    max_gas,
+                    &format!("avail: {}", gas_avail),
                 ) {
-                    d if d < 0 => state.power_fuel_coal -= 1,
-                    d if d > 0 => state.power_fuel_coal += 1,
+                    d if d < 0 => state.power_fuel_gas -= 1,
+                    d if d > 0 => state.power_fuel_gas += 1,
                     _ => {}
                 }
 
@@ -730,7 +729,7 @@ pub(super) fn action_panel(
                 {
                     send(
                         Action::PowerCitiesFuel {
-                            coal: state.power_fuel_coal,
+                            gas: state.power_fuel_gas,
                             oil: oil_used,
                         },
                         room,

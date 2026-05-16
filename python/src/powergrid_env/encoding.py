@@ -9,7 +9,7 @@ Action space layout (N_ACTIONS = 136):
   11..60     PlaceBid     offset 0..49  amount = active_bid.amount+1 + offset
   61..63     DiscardPlant slot 0..2   (index into player.plants sorted by number)
   64..105    BuildCity    city index 0..41 in CITY_IDS order
-  106..109   BuyResources resource index 0..3 (coal/oil/garbage/uranium), 1 unit
+  106..109   BuyResources resource index 0..3 (coal/oil/gas/uranium), 1 unit
   110..117   PowerCities  bitmask 0..7 over first 3 plants (sorted by number)
   118..126   DiscardResource  coal_drop 0..8  (oil = drop_total - coal)
   127..135   PowerCitiesFuel  coal 0..8       (oil = hybrid_cost - coal)
@@ -127,7 +127,7 @@ def id_to_action_json(action_id: int, state: dict, actor_id: str) -> str:
 
     if BUY_RESOURCE_BASE <= action_id < POWER_CITIES_BASE:
         ri = action_id - BUY_RESOURCE_BASE
-        resource = ["coal", "oil", "garbage", "uranium"][ri]
+        resource = ["coal", "oil", "gas", "uranium"][ri]
         return json.dumps({"type": "buy_resource_batch", "purchases": [[resource, 1]]})
 
     if POWER_CITIES_BASE <= action_id < DISCARD_RESOURCE_BASE:
@@ -140,22 +140,22 @@ def id_to_action_json(action_id: int, state: dict, actor_id: str) -> str:
         return json.dumps({"type": "power_cities", "plant_numbers": numbers})
 
     if DISCARD_RESOURCE_BASE <= action_id < POWER_FUEL_BASE:
-        coal = action_id - DISCARD_RESOURCE_BASE
+        gas = action_id - DISCARD_RESOURCE_BASE
         drop_total = 0
         phase = state["phase"]
         if isinstance(phase, dict) and "discard_resource" in phase:
             drop_total = phase["discard_resource"]["drop_total"]
-        oil = max(0, drop_total - coal)
-        return json.dumps({"type": "discard_resource", "coal": coal, "oil": oil})
+        oil = max(0, drop_total - gas)
+        return json.dumps({"type": "discard_resource", "gas": gas, "oil": oil})
 
     if POWER_FUEL_BASE <= action_id < N_ACTIONS:
-        coal = action_id - POWER_FUEL_BASE
+        gas = action_id - POWER_FUEL_BASE
         hybrid_cost = 0
         phase = state["phase"]
         if isinstance(phase, dict) and "power_cities_fuel" in phase:
             hybrid_cost = phase["power_cities_fuel"]["hybrid_cost"]
-        oil = max(0, hybrid_cost - coal)
-        return json.dumps({"type": "power_cities_fuel", "coal": coal, "oil": oil})
+        oil = max(0, hybrid_cost - gas)
+        return json.dumps({"type": "power_cities_fuel", "gas": gas, "oil": oil})
 
     return '{"type":"pass_auction"}'
 
@@ -266,19 +266,19 @@ def encode_observation(state: dict, actor_id: str) -> np.ndarray:
     obs[idx] = me["money"] / 500.0
     idx += 1
 
-    # 2. Self resources (4): coal, oil, garbage, uranium
+    # 2. Self resources (4): coal, oil, gas, uranium
     r = me["resources"]
-    obs[idx:idx+4] = [r["coal"] / 24, r["oil"] / 24, r["garbage"] / 24, r["uranium"] / 12]
+    obs[idx:idx+4] = [r["coal"] / 24, r["oil"] / 24, r["gas"] / 24, r["uranium"] / 12]
     idx += 4
 
     # 3. Self plants (3 × 5 = 15): padded to 3 slots
     for i, plant in enumerate((me.get("plants") or [])[:3]):
         base = idx + i * 5
         obs[base]   = plant["number"] / 60
-        obs[base+1] = KIND_IDS.get(plant["kind"], 0) / 7
+        obs[base+1] = KIND_IDS.get(plant["kind"], 0) / 6
         obs[base+2] = plant["cost"] / 5          # max resource cost ≈ 3
         obs[base+3] = plant["cities"] / 8        # max cities per plant = 7 in base game
-        cap = plant["cost"] * 2 if plant["kind"] not in ("wind", "fusion") else 0
+        cap = plant["cost"] * 2 if plant["kind"] not in ("wind",) else 0
         obs[base+4] = cap / 10                   # max cap = 6 (cost 3 × 2)
     idx += 15
 
@@ -295,7 +295,7 @@ def encode_observation(state: dict, actor_id: str) -> np.ndarray:
         obs[base]   = opp["money"] / 500
         obs[base+1] = len(opp.get("plants", [])) / 3
         obs[base+2] = len(opp.get("cities", [])) / 42
-        cap = sum(p["cost"] * 2 for p in opp.get("plants", []) if p["kind"] not in ("wind", "fusion"))
+        cap = sum(p["cost"] * 2 for p in opp.get("plants", []) if p["kind"] not in ("wind",))
         obs[base+3] = cap / 30
         obs[base+4] = opp.get("last_cities_powered", 0) / 21
     idx += 25
@@ -325,7 +325,7 @@ def encode_observation(state: dict, actor_id: str) -> np.ndarray:
         for i, plant in enumerate(plants[:4]):
             base = idx + i * 5
             obs[base]   = plant["number"] / 60
-            obs[base+1] = KIND_IDS.get(plant["kind"], 0) / 7
+            obs[base+1] = KIND_IDS.get(plant["kind"], 0) / 6
             obs[base+2] = plant["cost"] / 5
             obs[base+3] = plant["cities"] / 8
             obs[base+4] = 1.0
@@ -340,7 +340,7 @@ def encode_observation(state: dict, actor_id: str) -> np.ndarray:
 
     # 12. Resource market (4)
     rm = state["resources"]
-    obs[idx:idx+4] = [rm["coal"]/24, rm["oil"]/24, rm["garbage"]/24, rm["uranium"]/12]
+    obs[idx:idx+4] = [rm["coal"]/24, rm["oil"]/24, rm["gas"]/24, rm["uranium"]/12]
     idx += 4
 
     # 13. Phase id (1)
