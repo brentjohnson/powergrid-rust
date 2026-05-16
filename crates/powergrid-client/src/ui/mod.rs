@@ -5,7 +5,6 @@ mod lobby;
 mod local_setup;
 mod login;
 mod main_menu;
-mod phase_tracker;
 mod phases;
 mod player_summary;
 mod register;
@@ -17,7 +16,7 @@ use powergrid_core::types::{Phase, PlayerColor, PlayerId};
 
 use crate::{
     local::LocalConfig,
-    state::{AppState, Screen},
+    state::{AppState, BottomTab, Screen},
     theme,
     ws::WsChannels,
 };
@@ -50,7 +49,7 @@ pub fn ui_system(
         && !ctx.wants_keyboard_input()
         && ctx.input(|i| i.key_pressed(egui::Key::Space))
     {
-        state.city_graph_open = !state.city_graph_open;
+        state.bottom_panel_open = !state.bottom_panel_open;
     }
 
     let mut action = UiAction::None;
@@ -73,36 +72,6 @@ pub fn ui_system(
         }
         Screen::Game => {
             game_screen(ctx, state, channels);
-        }
-    }
-
-    if state.city_graph_open {
-        if let Some(gs) = state.game_state.clone() {
-            if !state.city_history.is_empty() {
-                let players_info: Vec<(PlayerId, PlayerColor)> =
-                    gs.players.iter().map(|p| (p.id, p.color)).collect();
-                egui::Window::new("CITIES")
-                    .collapsible(false)
-                    .resizable(false)
-                    .movable(false)
-                    .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-                    .default_width(560.0)
-                    .show(ctx, |ui| {
-                        theme::neon_frame().show(ui, |ui| {
-                            top_panel::city_history_graph(
-                                ui,
-                                &state.city_history,
-                                &players_info,
-                                gs.end_game_cities,
-                                &gs,
-                            );
-                        });
-                    });
-            } else {
-                state.city_graph_open = false;
-            }
-        } else {
-            state.city_graph_open = false;
         }
     }
 
@@ -202,14 +171,7 @@ fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: Option<&WsCh
                 });
         });
 
-    egui::TopBottomPanel::bottom("event_log")
-        .exact_height(120.0)
-        .frame(theme::panel_frame(4))
-        .show(ctx, |ui| {
-            ui.add_space(2.0);
-            event_log::event_log_contents(ui, &gs);
-        });
-
+    // Left panel is added before CentralPanel so it extends the full remaining height.
     egui::SidePanel::left("player_panel")
         .resizable(false)
         .exact_width(220.0)
@@ -229,5 +191,133 @@ fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: Option<&WsCh
         )
         .show(ctx, |ui| {
             crate::map_panel::draw(ui, state, &gs, my_id);
+        });
+
+    // ── Bottom-right info panel (Space or toggle button) ──────────────────────
+    if state.bottom_panel_open {
+        bottom_info_panel(ctx, state, &gs);
+    } else {
+        // Small tab visible when panel is closed
+        egui::Area::new(egui::Id::new("info_toggle_area"))
+            .anchor(egui::Align2::RIGHT_BOTTOM, egui::vec2(-8.0, -8.0))
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                if ui
+                    .add(helpers::neon_button("[ ▲ INFO ]", theme::NEON_CYAN))
+                    .clicked()
+                {
+                    state.bottom_panel_open = true;
+                }
+            });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bottom-right tabbed info panel
+// ---------------------------------------------------------------------------
+
+const PANEL_HEIGHT: f32 = 280.0;
+
+fn bottom_info_panel(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    gs: &powergrid_core::GameStateView,
+) {
+    #[allow(deprecated)]
+    let panel_w = (ctx.screen_rect().width() * 0.5).max(320.0);
+
+    egui::Window::new("info_panel")
+        .title_bar(false)
+        .resizable(false)
+        .movable(false)
+        .collapsible(false)
+        .anchor(egui::Align2::RIGHT_BOTTOM, egui::Vec2::ZERO)
+        .fixed_size(egui::vec2(panel_w, PANEL_HEIGHT))
+        .frame(theme::panel_frame(4))
+        .show(ctx, |ui| {
+            // Tab bar + collapse button
+            ui.horizontal(|ui| {
+                for tab in [
+                    BottomTab::EventLog,
+                    BottomTab::CityGraph,
+                    BottomTab::Replenish,
+                    BottomTab::Payout,
+                ] {
+                    let active = state.bottom_panel_tab == tab;
+                    let color = if active {
+                        theme::NEON_CYAN
+                    } else {
+                        theme::TEXT_DIM
+                    };
+                    let resp = ui.add(
+                        egui::Button::new(
+                            RichText::new(tab.label()).color(color).monospace().small(),
+                        )
+                        .fill(if active {
+                            theme::BG_WIDGET
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        })
+                        .stroke(egui::Stroke::new(
+                            if active { 1.0 } else { 0.0 },
+                            theme::NEON_CYAN,
+                        )),
+                    );
+                    if resp.clicked() {
+                        state.bottom_panel_tab = tab;
+                    }
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add(helpers::neon_button("[ ▼ ]", theme::NEON_CYAN))
+                        .clicked()
+                    {
+                        state.bottom_panel_open = false;
+                    }
+                });
+            });
+
+            ui.separator();
+
+            // Tab content
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| match state.bottom_panel_tab {
+                    BottomTab::EventLog => {
+                        event_log::event_log_contents(ui, gs);
+                    }
+                    BottomTab::CityGraph => {
+                        if !state.city_history.is_empty() {
+                            let players_info: Vec<(PlayerId, PlayerColor)> =
+                                gs.players.iter().map(|p| (p.id, p.color)).collect();
+                            theme::neon_frame().show(ui, |ui| {
+                                top_panel::city_history_graph(
+                                    ui,
+                                    &state.city_history,
+                                    &players_info,
+                                    gs.end_game_cities,
+                                    gs,
+                                );
+                            });
+                        } else {
+                            ui.label(
+                                RichText::new("No city history yet.")
+                                    .color(theme::TEXT_DIM)
+                                    .monospace()
+                                    .small(),
+                            );
+                        }
+                    }
+                    BottomTab::Replenish => {
+                        theme::neon_frame().show(ui, |ui| {
+                            top_panel::step_replenish_columns(ui, gs.step, gs.players.len());
+                        });
+                    }
+                    BottomTab::Payout => {
+                        theme::neon_frame().show(ui, |ui| {
+                            top_panel::city_payout_table(ui, gs);
+                        });
+                    }
+                });
         });
 }

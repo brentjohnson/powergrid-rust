@@ -1,7 +1,7 @@
 use egui::{Align2, Color32, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui};
 use powergrid_core::{
     actions::{Action, HintPayload},
-    price_table,
+    income_for, price_table,
     types::{Phase, PlayerColor, PlayerId, Resource, ResourceMarket},
     GameStateView,
 };
@@ -15,7 +15,6 @@ use crate::{
 };
 
 use super::helpers::{dim_color, send};
-use super::phase_tracker::phase_tracker;
 use super::phases::{
     auction_panel, build_cities_panel, bureaucracy_panel, buy_resources_panel, discard_plant_panel,
     discard_resource_panel, power_cities_fuel_panel,
@@ -34,26 +33,31 @@ pub(super) fn top_panel_contents(
     let my_buy_turn = matches!(&gs.phase, Phase::BuyResources { remaining }
         if remaining.first() == Some(&my_id));
 
-    let is_auction = matches!(&gs.phase, Phase::Auction { .. } | Phase::DiscardPlant { .. });
-    let is_buy = matches!(&gs.phase, Phase::BuyResources { .. } | Phase::DiscardResource { .. });
+    let is_auction = matches!(
+        &gs.phase,
+        Phase::Auction { .. } | Phase::DiscardPlant { .. }
+    );
+    let is_buy = matches!(
+        &gs.phase,
+        Phase::BuyResources { .. } | Phase::DiscardResource { .. }
+    );
     let is_build = matches!(&gs.phase, Phase::BuildCities { .. });
-    let is_bureau = matches!(&gs.phase, Phase::Bureaucracy { .. } | Phase::PowerCitiesFuel { .. });
+    let is_bureau = matches!(
+        &gs.phase,
+        Phase::Bureaucracy { .. } | Phase::PowerCitiesFuel { .. }
+    );
 
     ui.horizontal_top(|ui| {
         // ── Phase 1: Determine Player Order ───────────────────────────────
         ui.vertical(|ui| {
-            phase_col_header(ui, "1", "DETERMINE ORDER", false);
+            phase_col_header(ui, "DETERMINE ORDER", false, &gs, PhaseKind::DetermineOrder);
             theme::neon_frame_bright().show(ui, |ui| {
                 ui.label(
                     RichText::new(format!("ROUND {}", gs.round))
                         .color(theme::NEON_CYAN)
                         .monospace(),
                 );
-                ui.label(RichText::new("STEP").color(theme::NEON_CYAN).monospace());
-                step_replenish_columns(ui, gs.step, gs.players.len());
             });
-            ui.add_space(4.0);
-            phase_tracker(ui, &gs);
         });
 
         ui.add_space(8.0);
@@ -62,7 +66,7 @@ pub(super) fn top_panel_contents(
 
         // ── Phase 2: Auction Power Plants ─────────────────────────────────
         ui.vertical(|ui| {
-            phase_col_header(ui, "2", "AUCTION PLANTS", is_auction);
+            phase_col_header(ui, "AUCTION PLANTS", is_auction, &gs, PhaseKind::Auction);
             theme::neon_frame().show(ui, |ui| {
                 ui.horizontal_top(|ui| {
                     if gs.step >= 3 {
@@ -154,7 +158,7 @@ pub(super) fn top_panel_contents(
 
         // ── Phase 3: Buy Resources ─────────────────────────────────────────
         ui.vertical(|ui| {
-            phase_col_header(ui, "3", "BUY RESOURCES", is_buy);
+            phase_col_header(ui, "BUY RESOURCES", is_buy, &gs, PhaseKind::BuyResources);
 
             let cart_snapshot = state.resource_cart.clone();
             let peer_carts: Vec<(Color32, HashMap<Resource, u8>)> = state
@@ -205,7 +209,13 @@ pub(super) fn top_panel_contents(
 
         // ── Phase 4: Build Generators ──────────────────────────────────────
         ui.vertical(|ui| {
-            phase_col_header(ui, "4", "BUILD GENERATORS", is_build);
+            phase_col_header(
+                ui,
+                "BUILD GENERATORS",
+                is_build,
+                &gs,
+                PhaseKind::BuildCities,
+            );
             theme::neon_frame().show(ui, |ui| {
                 city_count_list(ui, &gs);
             });
@@ -224,7 +234,7 @@ pub(super) fn top_panel_contents(
 
         // ── Phase 5: Bureaucracy ───────────────────────────────────────────
         ui.vertical(|ui| {
-            phase_col_header(ui, "5", "BUREAUCRACY", is_bureau);
+            phase_col_header(ui, "BUREAUCRACY", is_bureau, &gs, PhaseKind::Bureaucracy);
             theme::neon_frame().show(ui, |ui| {
                 player_summary(ui, &gs, my_id);
             });
@@ -248,20 +258,133 @@ pub(super) fn top_panel_contents(
     });
 }
 
-fn phase_col_header(ui: &mut Ui, number: &str, label: &str, active: bool) {
+#[derive(Clone, Copy, PartialEq)]
+enum PhaseKind {
+    DetermineOrder,
+    Auction,
+    BuyResources,
+    BuildCities,
+    Bureaucracy,
+}
+
+fn phase_col_header(ui: &mut Ui, label: &str, active: bool, gs: &GameStateView, kind: PhaseKind) {
     let color = if active {
         theme::NEON_AMBER
     } else {
         theme::TEXT_DIM
     };
-    ui.label(
-        RichText::new(format!("{number}. {label}"))
-            .color(color)
-            .small()
-            .monospace()
-            .strong(),
-    );
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(label)
+                .color(color)
+                .small()
+                .monospace()
+                .strong(),
+        );
+        if kind != PhaseKind::DetermineOrder {
+            ui.add_space(4.0);
+            phase_turn_dots(ui, gs, kind);
+        }
+    });
     ui.add_space(2.0);
+}
+
+fn phase_turn_dots(ui: &mut Ui, gs: &GameStateView, kind: PhaseKind) {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Dp {
+        Auction,
+        Resource,
+        Build,
+        Bureaucracy,
+    }
+
+    let phase_idx = |d: Dp| -> u8 {
+        match d {
+            Dp::Auction => 0,
+            Dp::Resource => 1,
+            Dp::Build => 2,
+            Dp::Bureaucracy => 3,
+        }
+    };
+
+    let current_dp = match &gs.phase {
+        Phase::Auction { .. } | Phase::DiscardPlant { .. } => Some(Dp::Auction),
+        Phase::BuyResources { .. } | Phase::DiscardResource { .. } => Some(Dp::Resource),
+        Phase::BuildCities { .. } => Some(Dp::Build),
+        Phase::Bureaucracy { .. } | Phase::PowerCitiesFuel { .. } => Some(Dp::Bureaucracy),
+        _ => None,
+    };
+
+    let dp = match kind {
+        PhaseKind::Auction => Dp::Auction,
+        PhaseKind::BuyResources => Dp::Resource,
+        PhaseKind::BuildCities => Dp::Build,
+        PhaseKind::Bureaucracy => Dp::Bureaucracy,
+        PhaseKind::DetermineOrder => return,
+    };
+
+    let is_current = current_dp == Some(dp);
+    let is_past = current_dp.is_some_and(|cd| phase_idx(dp) < phase_idx(cd));
+
+    // Auction runs in forward order; all other phases run in reverse (fewest cities acts first)
+    let player_ids: Vec<PlayerId> = if dp == Dp::Auction {
+        gs.player_order.clone()
+    } else {
+        gs.player_order.iter().rev().cloned().collect()
+    };
+
+    let phase_active: Option<PlayerId> = if !is_current {
+        None
+    } else {
+        match &gs.phase {
+            Phase::Auction {
+                current_bidder_idx, ..
+            } => gs.player_order.get(*current_bidder_idx).copied(),
+            Phase::BuyResources { remaining } | Phase::BuildCities { remaining } => {
+                remaining.first().copied()
+            }
+            _ => None,
+        }
+    };
+
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        for pid in &player_ids {
+            if let Some(p) = gs.player(*pid) {
+                let base = player_color_to_egui(p.color);
+                let is_active = phase_active == Some(*pid);
+                let is_completed = is_current
+                    && match &gs.phase {
+                        Phase::Auction { bought, passed, .. } => {
+                            bought.contains(pid) || passed.contains(pid)
+                        }
+                        Phase::BuyResources { remaining }
+                        | Phase::BuildCities { remaining }
+                        | Phase::Bureaucracy { remaining } => !remaining.contains(pid),
+                        _ => false,
+                    };
+                let dimmed = is_past || is_completed;
+
+                let size = egui::Vec2::splat(12.0);
+                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                if ui.is_rect_visible(rect) {
+                    let painter = ui.painter();
+                    if is_active {
+                        painter.rect_filled(rect, 2.0, dim_color(base));
+                        painter.rect_stroke(
+                            rect,
+                            2.0,
+                            egui::Stroke::new(2.0, base),
+                            egui::StrokeKind::Outside,
+                        );
+                    } else {
+                        let fill = if dimmed { dim_color(base) } else { base };
+                        painter.rect_filled(rect, 2.0, fill);
+                    }
+                }
+            }
+        }
+    });
 }
 
 fn city_count_list(ui: &mut Ui, gs: &GameStateView) {
@@ -337,7 +460,7 @@ fn plant_tooltip(ui: &mut Ui, plant: &powergrid_core::types::PowerPlant) {
 
 // ── Step/replenish table ───────────────────────────────────────────────────────
 
-fn replenish_rates(step: u8, n: usize) -> (u8, u8, u8, u8) {
+pub(super) fn replenish_rates(step: u8, n: usize) -> (u8, u8, u8, u8) {
     match step {
         1 => match n {
             2 => (3, 2, 1, 1),
@@ -363,7 +486,7 @@ fn replenish_rates(step: u8, n: usize) -> (u8, u8, u8, u8) {
     }
 }
 
-fn step_replenish_columns(ui: &mut Ui, current_step: u8, n_players: usize) {
+pub(super) fn step_replenish_columns(ui: &mut Ui, current_step: u8, n_players: usize) {
     let coal_color = theme::RES_COAL;
     let oil_color = theme::RES_OIL;
     let gas_color = theme::RES_GAS;
@@ -782,4 +905,73 @@ pub(super) fn city_history_graph(
             }
         }
     }
+}
+
+// ── City payout table (used by the CITIES popup window in mod.rs) ──────────────
+
+pub(super) fn city_payout_table(ui: &mut Ui, gs: &GameStateView) {
+    use crate::state::player_color_to_egui;
+
+    // Compute effective powerable cities per player.
+    let highlights: Vec<(u8, egui::Color32)> = gs
+        .players
+        .iter()
+        .map(|p| {
+            let (_, max_powered, _) = p.optimal_firing_subset();
+            let effective = max_powered.min(p.city_count() as u8);
+            (effective, player_color_to_egui(p.color))
+        })
+        .collect();
+
+    // Render two columns side-by-side (rows 0-9 left, 10-18 right).
+    const MAX_ROW: u8 = 18;
+    const SPLIT: u8 = 9;
+
+    let render_col = |ui: &mut Ui, start: u8, end: u8| {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 1.0;
+            ui.label(
+                RichText::new("  C  $")
+                    .color(theme::NEON_CYAN)
+                    .monospace()
+                    .small(),
+            );
+            for c in start..=end {
+                let income = income_for(c);
+                let row_colors: Vec<egui::Color32> = highlights
+                    .iter()
+                    .filter(|(eff, _)| *eff == c)
+                    .map(|(_, col)| *col)
+                    .collect();
+
+                let text_color = if row_colors.is_empty() {
+                    theme::TEXT_DIM
+                } else {
+                    row_colors[0]
+                };
+
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    ui.label(
+                        RichText::new(format!("{c:>3}{income:>4}"))
+                            .color(text_color)
+                            .monospace()
+                            .small(),
+                    );
+                    for &col in &row_colors {
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(5.0, 5.0), egui::Sense::hover());
+                        ui.painter().circle_filled(rect.center(), 2.5, col);
+                    }
+                });
+            }
+        });
+    };
+
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        render_col(ui, 0, SPLIT);
+        ui.add(egui::Separator::default().vertical());
+        render_col(ui, SPLIT + 1, MAX_ROW);
+    });
 }

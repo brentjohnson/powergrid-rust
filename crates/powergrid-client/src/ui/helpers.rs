@@ -16,40 +16,6 @@ pub(super) fn section_header(ui: &mut Ui, label: &str) {
     );
 }
 
-pub(super) fn vertical_labeled_section<R>(
-    ui: &mut Ui,
-    label: &str,
-    add_contents: impl FnOnce(&mut Ui) -> R,
-) -> R {
-    let font = egui::FontId::monospace(10.0);
-    let color = theme::NEON_CYAN_DIM;
-    let galley = ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font, color));
-    let line_h = galley.size().y;
-    let text_len = galley.size().x;
-    let gutter_w = line_h + 4.0;
-
-    ui.horizontal_top(|ui| {
-        let gutter_top = ui.cursor().min;
-        ui.add_space(gutter_w);
-
-        let frame_inner = theme::neon_frame().show(ui, add_contents);
-        let frame_h = frame_inner.response.rect.height();
-
-        // Rotated -90°: galley's local x-axis points screen-upward, so the text
-        // baseline runs bottom-to-top. Center the label against the frame's height.
-        let pos = egui::pos2(
-            gutter_top.x + gutter_w / 2.0 - line_h / 2.0,
-            gutter_top.y + frame_h / 2.0 + text_len / 2.0,
-        );
-        let shape = egui::epaint::TextShape::new(pos, galley, color)
-            .with_angle(-std::f32::consts::FRAC_PI_2);
-        ui.painter().add(shape);
-
-        frame_inner.inner
-    })
-    .inner
-}
-
 pub(super) fn neon_button(label: &str, color: Color32) -> egui::Button<'static> {
     egui::Button::new(RichText::new(label).color(color).monospace())
         .fill(theme::BG_WIDGET)

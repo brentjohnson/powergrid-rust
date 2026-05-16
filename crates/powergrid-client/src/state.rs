@@ -18,6 +18,26 @@ use std::{
 /// A snapshot of every player's city count at the end of a round.
 pub type CitySnapshot = Vec<(PlayerId, usize)>;
 
+/// Which tab is selected in the bottom-right info panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BottomTab {
+    EventLog,
+    CityGraph,
+    Replenish,
+    Payout,
+}
+
+impl BottomTab {
+    pub fn label(self) -> &'static str {
+        match self {
+            BottomTab::EventLog => "EVENTS",
+            BottomTab::CityGraph => "CITIES",
+            BottomTab::Replenish => "REPLENISH",
+            BottomTab::Payout => "PAYOUT",
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // AppState resource
 // ---------------------------------------------------------------------------
@@ -120,8 +140,9 @@ pub struct AppState {
 
     // ESC menu overlay
     pub menu_open: bool,
-    // City history graph overlay (Space)
-    pub city_graph_open: bool,
+    // Bottom-right info panel (Space toggles)
+    pub bottom_panel_open: bool,
+    pub bottom_panel_tab: BottomTab,
 
     // Window mode (kept in sync with the actual viewport)
     pub fullscreen: bool,
@@ -223,7 +244,8 @@ impl AppState {
             last_recorded_round: 0,
             room_list_last_refresh: f64::NEG_INFINITY,
             menu_open: false,
-            city_graph_open: false,
+            bottom_panel_open: false,
+            bottom_panel_tab: BottomTab::EventLog,
             fullscreen,
             no_preferences: cli.no_preferences,
             local_name: "You".to_string(),
