@@ -502,26 +502,6 @@ pub(super) fn step_replenish_columns(ui: &mut Ui, current_step: u8, n_players: u
             } else {
                 theme::TEXT_DIM
             };
-            let c_col = if active {
-                coal_color
-            } else {
-                dim_color(coal_color)
-            };
-            let o_col = if active {
-                oil_color
-            } else {
-                dim_color(oil_color)
-            };
-            let g_col = if active {
-                gas_color
-            } else {
-                dim_color(gas_color)
-            };
-            let u_col = if active {
-                uran_color
-            } else {
-                dim_color(uran_color)
-            };
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.label(
@@ -532,25 +512,25 @@ pub(super) fn step_replenish_columns(ui: &mut Ui, current_step: u8, n_players: u
                 );
                 ui.label(
                     RichText::new(format!("{coal}"))
-                        .color(c_col)
+                        .color(coal_color)
                         .monospace()
                         .small(),
                 );
                 ui.label(
                     RichText::new(format!("{gas}"))
-                        .color(g_col)
+                        .color(gas_color)
                         .monospace()
                         .small(),
                 );
                 ui.label(
                     RichText::new(format!("{oil}"))
-                        .color(o_col)
+                        .color(oil_color)
                         .monospace()
                         .small(),
                 );
                 ui.label(
                     RichText::new(format!("{uran}"))
-                        .color(u_col)
+                        .color(uran_color)
                         .monospace()
                         .small(),
                 );
