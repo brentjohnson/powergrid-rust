@@ -27,6 +27,9 @@ pub struct AuctionWeights {
     pub opponent_gap_weight: f32,
     pub endgame_weight: f32,
     pub pipeline_weight: f32,
+    /// Penalty per city lost when forced to discard at full capacity.
+    /// Applied as (capacity_bump - plant.cities) * weight — always ≤ 0 when rack is full.
+    pub upgrade_efficiency_weight: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -69,6 +69,11 @@ pub fn plant_score_contextual(
         score += w.pipeline_weight * (base - future_avg).max(0.0);
     }
 
+    if w.upgrade_efficiency_weight > 0.0 {
+        let bump = capacity_bump(plant, player, w) as f32;
+        score += (bump - plant.cities as f32) * w.upgrade_efficiency_weight;
+    }
+
     score
 }
 

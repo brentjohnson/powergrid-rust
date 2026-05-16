@@ -21,9 +21,10 @@ safety_buffer       = 5.0
 upgrade_margin      = 5.0   # lower = replaces plants even for small improvements (wastes money)
 min_open_score      = 15.0  # lower = buys plants more aggressively even when suboptimal
 capacity_premium    = 3.0   # higher = overbids more
-opponent_gap_weight = 0.0
-endgame_weight      = 0.0
-pipeline_weight     = 0.0
+opponent_gap_weight        = 0.0
+endgame_weight             = 0.0
+pipeline_weight            = 0.0
+upgrade_efficiency_weight  = 5.0   # mild penalty for small-gain upgrades when rack is full
 
 [easy.buy]
 fuel_reserve_multiplier = 4.0
@@ -53,9 +54,10 @@ safety_buffer       = 5.0
 upgrade_margin      = 10.0   # minimum score improvement to justify replacing a plant
 min_open_score      = 20.0   # minimum score for a plant to be worth selecting
 capacity_premium    = 2.0    # extra elektro per city of capacity gained
-opponent_gap_weight = 0.0
-endgame_weight      = 0.0
-pipeline_weight     = 0.0
+opponent_gap_weight        = 0.0
+endgame_weight             = 0.0
+pipeline_weight            = 0.0
+upgrade_efficiency_weight  = 10.0  # moderate penalty for small-gain upgrades when rack is full
 
 [normal.buy]
 fuel_reserve_multiplier = 4.0   # spend 4× plant cost on fuel reserves
@@ -88,7 +90,8 @@ capacity_premium    = 2.0
 # Non-zero weights activate opponent/endgame awareness:
 opponent_gap_weight = 3.0   # bonus per city the leading opponent is ahead of us
 endgame_weight      = 5.0   # bonus proportional to how close we are to game end
-pipeline_weight     = 2.0   # bonus when this plant is better than the upcoming deck
+pipeline_weight            = 2.0   # bonus when this plant is better than the upcoming deck
+upgrade_efficiency_weight  = 15.0  # strong penalty for small-gain upgrades when rack is full
 
 [hard.buy]
 fuel_reserve_multiplier = 4.0
