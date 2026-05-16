@@ -527,37 +527,48 @@ impl AppState {
     // -----------------------------------------------------------------------
 
     pub fn toggle_build_city(&mut self, city_id: String) {
-        let Some(my_id) = self.my_id else { return };
-
-        let active = self
-            .game_state
-            .as_ref()
-            .zip(self.map.as_deref())
-            .map(|(gs, map)| gs.is_city_active(&city_id, map))
-            .unwrap_or(false);
-        if !active {
-            return;
-        }
-
-        if self
-            .map
-            .as_deref()
-            .and_then(|m| m.cities.get(&city_id))
-            .map(|city| city.owners.contains(&my_id) || city.owners.len() >= 3)
-            .unwrap_or(false)
-        {
-            return;
-        }
-
+        // Deselect unconditionally so the user can always undo a selection.
         if let Some(pos) = self
             .selected_build_cities
             .iter()
             .position(|c| c == &city_id)
         {
             self.selected_build_cities.remove(pos);
-        } else {
-            self.selected_build_cities.push(city_id);
+            self.refresh_build_preview();
+            return;
         }
+
+        let Some(my_id) = self.my_id else { return };
+        let Some(gs) = self.game_state.as_ref() else {
+            return;
+        };
+        let Some(map) = self.map.as_deref() else {
+            return;
+        };
+
+        if !gs.is_city_active(&city_id, map) {
+            return;
+        }
+
+        let Some(city) = map.cities.get(&city_id) else {
+            return;
+        };
+
+        if city.owners.contains(&my_id) || city.owners.len() >= gs.step as usize {
+            return;
+        }
+
+        let owned = gs
+            .player(my_id)
+            .map(|p| p.cities.clone())
+            .unwrap_or_default();
+        let mut combined: Vec<String> = owned;
+        combined.extend(self.selected_build_cities.iter().cloned());
+        if map.connection_cost_to(&combined, &city_id).is_none() {
+            return;
+        }
+
+        self.selected_build_cities.push(city_id);
         self.refresh_build_preview();
     }
 
