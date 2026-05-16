@@ -16,6 +16,11 @@ use crate::{
 
 use super::helpers::{dim_color, send, vertical_labeled_section};
 use super::phase_tracker::phase_tracker;
+use super::phases::{
+    auction_panel, build_cities_panel, bureaucracy_panel, buy_resources_panel, discard_plant_panel,
+    discard_resource_panel, power_cities_fuel_panel,
+};
+use super::player_summary::player_summary;
 
 pub(super) fn top_panel_contents(
     ui: &mut Ui,
@@ -28,8 +33,9 @@ pub(super) fn top_panel_contents(
     let room = room.as_deref();
     let my_buy_turn = matches!(&gs.phase, Phase::BuyResources { remaining }
         if remaining.first() == Some(&my_id));
-    ui.horizontal(|ui| {
-        // Round / Step header
+
+    ui.horizontal_top(|ui| {
+        // ── Left: Round/Step + Phase tracker ──────────────────────────────
         ui.vertical(|ui| {
             theme::neon_frame_bright().show(ui, |ui| {
                 ui.label(
@@ -40,108 +46,183 @@ pub(super) fn top_panel_contents(
                 ui.label(RichText::new("STEP").color(theme::NEON_CYAN).monospace());
                 step_replenish_columns(ui, gs.step, gs.players.len());
             });
+            ui.add_space(4.0);
+            phase_tracker(ui, &gs);
         });
 
         ui.add_space(8.0);
 
-        // Phase tracker
-        phase_tracker(ui, &gs);
-
-        ui.add_space(8.0);
-
-        // Plant market
-        vertical_labeled_section(ui, "PLANT MARKET", |ui| {
-            ui.horizontal_top(|ui| {
-                if gs.step >= 3 {
-                    // Step 3: two columns of 3, all plants purchasable, no labels.
-                    let mid = gs.market.actual.len().div_ceil(2);
-                    let (left, right) = gs.market.actual.split_at(mid);
-                    ui.vertical(|ui| {
-                        plant_column(ui, left, channels, &gs.phase, my_id, &gs.player_order, room);
-                    });
-                    ui.add_space(8.0);
-                    ui.vertical(|ui| {
-                        plant_column(
-                            ui,
-                            right,
-                            channels,
-                            &gs.phase,
-                            my_id,
-                            &gs.player_order,
-                            room,
-                        );
-                    });
-                } else {
-                    // Steps 1 & 2: ACTUAL and FUTURE columns.
-                    ui.vertical(|ui| {
-                        ui.label(
-                            RichText::new("ACTUAL")
-                                .color(theme::TEXT_DIM)
-                                .small()
-                                .monospace(),
-                        );
-                        plant_column(
-                            ui,
-                            &gs.market.actual,
-                            channels,
-                            &gs.phase,
-                            my_id,
-                            &gs.player_order,
-                            room,
-                        );
-                    });
-                    ui.add_space(8.0);
-                    ui.vertical(|ui| {
-                        ui.label(
-                            RichText::new("FUTURE")
-                                .color(theme::TEXT_DIM)
-                                .small()
-                                .monospace(),
-                        );
-                        plant_column(
-                            ui,
-                            &gs.market.future,
-                            channels,
-                            &gs.phase,
-                            my_id,
-                            &gs.player_order,
-                            room,
-                        );
-                    });
-                }
+        // ── Plant market column + Auction/DiscardPlant below ──────────────
+        ui.vertical(|ui| {
+            vertical_labeled_section(ui, "PLANT MARKET", |ui| {
+                ui.horizontal_top(|ui| {
+                    if gs.step >= 3 {
+                        let mid = gs.market.actual.len().div_ceil(2);
+                        let (left, right) = gs.market.actual.split_at(mid);
+                        ui.vertical(|ui| {
+                            plant_column(
+                                ui,
+                                left,
+                                channels,
+                                &gs.phase,
+                                my_id,
+                                &gs.player_order,
+                                room,
+                            );
+                        });
+                        ui.add_space(8.0);
+                        ui.vertical(|ui| {
+                            plant_column(
+                                ui,
+                                right,
+                                channels,
+                                &gs.phase,
+                                my_id,
+                                &gs.player_order,
+                                room,
+                            );
+                        });
+                    } else {
+                        ui.vertical(|ui| {
+                            ui.label(
+                                RichText::new("ACTUAL")
+                                    .color(theme::TEXT_DIM)
+                                    .small()
+                                    .monospace(),
+                            );
+                            plant_column(
+                                ui,
+                                &gs.market.actual,
+                                channels,
+                                &gs.phase,
+                                my_id,
+                                &gs.player_order,
+                                room,
+                            );
+                        });
+                        ui.add_space(8.0);
+                        ui.vertical(|ui| {
+                            ui.label(
+                                RichText::new("FUTURE")
+                                    .color(theme::TEXT_DIM)
+                                    .small()
+                                    .monospace(),
+                            );
+                            plant_column(
+                                ui,
+                                &gs.market.future,
+                                channels,
+                                &gs.phase,
+                                my_id,
+                                &gs.player_order,
+                                room,
+                            );
+                        });
+                    }
+                });
             });
+
+            // Phase panel docked below plant market
+            match &gs.phase {
+                Phase::Auction { .. } => {
+                    ui.add_space(4.0);
+                    theme::neon_frame().show(ui, |ui| {
+                        auction_panel(ui, state, channels, &gs, my_id);
+                    });
+                }
+                Phase::DiscardPlant { .. } => {
+                    ui.add_space(4.0);
+                    theme::neon_frame().show(ui, |ui| {
+                        discard_plant_panel(ui, state, channels, &gs, my_id);
+                    });
+                }
+                _ => {}
+            }
         });
 
         ui.add_space(8.0);
 
-        // Resource market — clickable during the player's own BuyResources turn
-        let cart_snapshot = state.resource_cart.clone();
-        // Collect peer carts (BuyResources hints from other players)
-        let peer_carts: Vec<(Color32, HashMap<Resource, u8>)> = state
-            .peer_hints
-            .hints
-            .iter()
-            .filter_map(|(pid, hint)| {
-                if let HintPayload::Cart { items } = hint {
-                    let color = gs
-                        .player(*pid)
-                        .map(|p| player_color_to_egui(p.color))
-                        .unwrap_or(Color32::GRAY);
-                    let cart: HashMap<Resource, u8> = items.iter().cloned().collect();
-                    Some((color, cart))
-                } else {
-                    None
+        // ── Resource market column + BuyResources/DiscardResource below ───
+        ui.vertical(|ui| {
+            let cart_snapshot = state.resource_cart.clone();
+            let peer_carts: Vec<(Color32, HashMap<Resource, u8>)> = state
+                .peer_hints
+                .hints
+                .iter()
+                .filter_map(|(pid, hint)| {
+                    if let HintPayload::Cart { items } = hint {
+                        let color = gs
+                            .player(*pid)
+                            .map(|p| player_color_to_egui(p.color))
+                            .unwrap_or(Color32::GRAY);
+                        let cart: HashMap<Resource, u8> = items.iter().cloned().collect();
+                        Some((color, cart))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let click = vertical_labeled_section(ui, "RESOURCE MARKET", |ui| {
+                resource_market_grid(ui, &gs.resources, &cart_snapshot, &peer_carts, my_buy_turn)
+            });
+            if let Some((resource, amount)) = click {
+                state.set_cart_amount(resource, amount);
+            }
+
+            // Phase panel docked below resource market
+            match &gs.phase {
+                Phase::BuyResources { .. } => {
+                    ui.add_space(4.0);
+                    theme::neon_frame().show(ui, |ui| {
+                        buy_resources_panel(ui, state, channels, &gs, my_id);
+                    });
                 }
-            })
-            .collect();
-        let click = vertical_labeled_section(ui, "RESOURCE MARKET", |ui| {
-            resource_market_grid(ui, &gs.resources, &cart_snapshot, &peer_carts, my_buy_turn)
+                Phase::DiscardResource { .. } => {
+                    ui.add_space(4.0);
+                    theme::neon_frame().show(ui, |ui| {
+                        discard_resource_panel(ui, state, channels, &gs, my_id);
+                    });
+                }
+                _ => {}
+            }
         });
-        if let Some((resource, amount)) = click {
-            state.set_cart_amount(resource, amount);
-        }
+
+        ui.add_space(8.0);
+
+        // ── Player summary column + Bureaucracy/PowerCitiesFuel/BuildCities below ──
+        ui.vertical(|ui| {
+            vertical_labeled_section(ui, "ME", |ui| {
+                player_summary(ui, &gs, my_id);
+            });
+
+            // Phase panel docked below player summary
+            match &gs.phase {
+                Phase::Bureaucracy { .. } => {
+                    ui.add_space(4.0);
+                    theme::neon_frame().show(ui, |ui| {
+                        bureaucracy_panel(ui, state, channels, &gs, my_id);
+                    });
+                }
+                Phase::PowerCitiesFuel { .. } => {
+                    ui.add_space(4.0);
+                    theme::neon_frame().show(ui, |ui| {
+                        power_cities_fuel_panel(ui, state, channels, &gs, my_id);
+                    });
+                }
+                Phase::BuildCities { .. } => {
+                    ui.add_space(4.0);
+                    theme::neon_frame().show(ui, |ui| {
+                        build_cities_panel(ui, state, channels, &gs, my_id);
+                    });
+                }
+                _ => {}
+            }
+        });
     });
 }
+
+// ── Plant market helpers ───────────────────────────────────────────────────────
 
 fn plant_column(
     ui: &mut Ui,
@@ -185,6 +266,8 @@ fn plant_tooltip(ui: &mut Ui, plant: &powergrid_core::types::PowerPlant) {
         .color(theme::TEXT_BRIGHT),
     );
 }
+
+// ── Step/replenish table ───────────────────────────────────────────────────────
 
 fn replenish_rates(step: u8, n: usize) -> (u8, u8, u8, u8) {
     match step {
@@ -285,13 +368,8 @@ fn step_replenish_columns(ui: &mut Ui, current_step: u8, n_players: usize) {
     });
 }
 
-/// Render the resource market grid.
-///
-/// When `clickable` is true (the player's BuyResources turn), clicking a square sets the
-/// cart for that resource to "buy all from cheapest up to and including this square". Squares
-/// that are currently in the cart are drawn as an outline instead of a filled box.
-///
-/// Returns `Some((resource, amount))` if the player clicked a square.
+// ── Resource market grid ───────────────────────────────────────────────────────
+
 fn resource_market_grid(
     ui: &mut Ui,
     market: &ResourceMarket,
@@ -314,7 +392,6 @@ fn resource_market_grid(
         (Resource::Uranium, "URAN", theme::RES_URANIUM),
     ];
 
-    // For each resource, compute (price, group_size) pairs ordered cheapest → most expensive.
     let resource_groups: Vec<Vec<(u8, usize)>> = rows
         .iter()
         .map(|(r, _, _)| {
@@ -329,7 +406,6 @@ fn resource_market_grid(
         })
         .collect();
 
-    // All distinct prices across all resources, sorted ascending (cheapest first = leftmost).
     let mut all_prices: Vec<u8> = resource_groups
         .iter()
         .flat_map(|groups| groups.iter().map(|&(p, _)| p))
@@ -337,7 +413,6 @@ fn resource_market_grid(
     all_prices.sort_unstable();
     all_prices.dedup();
 
-    // Column width for price P = max group size at P across all resources.
     let col_widths: Vec<usize> = all_prices
         .iter()
         .map(|&p| {
@@ -349,7 +424,6 @@ fn resource_market_grid(
         })
         .collect();
 
-    // X-offset (from ox + LABEL_W) of the first cell in each column.
     let mut col_x: Vec<f32> = Vec::with_capacity(all_prices.len());
     let mut x = 0.0f32;
     for (i, &w) in col_widths.iter().enumerate() {
@@ -381,7 +455,6 @@ fn resource_market_grid(
     let ox = rect.min.x;
     let oy = rect.min.y;
 
-    // ── Price header ──
     for (col_idx, (&price, &w)) in all_prices.iter().zip(col_widths.iter()).enumerate() {
         let gx = ox + LABEL_W + col_x[col_idx];
         let col_w = w as f32 * (SQ + INNER_GAP) - INNER_GAP;
@@ -401,11 +474,6 @@ fn resource_market_grid(
         None
     };
 
-    // ── Resource rows ──
-    // Index 0 in price_table = scarcest (most expensive). `count` units occupy indices 0..count.
-    // Display pos 0 = leftmost = cheapest; array_idx = total - 1 - display_pos.
-    // Slot filled when array_idx < count.
-    // Cart selects the cheapest `cart_amount` filled slots starting at display_pos = total - count.
     for (row_idx, ((resource, label, color), rgroups)) in
         rows.iter().zip(resource_groups.iter()).enumerate()
     {
@@ -481,6 +549,8 @@ fn resource_market_grid(
     click_result
 }
 
+// ── City history graph (used by the CITIES popup window in mod.rs) ─────────────
+
 pub(super) fn city_history_graph(
     ui: &mut Ui,
     history: &[CitySnapshot],
@@ -507,7 +577,6 @@ pub(super) fn city_history_graph(
     let ox = rect.min.x + PAD_L;
     let oy = rect.min.y;
 
-    // Determine y range — ensure indicator lines are always visible
     let max_cities = history
         .iter()
         .flat_map(|snap| snap.iter().map(|(_, c)| *c))
@@ -518,7 +587,6 @@ pub(super) fn city_history_graph(
         .max(1);
 
     let rounds = history.len();
-    // Include a projected point slot beyond the historical rounds
     let total_points = rounds + 1;
     let x_for = |idx: usize| -> f32 {
         if total_points <= 1 {
@@ -528,7 +596,6 @@ pub(super) fn city_history_graph(
         }
     };
 
-    // Draw axes
     painter.line_segment(
         [egui::pos2(ox, oy), egui::pos2(ox, oy + H)],
         Stroke::new(1.0, theme::TEXT_DIM),
@@ -538,7 +605,6 @@ pub(super) fn city_history_graph(
         Stroke::new(1.0, theme::TEXT_DIM),
     );
 
-    // Y-axis label (max value)
     painter.text(
         egui::pos2(ox - 2.0, oy),
         Align2::RIGHT_TOP,
@@ -554,7 +620,6 @@ pub(super) fn city_history_graph(
         theme::TEXT_DIM,
     );
 
-    // X-axis round labels (first and last)
     painter.text(
         egui::pos2(ox, oy + H + PAD_B),
         Align2::LEFT_BOTTOM,
@@ -572,7 +637,6 @@ pub(super) fn city_history_graph(
         );
     }
 
-    // Draw Step 2 indicator line at 7 cities
     let step2_y = oy + H - (STEP2_CITIES as f32 / max_cities as f32) * H;
     let step2_color = theme::city_graph_step2();
     let dash_len = 4.0_f32;
@@ -594,7 +658,6 @@ pub(super) fn city_history_graph(
         step2_color,
     );
 
-    // Draw end game indicator line
     let end_y = oy + H - (end_game_cities as f32 / max_cities as f32) * H;
     let end_color = theme::city_graph_end();
     let mut x = ox;
@@ -614,7 +677,6 @@ pub(super) fn city_history_graph(
         end_color,
     );
 
-    // Draw one line per player
     for (player_id, player_color) in players_info {
         let color = player_color_to_egui(*player_color);
 
@@ -632,21 +694,18 @@ pub(super) fn city_history_graph(
             })
             .collect();
 
-        // Draw line segments
         for pair in points.windows(2) {
             painter.line_segment([pair[0], pair[1]], Stroke::new(2.5, color));
         }
 
-        // Draw dots
         for pt in &points {
             painter.circle_filled(*pt, DOT_R, color);
         }
 
-        // Draw projected next-round point (dimmer) using live city count
         if let Some(&last_pt) = points.last() {
             if let Some(player) = gs.players.iter().find(|p| p.id == *player_id) {
                 let proj_count = player.city_count();
-                let proj_x = x_for(rounds); // one slot beyond historical points
+                let proj_x = x_for(rounds);
                 let proj_y = oy + H - (proj_count as f32 / max_cities as f32) * H;
                 let proj_pt = egui::pos2(proj_x, proj_y);
                 let dim = dim_color(color);

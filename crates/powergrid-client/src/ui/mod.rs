@@ -1,4 +1,4 @@
-mod action_panel;
+mod event_log;
 mod helpers;
 mod left_panel;
 mod lobby;
@@ -6,8 +6,9 @@ mod local_setup;
 mod login;
 mod main_menu;
 mod phase_tracker;
+mod phases;
+mod player_summary;
 mod register;
-mod right_panel;
 mod room_browser;
 mod top_panel;
 
@@ -185,11 +186,28 @@ fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: Option<&WsCh
         return;
     }
 
+    // GameOver overlay — rendered last so it floats above everything
+    if let Phase::GameOver { winner } = gs.phase {
+        phases::game_over_overlay(ctx, &gs, winner);
+    }
+
     egui::TopBottomPanel::top("top_panel")
-        .exact_height(180.0)
+        .min_height(180.0)
         .frame(theme::panel_frame(6))
         .show(ctx, |ui| {
-            top_panel::top_panel_contents(ui, gs.clone(), state, channels, my_id);
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    top_panel::top_panel_contents(ui, gs.clone(), state, channels, my_id);
+                });
+        });
+
+    egui::TopBottomPanel::bottom("event_log")
+        .exact_height(120.0)
+        .frame(theme::panel_frame(4))
+        .show(ctx, |ui| {
+            ui.add_space(2.0);
+            event_log::event_log_contents(ui, &gs);
         });
 
     egui::SidePanel::left("player_panel")
@@ -201,24 +219,6 @@ fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: Option<&WsCh
                 ui.add_space(6.0);
                 left_panel::left_panel_contents(ui, &gs, my_id);
             });
-        });
-
-    egui::SidePanel::right("info_panel")
-        .resizable(false)
-        .exact_width(400.0)
-        .frame(theme::panel_frame(0))
-        .show(ctx, |ui| {
-            let half_height = ui.available_height() / 2.0;
-
-            egui::ScrollArea::vertical()
-                .max_height(half_height)
-                .show(ui, |ui| {
-                    ui.set_min_height(half_height);
-                    ui.add_space(6.0);
-                    right_panel::action_console_contents(ui, state, channels, &gs, my_id);
-                });
-
-            right_panel::event_log_contents(ui, &gs);
         });
 
     egui::CentralPanel::default()
