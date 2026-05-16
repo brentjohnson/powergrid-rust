@@ -3,7 +3,7 @@ use powergrid_bot_strategy::{default_registry, Bot};
 use powergrid_core::{
     actions::Action,
     map::default_map,
-    rules::apply_action,
+    rules::{apply_action, effective_min_bid},
     state::GameState,
     types::{
         connection_cost, BotDifficulty, Phase, PlantKind, PlayerColor, PlayerId, PlayerResources,
@@ -19,7 +19,7 @@ use uuid::Uuid;
 // Observation / action-space constants — must stay in sync with constants.py
 // ---------------------------------------------------------------------------
 
-const OBS_SIZE: usize = 405;
+const OBS_SIZE: usize = 409;
 const N_ACTIONS: usize = 136;
 
 const CITY_IDS: [&str; 42] = [
@@ -229,7 +229,7 @@ fn compute_legal_move_info(state: &GameState, actor_id: PlayerId) -> LegalMoveIn
                 }
                 // Only actual-market plants can be selected; future market is read-only.
                 for (slot, plant) in state.market.actual.iter().enumerate() {
-                    if player.money >= plant.number as u32 {
+                    if player.money >= effective_min_bid(&state.market, plant.number) {
                         info.select_plant_slots.push(slot);
                     }
                 }
@@ -460,21 +460,32 @@ fn build_observation(state: &GameState, actor_id: PlayerId) -> Vec<f32> {
     }
     idx += 6;
 
-    // 9–10. Plant market actual + future (4 × 5 each = 20 each)
-    for plants_section in [
-        state.market.actual.as_slice(),
-        state.market.future.as_slice(),
-    ] {
-        for (i, plant) in plants_section.iter().take(4).enumerate() {
-            let base = idx + i * 5;
-            obs[base] = plant.number as f32 / 60.0;
-            obs[base + 1] = plant_kind_id(plant.kind) / 6.0;
-            obs[base + 2] = plant.cost as f32 / 5.0;
-            obs[base + 3] = plant.cities as f32 / 8.0;
-            obs[base + 4] = 1.0;
-        }
-        idx += 20;
+    // 9. Plant market actual (4 × 6 = 24): number, kind, cost, cities, present, discount
+    for (i, plant) in state.market.actual.iter().take(4).enumerate() {
+        let base = idx + i * 6;
+        obs[base] = plant.number as f32 / 60.0;
+        obs[base + 1] = plant_kind_id(plant.kind) / 6.0;
+        obs[base + 2] = plant.cost as f32 / 5.0;
+        obs[base + 3] = plant.cities as f32 / 8.0;
+        obs[base + 4] = 1.0;
+        obs[base + 5] = if state.market.discount_token == Some(plant.number) {
+            1.0
+        } else {
+            0.0
+        };
     }
+    idx += 24;
+
+    // 10. Plant market future (4 × 5 = 20): number, kind, cost, cities, present
+    for (i, plant) in state.market.future.iter().take(4).enumerate() {
+        let base = idx + i * 5;
+        obs[base] = plant.number as f32 / 60.0;
+        obs[base + 1] = plant_kind_id(plant.kind) / 6.0;
+        obs[base + 2] = plant.cost as f32 / 5.0;
+        obs[base + 3] = plant.cities as f32 / 8.0;
+        obs[base + 4] = 1.0;
+    }
+    idx += 20;
 
     // 11. Market meta (3)
     obs[idx] = if state.market.step3_triggered {

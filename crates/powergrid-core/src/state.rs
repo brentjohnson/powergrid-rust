@@ -62,6 +62,8 @@ pub struct PlantMarketView {
     pub deck_remaining: usize,
     pub step3_triggered: bool,
     pub in_step3: bool,
+    #[serde(default)]
+    pub discount_token: Option<u8>,
 }
 
 /// A wire-safe projection of `GameState`. Strips hidden information:
@@ -125,6 +127,7 @@ impl GameStateView {
                 below_step3: None,
                 step3_triggered: self.market.step3_triggered,
                 in_step3: self.market.in_step3,
+                discount_token: self.market.discount_token,
             },
             resources: self.resources,
             map: game_map,
@@ -222,6 +225,7 @@ impl GameState {
                 deck_remaining: self.market.deck.len(),
                 step3_triggered: self.market.step3_triggered,
                 in_step3: self.market.in_step3,
+                discount_token: self.market.discount_token,
             },
             resources: self.resources.clone(),
             city_owners: self

@@ -320,16 +320,28 @@ def encode_observation(state: dict, actor_id: str) -> np.ndarray:
             obs[idx + i] = 1.0
     idx += 6
 
-    # 9–10. Plant market actual + future (4 × 5 each = 20 each)
-    for section, plants in enumerate([state["market"]["actual"], state["market"]["future"]]):
-        for i, plant in enumerate(plants[:4]):
-            base = idx + i * 5
-            obs[base]   = plant["number"] / 60
-            obs[base+1] = KIND_IDS.get(plant["kind"], 0) / 6
-            obs[base+2] = plant["cost"] / 5
-            obs[base+3] = plant["cities"] / 8
-            obs[base+4] = 1.0
-        idx += 20
+    # 9. Plant market actual (4 × 6 = 24): number, kind, cost, cities, present, discount
+    mkt = state["market"]
+    discount_tok = mkt.get("discount_token")
+    for i, plant in enumerate(mkt.get("actual", [])[:4]):
+        base = idx + i * 6
+        obs[base]   = plant["number"] / 60
+        obs[base+1] = KIND_IDS.get(plant["kind"], 0) / 6
+        obs[base+2] = plant["cost"] / 5
+        obs[base+3] = plant["cities"] / 8
+        obs[base+4] = 1.0
+        obs[base+5] = 1.0 if plant["number"] == discount_tok else 0.0
+    idx += 24
+
+    # 10. Plant market future (4 × 5 = 20): number, kind, cost, cities, present
+    for i, plant in enumerate(mkt.get("future", [])[:4]):
+        base = idx + i * 5
+        obs[base]   = plant["number"] / 60
+        obs[base+1] = KIND_IDS.get(plant["kind"], 0) / 6
+        obs[base+2] = plant["cost"] / 5
+        obs[base+3] = plant["cities"] / 8
+        obs[base+4] = 1.0
+    idx += 20
 
     # 11. Plant market meta (3)
     mkt = state["market"]

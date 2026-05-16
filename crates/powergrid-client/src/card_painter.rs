@@ -43,10 +43,19 @@ fn kind_label(kind: PlantKind) -> &'static str {
 /// Draw a power plant card (CARD_W × CARD_H) and return the egui Response.
 /// The response can be checked for `.clicked()` and `.hovered()`.
 pub fn draw_plant_card(ui: &mut egui::Ui, plant: &PowerPlant) -> egui::Response {
+    draw_plant_card_ex(ui, plant, false)
+}
+
+/// Like `draw_plant_card` but shows a discount badge when `discounted` is true.
+pub fn draw_plant_card_ex(
+    ui: &mut egui::Ui,
+    plant: &PowerPlant,
+    discounted: bool,
+) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(CARD_W, CARD_H), egui::Sense::click());
 
     if ui.is_rect_visible(rect) {
-        paint_card(ui, rect, plant);
+        paint_card(ui, rect, plant, discounted);
     }
 
     response
@@ -56,7 +65,7 @@ pub fn draw_plant_card(ui: &mut egui::Ui, plant: &PowerPlant) -> egui::Response 
 // Painting
 // ---------------------------------------------------------------------------
 
-fn paint_card(ui: &mut egui::Ui, rect: Rect, plant: &PowerPlant) {
+fn paint_card(ui: &mut egui::Ui, rect: Rect, plant: &PowerPlant, discounted: bool) {
     let painter = ui.painter_at(rect);
     let rounding = CornerRadius::same(3);
 
@@ -81,9 +90,15 @@ fn paint_card(ui: &mut egui::Ui, rect: Rect, plant: &PowerPlant) {
 
     let color = kind_color(plant.kind);
 
-    // Background + border
+    // Background + border (cyan double-border when discount token is on this card)
     painter.rect_filled(rect, rounding, theme::BG_WIDGET);
-    painter.rect_stroke(rect, rounding, Stroke::new(1.5, color), StrokeKind::Inside);
+    let border_color = if discounted { theme::NEON_CYAN } else { color };
+    painter.rect_stroke(
+        rect,
+        rounding,
+        Stroke::new(1.5, border_color),
+        StrokeKind::Inside,
+    );
 
     // Left number box — colored background, plant number centered
     let num_box_w = CARD_H; // square: height × height
@@ -129,4 +144,31 @@ fn paint_card(ui: &mut egui::Ui, rect: Rect, plant: &PowerPlant) {
         FontId::new(9.0, FontFamily::Monospace),
         theme::TEXT_MID,
     );
+
+    // Discount token badge — small cyan "$1" tag in the top-right corner
+    if discounted {
+        let badge_w = 18.0;
+        let badge_h = 10.0;
+        let badge_rect = Rect::from_min_size(
+            egui::pos2(rect.max.x - badge_w, rect.min.y),
+            Vec2::new(badge_w, badge_h),
+        );
+        painter.rect_filled(
+            badge_rect,
+            CornerRadius {
+                nw: 0,
+                ne: 3,
+                sw: 3,
+                se: 0,
+            },
+            theme::NEON_CYAN.linear_multiply(0.3),
+        );
+        painter.text(
+            badge_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "$1",
+            FontId::new(8.0, FontFamily::Monospace),
+            theme::NEON_CYAN,
+        );
+    }
 }

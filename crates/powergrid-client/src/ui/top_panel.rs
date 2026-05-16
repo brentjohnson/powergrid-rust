@@ -70,6 +70,7 @@ pub(super) fn top_panel_contents(
             phase_col_header(ui, "AUCTION PLANTS", is_auction, &gs, PhaseKind::Auction);
             theme::neon_frame().show(ui, |ui| {
                 ui.horizontal_top(|ui| {
+                    let discount_token = gs.market.discount_token;
                     if gs.step >= 3 {
                         let mid = gs.market.actual.len().div_ceil(2);
                         let (left, right) = gs.market.actual.split_at(mid);
@@ -82,6 +83,7 @@ pub(super) fn top_panel_contents(
                                 my_id,
                                 &gs.player_order,
                                 room,
+                                discount_token,
                             );
                         });
                         ui.add_space(8.0);
@@ -94,6 +96,7 @@ pub(super) fn top_panel_contents(
                                 my_id,
                                 &gs.player_order,
                                 room,
+                                discount_token,
                             );
                         });
                     } else {
@@ -112,6 +115,7 @@ pub(super) fn top_panel_contents(
                                 my_id,
                                 &gs.player_order,
                                 room,
+                                discount_token,
                             );
                         });
                         ui.add_space(8.0);
@@ -130,6 +134,7 @@ pub(super) fn top_panel_contents(
                                 my_id,
                                 &gs.player_order,
                                 room,
+                                None, // future market never holds the discount token
                             );
                         });
                     }
@@ -428,6 +433,7 @@ fn city_count_list(ui: &mut Ui, gs: &GameStateView) {
 
 // ── Plant market helpers ───────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn plant_column(
     ui: &mut Ui,
     plants: &[powergrid_core::types::PowerPlant],
@@ -436,6 +442,7 @@ fn plant_column(
     my_id: PlayerId,
     player_order: &[PlayerId],
     room: Option<&str>,
+    discount_token: Option<u8>,
 ) {
     let is_my_auction_turn = matches!(phase, Phase::Auction { current_bidder_idx, active_bid, .. }
         if active_bid.is_none() && player_order.get(*current_bidder_idx) == Some(&my_id));
@@ -443,7 +450,8 @@ fn plant_column(
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 2.0;
         for plant in plants {
-            let resp = card_painter::draw_plant_card(ui, plant);
+            let discounted = discount_token == Some(plant.number);
+            let resp = card_painter::draw_plant_card_ex(ui, plant, discounted);
             if is_my_auction_turn && resp.clicked() {
                 send(
                     Action::SelectPlant {
@@ -454,17 +462,22 @@ fn plant_column(
                 );
             }
             egui::Tooltip::for_enabled(&resp).show(|ui| {
-                plant_tooltip(ui, plant);
+                plant_tooltip(ui, plant, discounted);
             });
         }
     });
 }
 
-fn plant_tooltip(ui: &mut Ui, plant: &powergrid_core::types::PowerPlant) {
+fn plant_tooltip(ui: &mut Ui, plant: &powergrid_core::types::PowerPlant, discounted: bool) {
+    let min_bid_text = if discounted {
+        "  Min bid: $1 (discount token)".to_string()
+    } else {
+        format!("  Min bid: ${}", plant.number)
+    };
     ui.label(
         RichText::new(format!(
-            "#{} {:?}\nCost: {}  Cities: {}",
-            plant.number, plant.kind, plant.cost, plant.cities
+            "#{} {:?}\nCost: {}  Cities: {}{}",
+            plant.number, plant.kind, plant.cost, plant.cities, min_bid_text
         ))
         .monospace()
         .color(theme::TEXT_BRIGHT),

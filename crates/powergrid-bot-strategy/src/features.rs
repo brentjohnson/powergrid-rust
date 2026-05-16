@@ -138,14 +138,17 @@ pub fn auction_reserve(
 }
 
 /// Deterministic bid ceiling for a plant.
+/// `min_bid` is the effective minimum (1 if the discount token is on this plant,
+/// else the printed plant number).
 pub fn bid_ceiling(
     plant: &PowerPlant,
     player: &Player,
     round: u32,
     w: &AuctionWeights,
     buy: &BuyWeights,
+    min_bid: u32,
 ) -> u32 {
-    let listed = plant.number as u32;
+    let listed = min_bid;
     let reserve = auction_reserve(plant, player, w, buy);
 
     let raw_ceiling = if round == 1 {

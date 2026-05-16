@@ -1,5 +1,6 @@
 use powergrid_core::{
     actions::Action,
+    rules::effective_min_bid,
     state::GameState,
     types::{
         connection_cost, income_for, PlantKind, Player, PlayerId, PowerPlant, Resource,
@@ -128,7 +129,8 @@ fn decide_auction(
             .iter()
             .find(|p| p.number == bid.plant_number)?;
 
-        let ceiling = bid_ceiling(plant, my_player, state.round, w, buy);
+        let min_bid = effective_min_bid(&state.market, bid.plant_number);
+        let ceiling = bid_ceiling(plant, my_player, state.round, w, buy, min_bid);
         let ceiling_jittered = bot
             .maybe_jitter(ceiling, bot.profile.max_jitter)
             .min(my_player.money);
@@ -176,7 +178,7 @@ fn decide_auction(
         .market
         .actual
         .iter()
-        .filter(|p| my_player.money >= p.number as u32)
+        .filter(|p| my_player.money >= effective_min_bid(&state.market, p.number))
         .filter(|p| {
             // In round 1 we must buy — don't filter. Later: apply skip logic.
             is_round_one
@@ -751,7 +753,10 @@ mod tests {
         let registry = default_registry();
         let w = &registry.normal.auction;
         let buy = &registry.normal.buy;
-        assert_eq!(bid_ceiling(&plant, &player, 1, w, buy), 15);
+        assert_eq!(
+            bid_ceiling(&plant, &player, 1, w, buy, plant.number as u32),
+            15
+        );
     }
 
     #[test]
@@ -764,7 +769,10 @@ mod tests {
         let registry = default_registry();
         let w = &registry.normal.auction;
         let buy = &registry.normal.buy;
-        assert_eq!(bid_ceiling(&candidate, &player, 3, w, buy), 20);
+        assert_eq!(
+            bid_ceiling(&candidate, &player, 3, w, buy, candidate.number as u32),
+            20
+        );
     }
 
     #[test]
@@ -774,7 +782,7 @@ mod tests {
         let registry = default_registry();
         let w = &registry.normal.auction;
         let buy = &registry.normal.buy;
-        let ceiling = bid_ceiling(&candidate, &player, 2, w, buy);
+        let ceiling = bid_ceiling(&candidate, &player, 2, w, buy, candidate.number as u32);
         assert!(
             ceiling > 15 && ceiling <= 21,
             "expected a small premium above 15, got {}",
@@ -789,20 +797,32 @@ mod tests {
         let registry = default_registry();
         let w = &registry.normal.auction;
         let buy = &registry.normal.buy;
-        assert_eq!(bid_ceiling(&plant, &player, 1, w, buy), 10);
-        assert_eq!(bid_ceiling(&plant, &player, 2, w, buy), 10);
+        assert_eq!(
+            bid_ceiling(&plant, &player, 1, w, buy, plant.number as u32),
+            10
+        );
+        assert_eq!(
+            bid_ceiling(&plant, &player, 2, w, buy, plant.number as u32),
+            10
+        );
         let mut bot = normal_bot();
         let max_jitter = bot.profile.max_jitter;
         for _ in 0..50 {
             // Production code applies .min(player.money) after jitter; mirror that here.
             assert!(
-                bot.maybe_jitter(bid_ceiling(&plant, &player, 1, w, buy), max_jitter)
-                    .min(player.money)
+                bot.maybe_jitter(
+                    bid_ceiling(&plant, &player, 1, w, buy, plant.number as u32),
+                    max_jitter
+                )
+                .min(player.money)
                     <= player.money
             );
             assert!(
-                bot.maybe_jitter(bid_ceiling(&plant, &player, 2, w, buy), max_jitter)
-                    .min(player.money)
+                bot.maybe_jitter(
+                    bid_ceiling(&plant, &player, 2, w, buy, plant.number as u32),
+                    max_jitter
+                )
+                .min(player.money)
                     <= player.money
             );
         }
@@ -857,7 +877,7 @@ mod tests {
         let registry = default_registry();
         let w = &registry.normal.auction;
         let buy = &registry.normal.buy;
-        let base = bid_ceiling(&plant, &player, 1, w, buy);
+        let base = bid_ceiling(&plant, &player, 1, w, buy, plant.number as u32);
 
         // With seed 42 and 200 trials, count how many jitter.
         let mut bot = normal_bot();

@@ -168,6 +168,14 @@ pub(in crate::ui) fn auction_panel(
                 .color(theme::TEXT_BRIGHT)
                 .monospace(),
         );
+        if let Some(tok) = gs.market.discount_token {
+            ui.label(
+                RichText::new(format!("Plant #{tok} has the discount token — min bid $1."))
+                    .color(theme::NEON_CYAN)
+                    .monospace()
+                    .small(),
+            );
+        }
         if ui.add(neon_button("[ PASS ]", theme::NEON_AMBER)).clicked() {
             send(Action::PassAuction, room, channels);
         }

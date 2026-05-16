@@ -614,6 +614,11 @@ pub struct PlantMarket {
     /// the actual/future split.
     #[serde(default)]
     pub in_step3: bool,
+    /// The plant number that holds the discount token (min bid = 1 Elektro), if any.
+    /// Set at the start of Phase 2; cleared at Phase 2 exit or when a smaller plant
+    /// is drawn into `actual` during Phase 2.
+    #[serde(default)]
+    pub discount_token: Option<u8>,
 }
 
 impl PlantMarket {

@@ -120,8 +120,37 @@ fn handle_start(state: &mut GameState, actor: PlayerId) -> Result<(), ActionErro
 // Auction phase helpers
 // ---------------------------------------------------------------------------
 
+/// Minimum bid for a plant: 1 if it holds the discount token, else its printed number.
+pub fn effective_min_bid(market: &crate::types::PlantMarket, plant_number: u8) -> u32 {
+    if market.discount_token == Some(plant_number) {
+        1
+    } else {
+        plant_number as u32
+    }
+}
+
+/// Clears the discount token if the tokened plant is no longer in `actual`, or if a
+/// plant smaller than the tokened plant has appeared in `actual`. Safe to call any time.
+fn clear_discount_if_invalidated(state: &mut GameState) {
+    if let Some(tok) = state.market.discount_token {
+        let still_present = state.market.actual.iter().any(|p| p.number == tok);
+        let undercut = state.market.actual.first().is_some_and(|p| p.number < tok);
+        if !still_present || undercut {
+            state.market.discount_token = None;
+            state.log(format!("Discount token removed from plant {}.", tok));
+        }
+    }
+}
+
 fn begin_auction(state: &mut GameState) {
     apply_pending_step3(state, crate::state::Step3Pending::NextRound);
+    state.market.discount_token = state.market.actual.first().map(|p| p.number);
+    if let Some(n) = state.market.discount_token {
+        state.log(format!(
+            "Discount token placed on plant {} (min bid: 1 Elektro).",
+            n
+        ));
+    }
     let bought = Vec::new();
     let passed = Vec::new();
     state.phase = Phase::Auction {
@@ -167,11 +196,12 @@ fn handle_select_plant(
     }
 
     let player_money = state.player(actor).ok_or(ActionError::UnknownPlayer)?.money;
-    if (plant_number as u32) > player_money {
+    let min_bid = effective_min_bid(&state.market, plant_number);
+    if min_bid > player_money {
         return Err(ActionError::CannotAfford);
     }
 
-    // Start bid at the plant's number (minimum bid).
+    // Start bid at the plant's effective minimum bid (1 if discounted, else plant number).
     // The selector has implicitly bid the minimum by selecting; exclude them so
     // other players respond first. They re-enter the rotation if outbid.
     let remaining_bidders: Vec<PlayerId> = state
@@ -183,14 +213,7 @@ fn handle_select_plant(
 
     // If no other players remain to bid, the selector wins at minimum bid immediately.
     if remaining_bidders.is_empty() {
-        return award_plant(
-            state,
-            actor,
-            plant_number,
-            plant_number as u32,
-            bought,
-            passed,
-        );
+        return award_plant(state, actor, plant_number, min_bid, bought, passed);
     }
 
     state.phase = Phase::Auction {
@@ -198,7 +221,7 @@ fn handle_select_plant(
         active_bid: Some(ActiveBid {
             plant_number,
             highest_bidder: actor,
-            amount: plant_number as u32,
+            amount: min_bid,
             remaining_bidders,
         }),
         bought,
@@ -346,6 +369,9 @@ fn award_plant(
         .market
         .take_from_actual(plant_number)
         .ok_or(ActionError::PlantNotInMarket(plant_number))?;
+
+    // Clear token if: bought plant was the tokened one, or refill drew a smaller plant.
+    clear_discount_if_invalidated(state);
 
     let player = state.player_mut(winner).ok_or(ActionError::UnknownPlayer)?;
     player.money -= cost;
@@ -563,8 +589,27 @@ fn advance_auction(state: &mut GameState, bought: Vec<PlayerId>, passed: Vec<Pla
 
     // Check if everyone has acted.
     if all_done.len() >= total {
-        // End of auction — remove lowest plant only if no one purchased.
-        if bought.is_empty() {
+        // End of auction. Discount rule: if the tokened plant was never bought, remove
+        // it from the game entirely and replace via a new draw.
+        let removed_discount = if let Some(tok) = state.market.discount_token {
+            if let Some(pos) = state.market.actual.iter().position(|p| p.number == tok) {
+                state.market.actual.remove(pos);
+                state.market.refill();
+                state.log(format!(
+                    "Discount plant {} was not bought — removed from the game.",
+                    tok
+                ));
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        state.market.discount_token = None;
+        // Original rule: if no one bought *any* plant, also remove the new lowest plant —
+        // but skip if we already removed via the discount path to avoid double-removal.
+        if bought.is_empty() && !removed_discount {
             state.market.remove_lowest();
         }
         note_step3_trigger(state);
@@ -579,7 +624,23 @@ fn advance_auction(state: &mut GameState, bought: Vec<PlayerId>, passed: Vec<Pla
         next_idx = (next_idx + 1) % total;
         iterations += 1;
         if iterations > total {
-            if bought.is_empty() {
+            let removed_discount = if let Some(tok) = state.market.discount_token {
+                if let Some(pos) = state.market.actual.iter().position(|p| p.number == tok) {
+                    state.market.actual.remove(pos);
+                    state.market.refill();
+                    state.log(format!(
+                        "Discount plant {} was not bought — removed from the game.",
+                        tok
+                    ));
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            state.market.discount_token = None;
+            if bought.is_empty() && !removed_discount {
                 state.market.remove_lowest();
             }
             note_step3_trigger(state);
@@ -601,6 +662,9 @@ fn advance_auction(state: &mut GameState, bought: Vec<PlayerId>, passed: Vec<Pla
 // ---------------------------------------------------------------------------
 
 fn begin_buy_resources(state: &mut GameState) {
+    // Defensive: ensure the discount token is always None outside Phase 2.
+    // This covers the deferred Step 3 transition path.
+    state.market.discount_token = None;
     apply_pending_step3(state, crate::state::Step3Pending::AfterAuction);
     // After the first auction, recalculate order based on plants purchased
     // (no cities exist yet, so it sorts by highest plant number).
@@ -1615,6 +1679,7 @@ pub fn build_plant_deck() -> PlantMarket {
         below_step3: None,
         step3_triggered: false,
         in_step3: false,
+        discount_token: None,
     }
 }
 
@@ -1850,7 +1915,9 @@ mod tests {
         apply_action(&mut state, second, Action::PassAuction).unwrap();
 
         // Now only the second player remains for selection. Selecting a plant auto-awards it at minimum.
+        // Capture the discount-aware expected cost BEFORE the purchase clears the token.
         let second_plant = state.market.actual[0].number;
+        let expected_cost = effective_min_bid(&state.market, second_plant);
         apply_action(
             &mut state,
             second,
@@ -1867,13 +1934,14 @@ mod tests {
             state.phase
         );
 
-        // Second player should own the plant they selected, charged its minimum bid.
+        // Second player should own the plant they selected, charged its effective minimum bid.
+        // actual[0] carries the discount token so the cost is 1 Elektro, not the printed number.
         let second_player = state.player(second).unwrap();
         assert!(second_player
             .plants
             .iter()
             .any(|p| p.number == second_plant));
-        assert_eq!(second_player.money, 50 - second_plant as u32);
+        assert_eq!(second_player.money, 50 - expected_cost);
 
         let _ = (p1, p2);
     }
@@ -4150,6 +4218,226 @@ mod tests {
             "step3_pending must be set by the single-city BuildCity action"
         );
 
+        let _ = (p1, p2);
+    }
+
+    // ── Discount token tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_discount_token_placed_at_auction_start() {
+        let (mut state, p1, _p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+        assert!(matches!(state.phase, Phase::Auction { .. }));
+        let smallest = state.market.actual[0].number;
+        assert_eq!(
+            state.market.discount_token,
+            Some(smallest),
+            "discount token must be on the smallest actual market plant at Phase 2 start"
+        );
+    }
+
+    #[test]
+    fn test_discount_token_min_bid_is_one() {
+        let (mut state, p1, p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        let first = state.player_order[0];
+        let tok_plant = state.market.discount_token.unwrap();
+
+        // Give the first player only 1 Elektro — enough only if the token applies.
+        state.player_mut(first).unwrap().money = 1;
+
+        apply_action(
+            &mut state,
+            first,
+            Action::SelectPlant {
+                plant_number: tok_plant,
+            },
+        )
+        .unwrap();
+
+        // Bid should have been opened at 1, not at the plant's printed number.
+        if let Phase::Auction { active_bid, .. } = &state.phase {
+            let bid = active_bid.as_ref().expect("active bid after SelectPlant");
+            assert_eq!(bid.amount, 1, "initial bid for discount plant must be 1");
+        }
+        let _ = (p1, p2);
+    }
+
+    #[test]
+    fn test_buying_discount_plant_clears_token() {
+        let (mut state, p1, p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        let first = state.player_order[0];
+        let second = state.player_order[1];
+        let tok_plant = state.market.discount_token.unwrap();
+
+        // first selects the discount plant; second passes → first wins at min bid 1.
+        apply_action(
+            &mut state,
+            first,
+            Action::SelectPlant {
+                plant_number: tok_plant,
+            },
+        )
+        .unwrap();
+        apply_action(&mut state, second, Action::PassAuction).unwrap();
+
+        // Token must be cleared once the plant leaves the market.
+        assert_eq!(
+            state.market.discount_token, None,
+            "discount token must be cleared after the tokened plant is purchased"
+        );
+        let _ = (p1, p2);
+    }
+
+    #[test]
+    fn test_smaller_plant_drawn_clears_token() {
+        let (mut state, p1, p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        let first = state.player_order[0];
+        let second = state.player_order[1];
+        let tok_plant = state.market.discount_token.unwrap();
+
+        // Inject a plant with a smaller number than the tokened plant at the top of
+        // the draw deck so the next `take_from_actual` refill surfaces it.
+        let tiny = powergrid_core_types_test_plant(tok_plant.saturating_sub(1));
+        state.market.deck.push(tiny);
+
+        // Buy a non-tokened plant (actual[1]) so the refill draws our injected smaller plant.
+        let non_tok = state.market.actual[1].number;
+        apply_action(
+            &mut state,
+            first,
+            Action::SelectPlant {
+                plant_number: non_tok,
+            },
+        )
+        .unwrap();
+        apply_action(&mut state, second, Action::PassAuction).unwrap();
+
+        // The smaller plant from the deck should have appeared in actual and cleared the token.
+        assert_eq!(
+            state.market.discount_token, None,
+            "discount token must be cleared when a smaller plant is drawn into the market"
+        );
+        let _ = (p1, p2);
+    }
+
+    fn powergrid_core_types_test_plant(number: u8) -> crate::types::PowerPlant {
+        use crate::types::{PlantKind, PowerPlant};
+        PowerPlant {
+            number,
+            kind: PlantKind::Wind,
+            cost: 0,
+            cities: 1,
+        }
+    }
+
+    #[test]
+    fn test_unsold_discount_plant_removed_at_phase_end() {
+        // Use round 2+ to allow players to pass nomination without hitting MustBuyPlantInRoundOne.
+        // Set up a 2-player game in Auction phase for round 2.
+        let (mut state, p1, p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        // Advance to round 2 by setting state.round and re-entering auction manually.
+        // This is simpler than replaying all of round 1.
+        state.round = 2;
+        let first = state.player_order[0];
+        let second = state.player_order[1];
+
+        // Reset the discount token as begin_auction() would normally do.
+        state.market.discount_token = state.market.actual.first().map(|p| p.number);
+        let tok_plant = state.market.discount_token.unwrap();
+
+        // Clear the deck so refill draws nothing (prevents a smaller plant clearing the token).
+        state.market.deck.clear();
+        state.market.below_step3 = None;
+
+        // first buys actual[1] (non-discount); second passes the bid → first auto-wins.
+        let non_tok = state.market.actual[1].number;
+        apply_action(
+            &mut state,
+            first,
+            Action::SelectPlant {
+                plant_number: non_tok,
+            },
+        )
+        .unwrap();
+        apply_action(&mut state, second, Action::PassAuction).unwrap();
+
+        // second passes their nomination turn (allowed since round > 1).
+        apply_action(&mut state, second, Action::PassAuction).unwrap();
+
+        // Phase should have advanced past auction.
+        assert!(
+            !matches!(state.phase, Phase::Auction { .. }),
+            "should have moved past auction; got {:?}",
+            state.phase
+        );
+
+        // The tokened plant must no longer be in actual or the deck.
+        assert!(
+            !state.market.actual.iter().any(|p| p.number == tok_plant),
+            "unsold discount plant must be removed from actual market"
+        );
+        assert!(
+            !state.market.deck.iter().any(|p| p.number == tok_plant),
+            "unsold discount plant must not be returned to the deck"
+        );
+
+        // Token cleared.
+        assert_eq!(state.market.discount_token, None);
+        let _ = (p1, p2);
+    }
+
+    #[test]
+    fn test_no_discount_outside_phase_two() {
+        let (mut state, p1, p2) = two_player_game();
+        apply_action(&mut state, p1, Action::StartGame).unwrap();
+
+        let first = state.player_order[0];
+        let second = state.player_order[1];
+
+        // Both players buy a plant (round 1 requires it). After both have bought, the
+        // auction ends automatically and the game moves to BuyResources.
+        let plant1 = state.market.actual[0].number;
+        let plant2 = state.market.actual[1].number;
+
+        // first selects plant1; second passes the bid → first auto-wins.
+        apply_action(
+            &mut state,
+            first,
+            Action::SelectPlant {
+                plant_number: plant1,
+            },
+        )
+        .unwrap();
+        apply_action(&mut state, second, Action::PassAuction).unwrap();
+
+        // second selects plant2; first is already in `bought` so second auto-wins immediately.
+        apply_action(
+            &mut state,
+            second,
+            Action::SelectPlant {
+                plant_number: plant2,
+            },
+        )
+        .unwrap();
+
+        // Should now be in BuyResources.
+        assert!(
+            matches!(state.phase, Phase::BuyResources { .. }),
+            "expected BuyResources after both bought; got {:?}",
+            state.phase
+        );
+        assert_eq!(
+            state.market.discount_token, None,
+            "discount token must be None outside Phase 2"
+        );
         let _ = (p1, p2);
     }
 }
