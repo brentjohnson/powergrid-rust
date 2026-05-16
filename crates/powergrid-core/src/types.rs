@@ -665,18 +665,24 @@ impl PlantMarket {
         }
     }
 
-    /// Remove all plants from the actual market whose number is ≤ `max_cities`.
-    /// Used after city building to clear obsolete plants.
+    /// Remove all plants whose number is ≤ `max_cities` from the actual market,
+    /// the draw deck, and the below-Step-3 pile. Used after city building so
+    /// that no obsolete plant remains anywhere a future draw could surface it.
     pub fn remove_obsolete(&mut self, max_cities: usize) {
-        loop {
-            if let Some(lowest) = self.actual.first() {
-                if (lowest.number as usize) <= max_cities {
-                    self.actual.remove(0);
-                    self.refill();
-                    continue;
-                }
+        // Purge unseen piles first so the subsequent refill() draws from a clean deck.
+        self.deck.retain(|p| (p.number as usize) > max_cities);
+        if let Some(below) = self.below_step3.as_mut() {
+            below.retain(|p| (p.number as usize) > max_cities);
+        }
+        // Then drop obsolete plants from the visible market, refilling from the
+        // (now safe) deck after each removal.
+        while let Some(lowest) = self.actual.first() {
+            if (lowest.number as usize) <= max_cities {
+                self.actual.remove(0);
+                self.refill();
+            } else {
+                break;
             }
-            break;
         }
     }
 
