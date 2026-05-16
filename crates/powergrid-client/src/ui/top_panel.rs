@@ -14,7 +14,7 @@ use crate::{
     ws::WsChannels,
 };
 
-use super::helpers::{dim_color, send, vertical_labeled_section};
+use super::helpers::{dim_color, send};
 use super::phase_tracker::phase_tracker;
 use super::phases::{
     auction_panel, build_cities_panel, bureaucracy_panel, buy_resources_panel, discard_plant_panel,
@@ -34,9 +34,15 @@ pub(super) fn top_panel_contents(
     let my_buy_turn = matches!(&gs.phase, Phase::BuyResources { remaining }
         if remaining.first() == Some(&my_id));
 
+    let is_auction = matches!(&gs.phase, Phase::Auction { .. } | Phase::DiscardPlant { .. });
+    let is_buy = matches!(&gs.phase, Phase::BuyResources { .. } | Phase::DiscardResource { .. });
+    let is_build = matches!(&gs.phase, Phase::BuildCities { .. });
+    let is_bureau = matches!(&gs.phase, Phase::Bureaucracy { .. } | Phase::PowerCitiesFuel { .. });
+
     ui.horizontal_top(|ui| {
-        // ── Left: Round/Step + Phase tracker ──────────────────────────────
+        // ── Phase 1: Determine Player Order ───────────────────────────────
         ui.vertical(|ui| {
+            phase_col_header(ui, "1", "DETERMINE ORDER", false);
             theme::neon_frame_bright().show(ui, |ui| {
                 ui.label(
                     RichText::new(format!("ROUND {}", gs.round))
@@ -51,10 +57,13 @@ pub(super) fn top_panel_contents(
         });
 
         ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(8.0);
 
-        // ── Plant market column + Auction/DiscardPlant below ──────────────
+        // ── Phase 2: Auction Power Plants ─────────────────────────────────
         ui.vertical(|ui| {
-            vertical_labeled_section(ui, "PLANT MARKET", |ui| {
+            phase_col_header(ui, "2", "AUCTION PLANTS", is_auction);
+            theme::neon_frame().show(ui, |ui| {
                 ui.horizontal_top(|ui| {
                     if gs.step >= 3 {
                         let mid = gs.market.actual.len().div_ceil(2);
@@ -122,7 +131,6 @@ pub(super) fn top_panel_contents(
                 });
             });
 
-            // Phase panel docked below plant market
             match &gs.phase {
                 Phase::Auction { .. } => {
                     ui.add_space(4.0);
@@ -141,9 +149,13 @@ pub(super) fn top_panel_contents(
         });
 
         ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(8.0);
 
-        // ── Resource market column + BuyResources/DiscardResource below ───
+        // ── Phase 3: Buy Resources ─────────────────────────────────────────
         ui.vertical(|ui| {
+            phase_col_header(ui, "3", "BUY RESOURCES", is_buy);
+
             let cart_snapshot = state.resource_cart.clone();
             let peer_carts: Vec<(Color32, HashMap<Resource, u8>)> = state
                 .peer_hints
@@ -163,14 +175,13 @@ pub(super) fn top_panel_contents(
                 })
                 .collect();
 
-            let click = vertical_labeled_section(ui, "RESOURCE MARKET", |ui| {
+            let click = theme::neon_frame().show(ui, |ui| {
                 resource_market_grid(ui, &gs.resources, &cart_snapshot, &peer_carts, my_buy_turn)
             });
-            if let Some((resource, amount)) = click {
+            if let Some((resource, amount)) = click.inner {
                 state.set_cart_amount(resource, amount);
             }
 
-            // Phase panel docked below resource market
             match &gs.phase {
                 Phase::BuyResources { .. } => {
                     ui.add_space(4.0);
@@ -189,14 +200,35 @@ pub(super) fn top_panel_contents(
         });
 
         ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(8.0);
 
-        // ── Player summary column + Bureaucracy/PowerCitiesFuel/BuildCities below ──
+        // ── Phase 4: Build Generators ──────────────────────────────────────
         ui.vertical(|ui| {
-            vertical_labeled_section(ui, "ME", |ui| {
+            phase_col_header(ui, "4", "BUILD GENERATORS", is_build);
+            theme::neon_frame().show(ui, |ui| {
+                city_count_list(ui, &gs);
+            });
+
+            if is_build {
+                ui.add_space(4.0);
+                theme::neon_frame().show(ui, |ui| {
+                    build_cities_panel(ui, state, channels, &gs, my_id);
+                });
+            }
+        });
+
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(8.0);
+
+        // ── Phase 5: Bureaucracy ───────────────────────────────────────────
+        ui.vertical(|ui| {
+            phase_col_header(ui, "5", "BUREAUCRACY", is_bureau);
+            theme::neon_frame().show(ui, |ui| {
                 player_summary(ui, &gs, my_id);
             });
 
-            // Phase panel docked below player summary
             match &gs.phase {
                 Phase::Bureaucracy { .. } => {
                     ui.add_space(4.0);
@@ -210,16 +242,52 @@ pub(super) fn top_panel_contents(
                         power_cities_fuel_panel(ui, state, channels, &gs, my_id);
                     });
                 }
-                Phase::BuildCities { .. } => {
-                    ui.add_space(4.0);
-                    theme::neon_frame().show(ui, |ui| {
-                        build_cities_panel(ui, state, channels, &gs, my_id);
-                    });
-                }
                 _ => {}
             }
         });
     });
+}
+
+fn phase_col_header(ui: &mut Ui, number: &str, label: &str, active: bool) {
+    let color = if active {
+        theme::NEON_AMBER
+    } else {
+        theme::TEXT_DIM
+    };
+    ui.label(
+        RichText::new(format!("{number}. {label}"))
+            .color(color)
+            .small()
+            .monospace()
+            .strong(),
+    );
+    ui.add_space(2.0);
+}
+
+fn city_count_list(ui: &mut Ui, gs: &GameStateView) {
+    // Display in reverse auction order (fewest cities → builds first)
+    for pid in gs.player_order.iter().rev() {
+        if let Some(p) = gs.player(*pid) {
+            let is_building = matches!(&gs.phase,
+                Phase::BuildCities { remaining } if remaining.first() == Some(pid));
+            let base = player_color_to_egui(p.color);
+            let color = if is_building { base } else { dim_color(base) };
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("■").color(color).monospace());
+                ui.label(
+                    RichText::new(format!(
+                        "{}: {}/{}",
+                        p.name,
+                        p.city_count(),
+                        gs.end_game_cities
+                    ))
+                    .color(color)
+                    .small()
+                    .monospace(),
+                );
+            });
+        }
+    }
 }
 
 // ── Plant market helpers ───────────────────────────────────────────────────────
