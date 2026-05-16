@@ -83,25 +83,49 @@
 
 * Resource buying: button to add "1 set" or "2 sets" to cart
 * Click on resoure market squares to add to cart
+* Windows version not full screen (no window frame)
 
-# v 0.9.0
+
+# v0.9.0
 
 * Show on map where other people are placing cities
+* Switch plants to Recharged version (random start) - add option at game start of OG/Recharge
+
+# v0.10.0
+
+* Layout changes
+* Fix for drawing discardable power plants
+* Implement $1 auction discount
+* Show payouts
+* Scrollable event log
+
 
 # To do...
 
+## Client/UI
+
+* More layout adjustments - action panels need to be pop-ups or something
+* More layout adjustments - get things to fit better in top bar
+* Show version number somewhere?
 * Sound when it's your turn
-* Switch plants to Recharged version (random start) - add option at game start of OG/Recharge
 * Highlight nominated plant in the market
-* Windows version not full screen (no window frame)
 * add resource icons to right of plant
 * Add "capacity" to player card (how many you could power) - where resource are
+
+## Game play
+
 * USA map
 * Check payouts based on players
-* Show payouts
-* Ding when it's your turn
+
+## Lobby
+
 * Reset password?
-* Scrollable event log
+
+## Bot training
+
+* Wait until game play solidified. Otherwise worthless.
+
+## Needs organized
 
 * REFACTOR: continue with PR 2 and PR 3 in architecture plan (at beginning of the week)
 * BUG: local game "back to main menu" crashes client
