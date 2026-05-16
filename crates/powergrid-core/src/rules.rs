@@ -1295,32 +1295,35 @@ fn recalculate_player_order(state: &mut GameState) {
     state.player_order = order;
 }
 
-fn replenish_resources(state: &mut GameState) {
-    let n = state.players.len();
-    let (coal, oil, gas, uranium) = match state.step {
-        1 => match n {
+/// Returns (coal, oil, gas, uranium) replenishment amounts for the given step and player count.
+pub fn replenishment_amounts(step: u8, n_players: usize) -> (u8, u8, u8, u8) {
+    match step {
+        1 => match n_players {
             2 => (3, 2, 1, 1),
             3 => (4, 2, 1, 1),
             4 => (5, 3, 2, 1),
             5 => (5, 4, 3, 2),
             _ => (7, 5, 3, 2),
         },
-        2 => match n {
+        2 => match n_players {
             2 => (4, 2, 1, 1),
             3 => (5, 3, 2, 1),
             4 => (6, 4, 3, 2),
             5 => (7, 5, 3, 3),
             _ => (9, 6, 5, 3),
         },
-        _ => match n {
-            // Step 3 replenishment rates
+        _ => match n_players {
             2 => (3, 4, 3, 1),
             3 => (3, 4, 3, 1),
             4 => (4, 5, 4, 2),
             5 => (5, 6, 5, 3),
             _ => (7, 7, 6, 3),
         },
-    };
+    }
+}
+
+fn replenish_resources(state: &mut GameState) {
+    let (coal, oil, gas, uranium) = replenishment_amounts(state.step, state.players.len());
     let before = state.resources.clone();
     state.resources.replenish(Resource::Coal, coal);
     state.resources.replenish(Resource::Oil, oil);

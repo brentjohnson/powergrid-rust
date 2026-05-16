@@ -2,6 +2,7 @@ use egui::{Align2, Color32, FontId, Rect, RichText, Sense, Stroke, StrokeKind, U
 use powergrid_core::{
     actions::{Action, HintPayload},
     income_for, price_table,
+    rules::replenishment_amounts,
     types::{Phase, PlayerColor, PlayerId, Resource, ResourceMarket},
     GameStateView,
 };
@@ -179,8 +180,20 @@ pub(super) fn top_panel_contents(
                 })
                 .collect();
 
+            let replenish = if matches!(&gs.phase, Phase::Lobby | Phase::GameOver { .. }) {
+                (0, 0, 0, 0)
+            } else {
+                replenishment_amounts(gs.step, gs.players.len())
+            };
             let click = theme::neon_frame().show(ui, |ui| {
-                resource_market_grid(ui, &gs.resources, &cart_snapshot, &peer_carts, my_buy_turn)
+                resource_market_grid(
+                    ui,
+                    &gs.resources,
+                    &cart_snapshot,
+                    &peer_carts,
+                    my_buy_turn,
+                    replenish,
+                )
             });
             if let Some((resource, amount)) = click.inner {
                 state.set_cart_amount(resource, amount);
@@ -547,6 +560,7 @@ fn resource_market_grid(
     cart: &HashMap<Resource, u8>,
     peer_carts: &[(Color32, HashMap<Resource, u8>)],
     clickable: bool,
+    replenish: (u8, u8, u8, u8),
 ) -> Option<(Resource, u8)> {
     const SQ: f32 = 14.0;
     const INNER_GAP: f32 = 2.0;
@@ -653,6 +667,12 @@ fn resource_market_grid(
         let total = price_table(*resource).len();
         let cart_amount = cart.get(resource).copied().unwrap_or(0) as usize;
         let cheapest_filled = total.saturating_sub(count);
+        let replenish_amount = match resource {
+            Resource::Coal => replenish.0,
+            Resource::Oil => replenish.1,
+            Resource::Gas => replenish.2,
+            Resource::Uranium => replenish.3,
+        } as usize;
 
         painter.text(
             egui::pos2(ox + LABEL_W - 2.0, row_y + ROW_H / 2.0),
@@ -685,6 +705,10 @@ fn resource_market_grid(
                     painter.rect_filled(sq_rect, 1.0, *color);
                 } else {
                     painter.rect_filled(sq_rect, 1.0, dim_color(*color));
+                }
+
+                if dp < cheapest_filled && (cheapest_filled - dp) <= replenish_amount {
+                    painter.circle_filled(sq_rect.center(), 2.5, *color);
                 }
 
                 for (peer_color, peer_cart) in peer_carts {
