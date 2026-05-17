@@ -475,14 +475,6 @@ impl AppState {
         self.refresh_resource_preview();
     }
 
-    pub fn remove_from_cart(&mut self, resource: Resource) {
-        let count = self.resource_cart.entry(resource).or_insert(0);
-        if *count > 0 {
-            *count -= 1;
-        }
-        self.refresh_resource_preview();
-    }
-
     pub fn clear_cart(&mut self) {
         self.resource_cart.clear();
         self.resource_cart_cost = None;

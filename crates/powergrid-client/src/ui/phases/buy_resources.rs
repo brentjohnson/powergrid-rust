@@ -7,7 +7,7 @@ use powergrid_core::{
 
 use crate::{state::AppState, theme, ws::WsChannels};
 
-use super::super::helpers::{neon_button, resource_counter_row, resource_name, send};
+use super::super::helpers::{neon_button, resource_name, send};
 
 pub(in crate::ui) fn buy_resources_panel(
     ui: &mut Ui,
@@ -79,18 +79,14 @@ pub(in crate::ui) fn buy_resources_panel(
                 format!("{owned}/{cap_lo}-{cap_hi}")
             };
 
-            match resource_counter_row(
-                ui,
-                &format!("{:>8}", resource_name(resource)),
-                count,
-                0,
-                u8::MAX,
-                &cap_str,
-            ) {
-                d if d < 0 => state.remove_from_cart(resource),
-                d if d > 0 => state.add_to_cart(resource),
-                _ => {}
-            }
+            ui.label(
+                RichText::new(format!(
+                    "{:>8}: {count:>2}  {cap_str}",
+                    resource_name(resource)
+                ))
+                .color(theme::TEXT_BRIGHT)
+                .monospace(),
+            );
         }
 
         if let Some(cost) = state.resource_cart_cost {

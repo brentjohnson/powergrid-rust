@@ -121,14 +121,9 @@ impl MapEditor {
                     [w as usize, h as usize],
                     rgba.as_raw(),
                 );
-                self.image = Some(ctx.load_texture(
-                    "map_bg",
-                    color_image,
-                    egui::TextureOptions::default(),
-                ));
-                self.image_filename = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned());
+                self.image =
+                    Some(ctx.load_texture("map_bg", color_image, egui::TextureOptions::default()));
+                self.image_filename = path.file_name().map(|n| n.to_string_lossy().into_owned());
                 self.status = format!("Loaded image {}×{}: {}", w, h, path.display());
             }
             Err(e) => {
@@ -301,7 +296,12 @@ impl MapEditor {
 
             if !new_id.is_empty() && new_id != old_id {
                 // Check uniqueness
-                if !self.cities.iter().enumerate().any(|(i, c)| i != idx && c.id == new_id) {
+                if !self
+                    .cities
+                    .iter()
+                    .enumerate()
+                    .any(|(i, c)| i != idx && c.id == new_id)
+                {
                     for conn in &mut self.connections {
                         if conn.from == old_id {
                             conn.from = new_id.clone();
@@ -484,10 +484,7 @@ impl MapEditor {
                     Mode::Connect => {
                         if let Some(from_idx) = self.pending_from {
                             if from_idx < self.cities.len() {
-                                ui.label(format!(
-                                    "From: {}",
-                                    self.cities[from_idx].name
-                                ));
+                                ui.label(format!("From: {}", self.cities[from_idx].name));
                                 ui.label("Click another city to connect.");
                                 if ui.button("Cancel").clicked() {
                                     self.pending_from = None;
@@ -636,7 +633,13 @@ impl MapEditor {
                         let id = self.unique_id(&base);
                         let region = self.regions.first().cloned().unwrap_or_default();
                         let name = format!("City {}", self.city_counter);
-                        self.cities.push(City { id: id.clone(), name, region, x: nx, y: ny });
+                        self.cities.push(City {
+                            id: id.clone(),
+                            name,
+                            region,
+                            x: nx,
+                            y: ny,
+                        });
                         let new_idx = self.cities.len() - 1;
                         self.select_city(new_idx);
                         self.status = format!("Added '{id}' — edit name/ID in panel");
@@ -664,9 +667,8 @@ impl MapEditor {
                                             || (c.from == to_id && c.to == from_id)
                                     });
                                     if already {
-                                        self.status = format!(
-                                            "{from_id} ↔ {to_id} already connected"
-                                        );
+                                        self.status =
+                                            format!("{from_id} ↔ {to_id} already connected");
                                     } else {
                                         self.connections.push(Conn {
                                             from: from_id.clone(),
@@ -683,8 +685,10 @@ impl MapEditor {
                                 }
                             } else {
                                 self.pending_from = Some(idx);
-                                self.status =
-                                    format!("From '{}' — click destination city", self.cities[idx].name);
+                                self.status = format!(
+                                    "From '{}' — click destination city",
+                                    self.cities[idx].name
+                                );
                             }
                         }
                     }
@@ -742,10 +746,7 @@ impl MapEditor {
                     let mouse = ui.input(|i| i.pointer.hover_pos()).unwrap_or(fp);
                     painter.line_segment(
                         [fp, mouse],
-                        Stroke::new(
-                            1.5,
-                            Color32::from_rgba_unmultiplied(255, 220, 50, 140),
-                        ),
+                        Stroke::new(1.5, Color32::from_rgba_unmultiplied(255, 220, 50, 140)),
                     );
                     ui.ctx().request_repaint();
                 }
@@ -779,13 +780,7 @@ impl MapEditor {
                     Color32::BLACK,
                 );
             }
-            painter.text(
-                lp,
-                egui::Align2::CENTER_BOTTOM,
-                lbl,
-                font,
-                Color32::WHITE,
-            );
+            painter.text(lp, egui::Align2::CENTER_BOTTOM, lbl, font, Color32::WHITE);
         }
     }
 }
