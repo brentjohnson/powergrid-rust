@@ -1,9 +1,5 @@
 use egui::{RichText, Ui};
-use powergrid_core::{
-    income_for,
-    types::PlayerId,
-    GameStateView,
-};
+use powergrid_core::{income_for, types::PlayerId, GameStateView};
 
 use crate::{state::player_color_to_egui, theme};
 

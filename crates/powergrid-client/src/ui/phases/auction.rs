@@ -1,7 +1,7 @@
 use egui::{RichText, Ui};
 use powergrid_core::{actions::Action, types::Phase, types::PlayerId, GameStateView};
 
-use crate::{card_painter, state::player_color_to_egui, state::AppState, theme, ws::WsChannels};
+use crate::{state::player_color_to_egui, state::AppState, theme, ws::WsChannels};
 
 use super::super::helpers::{dim_color, is_active_player, neon_button, send};
 
@@ -24,20 +24,6 @@ pub(in crate::ui) fn auction_panel(
 
     let room_owned = state.current_room.clone();
     let room = room_owned.as_deref();
-
-    // Plant card (only when bidding is active)
-    if let Some(bid) = active_bid {
-        let target_plant = gs
-            .market
-            .actual
-            .iter()
-            .chain(gs.market.future.iter())
-            .find(|p| p.number == bid.plant_number);
-        if let Some(plant) = target_plant {
-            card_painter::draw_plant_card(ui, plant);
-            ui.add_space(4.0);
-        }
-    }
 
     // Per-player status column in turn order
     for pid in &gs.player_order {

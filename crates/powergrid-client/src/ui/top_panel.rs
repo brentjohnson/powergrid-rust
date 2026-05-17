@@ -392,11 +392,22 @@ fn plant_column(
     let is_my_auction_turn = matches!(phase, Phase::Auction { current_bidder_idx, active_bid, .. }
         if active_bid.is_none() && player_order.get(*current_bidder_idx) == Some(&my_id));
 
+    let nominated_number = if let Phase::Auction {
+        active_bid: Some(bid),
+        ..
+    } = phase
+    {
+        Some(bid.plant_number)
+    } else {
+        None
+    };
+
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 2.0;
         for plant in plants {
             let discounted = discount_token == Some(plant.number);
-            let resp = card_painter::draw_plant_card_ex(ui, plant, discounted);
+            let nominated = nominated_number == Some(plant.number);
+            let resp = card_painter::draw_plant_card_ex(ui, plant, discounted, nominated);
             if is_my_auction_turn && resp.clicked() {
                 send(
                     Action::SelectPlant {

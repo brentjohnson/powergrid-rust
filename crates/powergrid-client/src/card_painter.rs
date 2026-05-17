@@ -43,19 +43,22 @@ fn kind_label(kind: PlantKind) -> &'static str {
 /// Draw a power plant card (CARD_W × CARD_H) and return the egui Response.
 /// The response can be checked for `.clicked()` and `.hovered()`.
 pub fn draw_plant_card(ui: &mut egui::Ui, plant: &PowerPlant) -> egui::Response {
-    draw_plant_card_ex(ui, plant, false)
+    draw_plant_card_ex(ui, plant, false, false)
 }
 
 /// Like `draw_plant_card` but shows a discount badge when `discounted` is true.
+/// Pass `nominated = true` to render the card with the resource color as background
+/// (used to highlight the plant currently up for auction in the market column).
 pub fn draw_plant_card_ex(
     ui: &mut egui::Ui,
     plant: &PowerPlant,
     discounted: bool,
+    nominated: bool,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::new(CARD_W, CARD_H), egui::Sense::click());
 
     if ui.is_rect_visible(rect) {
-        paint_card(ui, rect, plant, discounted);
+        paint_card(ui, rect, plant, discounted, nominated);
     }
 
     response
@@ -65,7 +68,13 @@ pub fn draw_plant_card_ex(
 // Painting
 // ---------------------------------------------------------------------------
 
-fn paint_card(ui: &mut egui::Ui, rect: Rect, plant: &PowerPlant, discounted: bool) {
+fn paint_card(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    plant: &PowerPlant,
+    discounted: bool,
+    nominated: bool,
+) {
     let painter = ui.painter_at(rect);
     let rounding = CornerRadius::same(3);
 
@@ -90,8 +99,9 @@ fn paint_card(ui: &mut egui::Ui, rect: Rect, plant: &PowerPlant, discounted: boo
 
     let color = kind_color(plant.kind);
 
-    // Background + border (cyan double-border when discount token is on this card)
-    painter.rect_filled(rect, rounding, theme::BG_WIDGET);
+    // Background + border (cyan border when discount token; resource color fill when nominated)
+    let bg = if nominated { color } else { theme::BG_WIDGET };
+    painter.rect_filled(rect, rounding, bg);
     let border_color = if discounted { theme::NEON_CYAN } else { color };
     painter.rect_stroke(
         rect,
@@ -123,12 +133,13 @@ fn paint_card(ui: &mut egui::Ui, rect: Rect, plant: &PowerPlant, discounted: boo
 
     // Kind label — left of center, after number box
     let label_x = num_box_w + 6.0 + rect.min.x;
+    let label_color = if nominated { Color32::BLACK } else { color };
     painter.text(
         egui::pos2(label_x, rect.center().y),
         egui::Align2::LEFT_CENTER,
         kind_label(plant.kind),
         FontId::new(9.0, FontFamily::Monospace),
-        color,
+        label_color,
     );
 
     // Stats — right-aligned: "2 → 1" or "→ 1"
