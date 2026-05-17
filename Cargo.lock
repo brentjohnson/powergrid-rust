@@ -1612,6 +1612,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -2653,6 +2655,17 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "powergrid-maptool"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "egui",
+ "image",
+ "serde",
+ "toml",
 ]
 
 [[package]]

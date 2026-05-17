@@ -8,6 +8,7 @@ members = [
     "crates/powergrid-session",
     "crates/powergrid-lobby",
     "crates/powergrid-py",
+    "crates/powergrid-maptool",
 ]
 resolver = "2"
 

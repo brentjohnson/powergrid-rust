@@ -21,6 +21,8 @@ COPY crates/powergrid-client/Cargo.toml crates/powergrid-client/Cargo.toml
 RUN mkdir -p crates/powergrid-client/src && echo 'fn main(){}' > crates/powergrid-client/src/main.rs
 COPY crates/powergrid-py/Cargo.toml crates/powergrid-py/Cargo.toml
 RUN mkdir -p crates/powergrid-py/src && echo '' > crates/powergrid-py/src/lib.rs
+COPY crates/powergrid-maptool/Cargo.toml crates/powergrid-maptool/Cargo.toml
+RUN mkdir -p crates/powergrid-maptool/src && echo 'fn main(){}' > crates/powergrid-maptool/src/main.rs
 
 RUN cargo build --release -p powergrid-lobby
 
