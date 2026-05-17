@@ -144,6 +144,11 @@ pub struct AppState {
     pub bottom_panel_open: bool,
     pub bottom_panel_tab: BottomTab,
 
+    // Floating action panel positioning (captured from top-bar column rects each frame)
+    // Indices: 0=Auction, 1=BuyResources, 2=BuildCities, 3=Bureaucracy
+    pub phase_column_rects: [Option<egui::Rect>; 4],
+    pub top_panel_bottom: f32,
+
     // Window mode (kept in sync with the actual viewport)
     pub fullscreen: bool,
 
@@ -257,6 +262,8 @@ impl AppState {
             ],
             peer_hints: PeerHints::default(),
             hint_tracker: LocalHintTracker::new(),
+            phase_column_rects: [None; 4],
+            top_panel_bottom: 0.0,
         }
     }
 

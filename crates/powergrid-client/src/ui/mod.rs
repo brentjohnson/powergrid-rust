@@ -12,6 +12,10 @@ mod room_browser;
 mod top_panel;
 
 use egui::RichText;
+use phases::{
+    auction_panel, build_cities_panel, bureaucracy_panel, buy_resources_panel, discard_plant_panel,
+    discard_resource_panel, power_cities_fuel_panel,
+};
 use powergrid_core::types::{Phase, PlayerColor, PlayerId};
 
 use crate::{
@@ -160,7 +164,7 @@ fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: Option<&WsCh
         phases::game_over_overlay(ctx, &gs, winner);
     }
 
-    egui::TopBottomPanel::top("top_panel")
+    let top_resp = egui::TopBottomPanel::top("top_panel")
         .min_height(180.0)
         .frame(theme::panel_frame(6))
         .show(ctx, |ui| {
@@ -170,6 +174,7 @@ fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: Option<&WsCh
                     top_panel::top_panel_contents(ui, gs.clone(), state, channels, my_id);
                 });
         });
+    state.top_panel_bottom = top_resp.response.rect.bottom();
 
     // Left panel is added before CentralPanel so it extends the full remaining height.
     egui::SidePanel::left("player_panel")
@@ -193,6 +198,8 @@ fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: Option<&WsCh
             crate::map_panel::draw(ui, state, &gs, my_id);
         });
 
+    floating_action_panel(ctx, state, channels, &gs, my_id);
+
     // ── Bottom-right info panel (Space or toggle button) ──────────────────────
     if state.bottom_panel_open {
         bottom_info_panel(ctx, state, &gs);
@@ -210,6 +217,82 @@ fn game_screen(ctx: &egui::Context, state: &mut AppState, channels: Option<&WsCh
                 }
             });
     }
+}
+
+// ---------------------------------------------------------------------------
+// Bottom-right tabbed info panel
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Floating action panel — overlays the map beneath the active phase column
+// ---------------------------------------------------------------------------
+
+const LEFT_PANEL_W: f32 = 220.0;
+const FLOAT_GAP: f32 = 6.0;
+
+fn floating_action_panel(
+    ctx: &egui::Context,
+    state: &mut crate::state::AppState,
+    channels: Option<&crate::ws::WsChannels>,
+    gs: &powergrid_core::GameStateView,
+    my_id: PlayerId,
+) {
+    let (col_idx, show): (usize, bool) = match &gs.phase {
+        Phase::Auction { .. } | Phase::DiscardPlant { .. } => (0, true),
+        Phase::BuyResources { .. } | Phase::DiscardResource { .. } => (1, true),
+        Phase::BuildCities { .. } => (2, true),
+        Phase::Bureaucracy { .. } | Phase::PowerCitiesFuel { .. } => (3, true),
+        _ => (0, false),
+    };
+
+    if !show {
+        return;
+    }
+
+    let Some(col_rect) = state.phase_column_rects[col_idx] else {
+        return; // first frame — rects not captured yet
+    };
+
+    let x = col_rect.min.x.max(LEFT_PANEL_W + FLOAT_GAP);
+    let y = state.top_panel_bottom + FLOAT_GAP;
+    let pos = egui::pos2(x, y);
+
+    #[allow(deprecated)]
+    let screen_right = ctx.screen_rect().right() - 8.0;
+    let max_width = (col_rect.width().max(280.0)).min(screen_right - x);
+
+    egui::Area::new(egui::Id::new("floating_action_panel"))
+        .fixed_pos(pos)
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            theme::neon_frame().show(ui, |ui| {
+                ui.set_max_width(max_width);
+                match &gs.phase {
+                    Phase::Auction { .. } => {
+                        auction_panel(ui, state, channels, gs, my_id);
+                    }
+                    Phase::DiscardPlant { .. } => {
+                        discard_plant_panel(ui, state, channels, gs, my_id);
+                    }
+                    Phase::BuyResources { .. } => {
+                        buy_resources_panel(ui, state, channels, gs, my_id);
+                    }
+                    Phase::DiscardResource { .. } => {
+                        discard_resource_panel(ui, state, channels, gs, my_id);
+                    }
+                    Phase::BuildCities { .. } => {
+                        build_cities_panel(ui, state, channels, gs, my_id);
+                    }
+                    Phase::Bureaucracy { .. } => {
+                        bureaucracy_panel(ui, state, channels, gs, my_id);
+                    }
+                    Phase::PowerCitiesFuel { .. } => {
+                        power_cities_fuel_panel(ui, state, channels, gs, my_id);
+                    }
+                    _ => {}
+                }
+            });
+        });
 }
 
 // ---------------------------------------------------------------------------

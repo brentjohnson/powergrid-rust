@@ -16,10 +16,6 @@ use crate::{
 };
 
 use super::helpers::{dim_color, send};
-use super::phases::{
-    auction_panel, build_cities_panel, bureaucracy_panel, buy_resources_panel, discard_plant_panel,
-    discard_resource_panel, power_cities_fuel_panel,
-};
 use super::player_summary::player_summary;
 
 pub(super) fn top_panel_contents(
@@ -66,7 +62,7 @@ pub(super) fn top_panel_contents(
         ui.add_space(8.0);
 
         // ── Phase 2: Auction Power Plants ─────────────────────────────────
-        ui.vertical(|ui| {
+        let auction_col = ui.vertical(|ui| {
             phase_col_header(ui, "AUCTION PLANTS", is_auction, &gs, PhaseKind::Auction);
             theme::neon_frame().show(ui, |ui| {
                 ui.horizontal_top(|ui| {
@@ -140,30 +136,15 @@ pub(super) fn top_panel_contents(
                     }
                 });
             });
-
-            match &gs.phase {
-                Phase::Auction { .. } => {
-                    ui.add_space(4.0);
-                    theme::neon_frame().show(ui, |ui| {
-                        auction_panel(ui, state, channels, &gs, my_id);
-                    });
-                }
-                Phase::DiscardPlant { .. } => {
-                    ui.add_space(4.0);
-                    theme::neon_frame().show(ui, |ui| {
-                        discard_plant_panel(ui, state, channels, &gs, my_id);
-                    });
-                }
-                _ => {}
-            }
         });
+        state.phase_column_rects[0] = Some(auction_col.response.rect);
 
         ui.add_space(8.0);
         ui.separator();
         ui.add_space(8.0);
 
         // ── Phase 3: Buy Resources ─────────────────────────────────────────
-        ui.vertical(|ui| {
+        let buy_col = ui.vertical(|ui| {
             phase_col_header(ui, "BUY RESOURCES", is_buy, &gs, PhaseKind::BuyResources);
 
             let cart_snapshot = state.resource_cart.clone();
@@ -203,30 +184,15 @@ pub(super) fn top_panel_contents(
             if let Some((resource, amount)) = click.inner {
                 state.set_cart_amount(resource, amount);
             }
-
-            match &gs.phase {
-                Phase::BuyResources { .. } => {
-                    ui.add_space(4.0);
-                    theme::neon_frame().show(ui, |ui| {
-                        buy_resources_panel(ui, state, channels, &gs, my_id);
-                    });
-                }
-                Phase::DiscardResource { .. } => {
-                    ui.add_space(4.0);
-                    theme::neon_frame().show(ui, |ui| {
-                        discard_resource_panel(ui, state, channels, &gs, my_id);
-                    });
-                }
-                _ => {}
-            }
         });
+        state.phase_column_rects[1] = Some(buy_col.response.rect);
 
         ui.add_space(8.0);
         ui.separator();
         ui.add_space(8.0);
 
         // ── Phase 4: Build Generators ──────────────────────────────────────
-        ui.vertical(|ui| {
+        let build_col = ui.vertical(|ui| {
             phase_col_header(
                 ui,
                 "BUILD GENERATORS",
@@ -237,42 +203,21 @@ pub(super) fn top_panel_contents(
             theme::neon_frame().show(ui, |ui| {
                 city_count_list(ui, &gs);
             });
-
-            if is_build {
-                ui.add_space(4.0);
-                theme::neon_frame().show(ui, |ui| {
-                    build_cities_panel(ui, state, channels, &gs, my_id);
-                });
-            }
         });
+        state.phase_column_rects[2] = Some(build_col.response.rect);
 
         ui.add_space(8.0);
         ui.separator();
         ui.add_space(8.0);
 
         // ── Phase 5: Bureaucracy ───────────────────────────────────────────
-        ui.vertical(|ui| {
+        let bureau_col = ui.vertical(|ui| {
             phase_col_header(ui, "BUREAUCRACY", is_bureau, &gs, PhaseKind::Bureaucracy);
             theme::neon_frame().show(ui, |ui| {
                 player_summary(ui, &gs, my_id);
             });
-
-            match &gs.phase {
-                Phase::Bureaucracy { .. } => {
-                    ui.add_space(4.0);
-                    theme::neon_frame().show(ui, |ui| {
-                        bureaucracy_panel(ui, state, channels, &gs, my_id);
-                    });
-                }
-                Phase::PowerCitiesFuel { .. } => {
-                    ui.add_space(4.0);
-                    theme::neon_frame().show(ui, |ui| {
-                        power_cities_fuel_panel(ui, state, channels, &gs, my_id);
-                    });
-                }
-                _ => {}
-            }
         });
+        state.phase_column_rects[3] = Some(bureau_col.response.rect);
     });
 }
 
