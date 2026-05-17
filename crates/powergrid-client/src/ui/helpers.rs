@@ -7,15 +7,6 @@ use powergrid_core::{
 
 use crate::{theme, ws::WsChannels};
 
-pub(super) fn section_header(ui: &mut Ui, label: &str) {
-    ui.label(
-        RichText::new(label)
-            .color(theme::NEON_CYAN_DIM)
-            .small()
-            .monospace(),
-    );
-}
-
 pub(super) fn neon_button(label: &str, color: Color32) -> egui::Button<'static> {
     egui::Button::new(RichText::new(label).color(color).monospace())
         .fill(theme::BG_WIDGET)
